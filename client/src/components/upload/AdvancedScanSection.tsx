@@ -43,7 +43,7 @@ export default function AdvancedScanSection() {
   // Update URL when tab changes
   const handleTabChange = (value: string) => {
     setActiveTab(value);
-    navigate(`/scan?type=${value}`, { replace: true });
+    navigate(`/scan?type=${value}&advanced=true`);
   };
 
   // Handle file upload via browse button
@@ -161,25 +161,6 @@ export default function AdvancedScanSection() {
     };
   }, []);
 
-  // Update progress during analysis
-  useEffect(() => {
-    if (isPending) {
-      const interval = setInterval(() => {
-        setScanProgress(prev => {
-          if (prev >= 95) {
-            clearInterval(interval);
-            return prev;
-          }
-          return prev + Math.random() * 10;
-        });
-      }, 500);
-      
-      return () => clearInterval(interval);
-    } else {
-      setScanProgress(0);
-    }
-  }, [isPending]);
-
   // Upload and analyze media
   const { mutate: uploadAndAnalyze, isPending } = useMutation({
     mutationFn: async () => {
@@ -271,6 +252,25 @@ export default function AdvancedScanSection() {
       setScanProgress(0);
     }
   });
+  
+  // Update progress during analysis
+  useEffect(() => {
+    if (isPending) {
+      const interval = setInterval(() => {
+        setScanProgress(prev => {
+          if (prev >= 95) {
+            clearInterval(interval);
+            return prev;
+          }
+          return prev + Math.random() * 10;
+        });
+      }, 500);
+      
+      return () => clearInterval(interval);
+    } else {
+      setScanProgress(0);
+    }
+  }, [isPending]);
 
   return (
     <div className="bg-card rounded-xl p-6 border border-primary/30 relative overflow-hidden">
