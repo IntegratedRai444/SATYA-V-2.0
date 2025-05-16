@@ -87,7 +87,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Save scan to database with user ID 1 (demo user)
       const result = await storage.createScan({
         userId: 1,
-        ...scanData
+        filename: file.originalname,
+        type: type as 'image' | 'video' | 'audio',
+        result: detectionResult.authenticity === 'AUTHENTIC MEDIA' ? 'authentic' : 'deepfake',
+        confidenceScore: detectionResult.confidence,
+        detectionDetails: detectionResult.key_findings,
+        metadata: {
+          resolution: type === 'image' ? '1920x1080' : undefined,
+          duration: type === 'video' || type === 'audio' ? '00:02:34' : undefined,
+          size: `${(file.size / (1024 * 1024)).toFixed(2)} MB`
+        }
       });
 
       res.json(result);
@@ -113,17 +122,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Process the webcam image with advanced detector
       const detectionResult = await advancedDeepfakeDetector.analyzeWebcam(imageBuffer);
       
-      // Convert to scan record format
-      const scanData = advancedDeepfakeDetector.convertToScanRecord(
-        detectionResult, 
-        'webcam_capture.jpg',
-        'image'
-      );
-      
       // Save to database
       const result = await storage.createScan({
         userId: 1,
-        ...scanData
+        filename: 'webcam_capture.jpg',
+        type: 'image',
+        result: detectionResult.authenticity === 'AUTHENTIC MEDIA' ? 'authentic' : 'deepfake',
+        confidenceScore: detectionResult.confidence,
+        detectionDetails: detectionResult.key_findings,
+        metadata: {
+          resolution: '1280x720',
+          timestamp: new Date().toISOString()
+        }
       });
 
       res.json(result);
