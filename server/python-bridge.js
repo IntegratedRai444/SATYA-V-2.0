@@ -1,4 +1,4 @@
-// Python-NodeJS Bridge for SatyaAI
+// Python-Node.js Bridge for SatyaAI Deepfake Detection System
 const { spawn } = require('child_process');
 const axios = require('axios');
 const fs = require('fs');
@@ -8,6 +8,7 @@ const FormData = require('form-data');
 let pythonProcess = null;
 const PYTHON_SERVER_PORT = 5000;
 const BASE_URL = `http://localhost:${PYTHON_SERVER_PORT}`;
+let apiToken = null;
 
 /**
  * Start the Python server as a child process
@@ -93,9 +94,105 @@ async function waitForServerReady(maxAttempts = 30, interval = 1000) {
 }
 
 /**
+ * Login to the Python server
+ */
+async function login(username, password) {
+  try {
+    const response = await axios.post(`${BASE_URL}/login`, {
+      username,
+      password
+    });
+    
+    if (response.status === 200 && response.data.session_token) {
+      // Store token for future requests
+      apiToken = response.data.session_token;
+      return {
+        success: true,
+        user: {
+          id: response.data.user_id,
+          username: response.data.username
+        },
+        token: response.data.session_token
+      };
+    }
+    
+    return {
+      success: false,
+      message: 'Authentication failed'
+    };
+  } catch (error) {
+    console.error('Login error:', error.message);
+    return {
+      success: false,
+      message: error.response?.data?.error || 'Authentication failed'
+    };
+  }
+}
+
+/**
+ * Logout from the Python server
+ */
+async function logout() {
+  if (!apiToken) {
+    return { success: false, message: 'Not logged in' };
+  }
+  
+  try {
+    const response = await axios.post(
+      `${BASE_URL}/logout`,
+      {},
+      {
+        headers: {
+          'Authorization': `Bearer ${apiToken}`
+        }
+      }
+    );
+    
+    apiToken = null;
+    
+    return {
+      success: true,
+      message: 'Successfully logged out'
+    };
+  } catch (error) {
+    console.error('Logout error:', error.message);
+    return {
+      success: false,
+      message: error.response?.data?.error || 'Logout failed'
+    };
+  }
+}
+
+/**
+ * Validate user session
+ */
+async function validateSession(token) {
+  try {
+    const response = await axios.get(
+      `${BASE_URL}/session`,
+      {
+        headers: {
+          'Authorization': `Bearer ${token || apiToken}`
+        }
+      }
+    );
+    
+    return {
+      valid: true,
+      user: response.data.user
+    };
+  } catch (error) {
+    return {
+      valid: false,
+      message: error.response?.data?.error || 'Invalid session'
+    };
+  }
+}
+
+/**
  * Send an image to the Python server for analysis
  */
-async function analyzeImage(imageData) {
+async function analyzeImage(imageData, token = null) {
   try {
     // Check if the server is running
     if (!pythonProcess) {
@@ -106,18 +203,32 @@ async function analyzeImage(imageData) {
       }
     }
     
+    // Check authorization
+    const sessionToken = token || apiToken;
+    if (!sessionToken) {
+      throw new Error('Authentication required');
+    }
+    
     // Send request to the Python server
-    const response = await axios.post(`${BASE_URL}/analyze/image`, {
-      image_data: imageData
-    });
+    const response = await axios.post(
+      `${BASE_URL}/analyze/image`,
+      { image_data: imageData },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionToken}`
+        }
+      }
+    );
     
     return response.data;
   } catch (error) {
-    console.error('Error analyzing image:', error);
+    console.error('Error analyzing image:', error.message);
     return {
       error: true,
       message: 'Failed to analyze image',
-      details: error.message
+      details: error.message,
+      code: error.response?.data?.code
     };
   }
 }
@@ -125,7 +236,7 @@ async function analyzeImage(imageData) {
 /**
  * Send a video to the Python server for analysis
  */
-async function analyzeVideo(videoBuffer, filename) {
+async function analyzeVideo(videoBuffer, filename, token = null) {
   try {
     // Check if the server is running
     if (!pythonProcess) {
@@ -134,6 +245,12 @@ async function analyzeVideo(videoBuffer, filename) {
       if (!serverStarted) {
         throw new Error('Failed to start Python server');
       }
+    }
+    
+    // Check authorization
+    const sessionToken = token || apiToken;
+    if (!sessionToken) {
+      throw new Error('Authentication required');
     }
     
     // Create a form data object for the file upload
@@ -144,19 +261,25 @@ async function analyzeVideo(videoBuffer, filename) {
     });
     
     // Send request to the Python server
-    const response = await axios.post(`${BASE_URL}/analyze/video`, formData, {
-      headers: {
-        ...formData.getHeaders()
+    const response = await axios.post(
+      `${BASE_URL}/analyze/video`,
+      formData,
+      {
+        headers: {
+          ...formData.getHeaders(),
+          'Authorization': `Bearer ${sessionToken}`
+        }
       }
-    });
+    );
     
     return response.data;
   } catch (error) {
-    console.error('Error analyzing video:', error);
+    console.error('Error analyzing video:', error.message);
     return {
       error: true,
       message: 'Failed to analyze video',
-      details: error.message
+      details: error.message,
+      code: error.response?.data?.code
     };
   }
 }
@@ -164,7 +287,7 @@ async function analyzeVideo(videoBuffer, filename) {
 /**
  * Send audio to the Python server for analysis
  */
-async function analyzeAudio(audioBuffer, filename) {
+async function analyzeAudio(audioBuffer, filename, token = null) {
   try {
     // Check if the server is running
     if (!pythonProcess) {
@@ -175,6 +298,12 @@ async function analyzeAudio(audioBuffer, filename) {
       }
     }
     
+    // Check authorization
+    const sessionToken = token || apiToken;
+    if (!sessionToken) {
+      throw new Error('Authentication required');
+    }
+    
     // Create a form data object for the file upload
     const formData = new FormData();
     formData.append('audio', audioBuffer, {
@@ -183,19 +312,25 @@ async function analyzeAudio(audioBuffer, filename) {
     });
     
     // Send request to the Python server
-    const response = await axios.post(`${BASE_URL}/analyze/audio`, formData, {
-      headers: {
-        ...formData.getHeaders()
+    const response = await axios.post(
+      `${BASE_URL}/analyze/audio`,
+      formData,
+      {
+        headers: {
+          ...formData.getHeaders(),
+          'Authorization': `Bearer ${sessionToken}`
+        }
       }
-    });
+    );
     
     return response.data;
   } catch (error) {
-    console.error('Error analyzing audio:', error);
+    console.error('Error analyzing audio:', error.message);
     return {
       error: true,
       message: 'Failed to analyze audio',
-      details: error.message
+      details: error.message,
+      code: error.response?.data?.code
     };
   }
 }
@@ -203,7 +338,7 @@ async function analyzeAudio(audioBuffer, filename) {
 /**
  * Send multiple media types to the Python server for multimodal analysis
  */
-async function analyzeMultimodal(imageBuffer, audioBuffer, videoBuffer) {
+async function analyzeMultimodal(imageBuffer, audioBuffer, videoBuffer, token = null) {
   try {
     // Check if the server is running
     if (!pythonProcess) {
@@ -212,6 +347,12 @@ async function analyzeMultimodal(imageBuffer, audioBuffer, videoBuffer) {
       if (!serverStarted) {
         throw new Error('Failed to start Python server');
       }
+    }
+    
+    // Check authorization
+    const sessionToken = token || apiToken;
+    if (!sessionToken) {
+      throw new Error('Authentication required');
     }
     
     // Create a form data object for the file uploads
@@ -239,19 +380,25 @@ async function analyzeMultimodal(imageBuffer, audioBuffer, videoBuffer) {
     }
     
     // Send request to the Python server
-    const response = await axios.post(`${BASE_URL}/analyze/multimodal`, formData, {
-      headers: {
-        ...formData.getHeaders()
+    const response = await axios.post(
+      `${BASE_URL}/analyze/multimodal`,
+      formData,
+      {
+        headers: {
+          ...formData.getHeaders(),
+          'Authorization': `Bearer ${sessionToken}`
+        }
       }
-    });
+    );
     
     return response.data;
   } catch (error) {
-    console.error('Error analyzing multimodal data:', error);
+    console.error('Error analyzing multimodal data:', error.message);
     return {
       error: true,
       message: 'Failed to analyze multimodal data',
-      details: error.message
+      details: error.message,
+      code: error.response?.data?.code
     };
   }
 }
@@ -259,7 +406,7 @@ async function analyzeMultimodal(imageBuffer, audioBuffer, videoBuffer) {
 /**
  * Send webcam image data to the Python server for analysis
  */
-async function analyzeWebcam(imageData) {
+async function analyzeWebcam(imageData, token = null) {
   try {
     // Check if the server is running
     if (!pythonProcess) {
@@ -270,18 +417,265 @@ async function analyzeWebcam(imageData) {
       }
     }
     
+    // Check authorization
+    const sessionToken = token || apiToken;
+    if (!sessionToken) {
+      throw new Error('Authentication required');
+    }
+    
     // Send request to the Python server
-    const response = await axios.post(`${BASE_URL}/analyze/webcam`, {
-      image_data: imageData
-    });
+    const response = await axios.post(
+      `${BASE_URL}/analyze/webcam`,
+      { image_data: imageData },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionToken}`
+        }
+      }
+    );
     
     return response.data;
   } catch (error) {
-    console.error('Error analyzing webcam data:', error);
+    console.error('Error analyzing webcam data:', error.message);
     return {
       error: true,
       message: 'Failed to analyze webcam data',
-      details: error.message
+      details: error.message,
+      code: error.response?.data?.code
+    };
+  }
+}
+
+/**
+ * Verify media on SatyaChain blockchain
+ */
+async function verifySatyaChain(mediaHash, token = null) {
+  try {
+    // Check if the server is running
+    if (!pythonProcess) {
+      console.log('Python server not running, starting...');
+      const serverStarted = await startPythonServer();
+      if (!serverStarted) {
+        throw new Error('Failed to start Python server');
+      }
+    }
+    
+    // Check authorization
+    const sessionToken = token || apiToken;
+    if (!sessionToken) {
+      throw new Error('Authentication required');
+    }
+    
+    // Send request to the Python server
+    const response = await axios.post(
+      `${BASE_URL}/verify/blockchain`,
+      { media_hash: mediaHash },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionToken}`
+        }
+      }
+    );
+    
+    return response.data;
+  } catch (error) {
+    console.error('Error verifying on blockchain:', error.message);
+    return {
+      error: true,
+      message: 'Failed to verify on blockchain',
+      details: error.message,
+      code: error.response?.data?.code
+    };
+  }
+}
+
+/**
+ * Check media on darkweb
+ */
+async function checkDarkweb(mediaHash, token = null) {
+  try {
+    // Check if the server is running
+    if (!pythonProcess) {
+      console.log('Python server not running, starting...');
+      const serverStarted = await startPythonServer();
+      if (!serverStarted) {
+        throw new Error('Failed to start Python server');
+      }
+    }
+    
+    // Check authorization
+    const sessionToken = token || apiToken;
+    if (!sessionToken) {
+      throw new Error('Authentication required');
+    }
+    
+    // Send request to the Python server
+    const response = await axios.post(
+      `${BASE_URL}/check/darkweb`,
+      { media_hash: mediaHash },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionToken}`
+        }
+      }
+    );
+    
+    return response.data;
+  } catch (error) {
+    console.error('Error checking darkweb:', error.message);
+    return {
+      error: true,
+      message: 'Failed to check darkweb',
+      details: error.message,
+      code: error.response?.data?.code
+    };
+  }
+}
+
+/**
+ * Analyze lip sync for a specific language
+ */
+async function analyzeLanguageLipSync(videoBuffer, language = 'english', token = null) {
+  try {
+    // Check if the server is running
+    if (!pythonProcess) {
+      console.log('Python server not running, starting...');
+      const serverStarted = await startPythonServer();
+      if (!serverStarted) {
+        throw new Error('Failed to start Python server');
+      }
+    }
+    
+    // Check authorization
+    const sessionToken = token || apiToken;
+    if (!sessionToken) {
+      throw new Error('Authentication required');
+    }
+    
+    // Create a form data object for the file upload
+    const formData = new FormData();
+    formData.append('video', videoBuffer, {
+      filename: 'video.mp4',
+      contentType: 'video/mp4'
+    });
+    formData.append('language', language);
+    
+    // Send request to the Python server
+    const response = await axios.post(
+      `${BASE_URL}/analyze/lip-sync`,
+      formData,
+      {
+        headers: {
+          ...formData.getHeaders(),
+          'Authorization': `Bearer ${sessionToken}`
+        }
+      }
+    );
+    
+    return response.data;
+  } catch (error) {
+    console.error('Error analyzing lip sync:', error.message);
+    return {
+      error: true,
+      message: 'Failed to analyze lip sync',
+      details: error.message,
+      code: error.response?.data?.code
+    };
+  }
+}
+
+/**
+ * Analyze emotion conflict
+ */
+async function analyzeEmotionConflict(videoBuffer, token = null) {
+  try {
+    // Check if the server is running
+    if (!pythonProcess) {
+      console.log('Python server not running, starting...');
+      const serverStarted = await startPythonServer();
+      if (!serverStarted) {
+        throw new Error('Failed to start Python server');
+      }
+    }
+    
+    // Check authorization
+    const sessionToken = token || apiToken;
+    if (!sessionToken) {
+      throw new Error('Authentication required');
+    }
+    
+    // Create a form data object for the file upload
+    const formData = new FormData();
+    formData.append('video', videoBuffer, {
+      filename: 'video.mp4',
+      contentType: 'video/mp4'
+    });
+    
+    // Send request to the Python server
+    const response = await axios.post(
+      `${BASE_URL}/analyze/emotion-conflict`,
+      formData,
+      {
+        headers: {
+          ...formData.getHeaders(),
+          'Authorization': `Bearer ${sessionToken}`
+        }
+      }
+    );
+    
+    return response.data;
+  } catch (error) {
+    console.error('Error analyzing emotion conflict:', error.message);
+    return {
+      error: true,
+      message: 'Failed to analyze emotion conflict',
+      details: error.message,
+      code: error.response?.data?.code
+    };
+  }
+}
+
+/**
+ * Get information about available models
+ */
+async function getModelsInfo(token = null) {
+  try {
+    // Check if the server is running
+    if (!pythonProcess) {
+      console.log('Python server not running, starting...');
+      const serverStarted = await startPythonServer();
+      if (!serverStarted) {
+        throw new Error('Failed to start Python server');
+      }
+    }
+    
+    // Check authorization
+    const sessionToken = token || apiToken;
+    if (!sessionToken) {
+      throw new Error('Authentication required');
+    }
+    
+    // Send request to the Python server
+    const response = await axios.get(
+      `${BASE_URL}/models/info`,
+      {
+        headers: {
+          'Authorization': `Bearer ${sessionToken}`
+        }
+      }
+    );
+    
+    return response.data;
+  } catch (error) {
+    console.error('Error getting models info:', error.message);
+    return {
+      error: true,
+      message: 'Failed to get models info',
+      details: error.message,
+      code: error.response?.data?.code
     };
   }
 }
@@ -289,10 +683,18 @@ async function analyzeWebcam(imageData) {
 module.exports = {
   startPythonServer,
   stopPythonServer,
+  waitForServerReady,
+  login,
+  logout,
+  validateSession,
   analyzeImage,
   analyzeVideo,
   analyzeAudio,
   analyzeMultimodal,
   analyzeWebcam,
-  waitForServerReady
+  verifySatyaChain,
+  checkDarkweb,
+  analyzeLanguageLipSync,
+  analyzeEmotionConflict,
+  getModelsInfo
 };
