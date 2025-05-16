@@ -5,6 +5,7 @@ description = "Add your description here"
 requires-python = ">=3.11"
 dependencies = [
     "flask>=3.1.1",
+    "matplotlib>=3.10.3",
     "numpy>=2.2.5",
     "pillow>=11.2.1",
 ]
