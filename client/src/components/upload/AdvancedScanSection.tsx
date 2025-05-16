@@ -180,9 +180,22 @@ export default function AdvancedScanSection() {
         // Convert to base64
         const imageData = canvas.toDataURL('image/jpeg');
         
-        // Send to server
-        const response = await apiRequest('POST', '/api/analyze/webcam', { imageData });
-        return response;
+        // Send to Python AI server
+        const response = await fetch('/api/ai/analyze/image', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ imageData }),
+          credentials: 'include'
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || response.statusText);
+        }
+        
+        return await response.json();
       } else if (activeTab === 'multimodal') {
         // Handle multimodal analysis with potentially multiple file types
         if (!files.length) {
@@ -201,7 +214,8 @@ export default function AdvancedScanSection() {
           }
         });
         
-        const response = await fetch('/api/analyze/multimodal', {
+        // Use advanced Python AI endpoint for multimodal analysis
+        const response = await fetch('/api/ai/analyze/multimodal', {
           method: 'POST',
           body: formData,
           credentials: 'include'
@@ -220,12 +234,21 @@ export default function AdvancedScanSection() {
         }
         
         const formData = new FormData();
-        files.forEach(file => {
-          formData.append('media', file);
-        });
-        formData.append('type', activeTab);
         
-        const response = await fetch('/api/analyze', {
+        // Use Python AI endpoints for advanced analysis
+        let endpoint = '/api/ai/analyze/image';
+        
+        if (activeTab === 'video') {
+          endpoint = '/api/ai/analyze/video';
+          formData.append('video', files[0]);
+        } else if (activeTab === 'audio') {
+          endpoint = '/api/ai/analyze/audio';
+          formData.append('audio', files[0]);
+        } else {
+          formData.append('image', files[0]);
+        }
+        
+        const response = await fetch(endpoint, {
           method: 'POST',
           body: formData,
           credentials: 'include'

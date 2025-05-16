@@ -6,6 +6,14 @@ import { insertScanSchema } from "@shared/schema";
 import multer from "multer";
 import { deepfakeDetector } from "./services/deepfake-detector";
 import { advancedDeepfakeDetector } from "./services/advanced-deepfake-detector";
+import { 
+  startPythonServer, 
+  analyzeImage, 
+  analyzeVideo, 
+  analyzeAudio, 
+  analyzeMultimodal, 
+  analyzeWebcam 
+} from "./python-bridge";
 
 // Setup multer for file uploads
 const upload = multer({
@@ -16,6 +24,15 @@ const upload = multer({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Start Python server for advanced AI processing
+  try {
+    await startPythonServer();
+    console.log('Python AI server started successfully');
+  } catch (error) {
+    console.error('Failed to start Python AI server:', error);
+    console.log('Continuing with basic detection capabilities only');
+  }
+  
   // Set up API routes
   const apiRouter = app.route('/api');
 
@@ -247,6 +264,158 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       res.status(500).json({ message: 'Failed to save profile' });
+    }
+  });
+  
+  // Advanced AI endpoints using Python backend
+  
+  // Advanced AI image analysis
+  app.post('/api/ai/analyze/image', upload.single('image'), async (req, res) => {
+    try {
+      let imageData;
+      
+      // Handle image data from request body (webcam) or file upload
+      if (req.body.imageData) {
+        imageData = req.body.imageData;
+      } else if (req.file) {
+        // Convert buffer to base64
+        imageData = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+      } else {
+        return res.status(400).json({ message: 'No image data provided' });
+      }
+      
+      // Use Python backend for advanced analysis
+      const result = await analyzeImage(imageData);
+      
+      // Save to database
+      const scanRecord = await storage.createScan({
+        userId: 1, // Demo user
+        filename: req.file?.originalname || 'ai_image_scan.jpg',
+        type: 'image',
+        result: result.authenticity === 'AUTHENTIC MEDIA' ? 'authentic' : 'deepfake',
+        confidenceScore: Math.round(result.confidence),
+        detectionDetails: result.key_findings,
+        metadata: {
+          analysis_date: result.analysis_date,
+          case_id: result.case_id,
+          ai_powered: true,
+          processor: 'python-ai'
+        }
+      });
+      
+      // Return combined result
+      res.json({
+        ...result,
+        id: scanRecord.id,
+        saved: true
+      });
+    } catch (error) {
+      console.error('AI image analysis error:', error);
+      res.status(500).json({ message: 'AI image analysis failed' });
+    }
+  });
+  
+  // Advanced AI video analysis
+  app.post('/api/ai/analyze/video', upload.single('video'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: 'No video file provided' });
+      }
+      
+      // Use Python backend for advanced video analysis
+      const result = await analyzeVideo(req.file.buffer, req.file.originalname);
+      
+      // Save to database
+      const scanRecord = await storage.createScan({
+        userId: 1, // Demo user
+        filename: req.file.originalname,
+        type: 'video',
+        result: result.authenticity === 'AUTHENTIC MEDIA' ? 'authentic' : 'deepfake',
+        confidenceScore: Math.round(result.confidence),
+        detectionDetails: result.key_findings,
+        metadata: {
+          analysis_date: result.analysis_date,
+          case_id: result.case_id,
+          ai_powered: true,
+          processor: 'python-ai',
+          filesize: `${(req.file.size / (1024 * 1024)).toFixed(2)} MB`
+        }
+      });
+      
+      // Return combined result
+      res.json({
+        ...result,
+        id: scanRecord.id,
+        saved: true
+      });
+    } catch (error) {
+      console.error('AI video analysis error:', error);
+      res.status(500).json({ message: 'AI video analysis failed' });
+    }
+  });
+  
+  // Advanced AI multimodal analysis
+  app.post('/api/ai/analyze/multimodal', upload.fields([
+    { name: 'image', maxCount: 1 },
+    { name: 'video', maxCount: 1 },
+    { name: 'audio', maxCount: 1 }
+  ]), async (req, res) => {
+    try {
+      const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+      
+      if (!files || Object.keys(files).length === 0) {
+        return res.status(400).json({ message: 'No files provided for multimodal analysis' });
+      }
+      
+      // Get file buffers and filenames
+      const imageBuffer = files.image?.[0]?.buffer;
+      const videoBuffer = files.video?.[0]?.buffer;
+      const audioBuffer = files.audio?.[0]?.buffer;
+      
+      // Use Python backend for multimodal analysis
+      const result = await analyzeMultimodal(imageBuffer, audioBuffer, videoBuffer);
+      
+      // Determine primary file type and filename for database record
+      let primaryType: 'image' | 'video' | 'audio' = 'image';
+      let filename = 'multimodal_analysis.json';
+      
+      if (files.video?.length) {
+        primaryType = 'video';
+        filename = files.video[0].originalname;
+      } else if (files.image?.length) {
+        primaryType = 'image';
+        filename = files.image[0].originalname;
+      } else if (files.audio?.length) {
+        primaryType = 'audio';
+        filename = files.audio[0].originalname;
+      }
+      
+      // Save to database
+      const scanRecord = await storage.createScan({
+        userId: 1, // Demo user
+        filename: filename,
+        type: primaryType,
+        result: result.authenticity === 'AUTHENTIC MEDIA' ? 'authentic' : 'deepfake',
+        confidenceScore: Math.round(result.confidence),
+        detectionDetails: result.key_findings,
+        metadata: {
+          analysis_date: result.analysis_date,
+          case_id: result.case_id,
+          ai_powered: true,
+          processor: 'python-ai-multimodal',
+          modalities_used: result.modalities_used || Object.keys(files).length
+        }
+      });
+      
+      // Return combined result
+      res.json({
+        ...result,
+        id: scanRecord.id,
+        saved: true
+      });
+    } catch (error) {
+      console.error('AI multimodal analysis error:', error);
+      res.status(500).json({ message: 'AI multimodal analysis failed' });
     }
   });
 
