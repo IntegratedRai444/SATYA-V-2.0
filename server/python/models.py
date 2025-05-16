@@ -1,30 +1,68 @@
-import numpy as np
-import time
-from datetime import datetime
-import uuid
-import json
+"""
+SatyaAI - Advanced Deepfake Detection Models
+This module contains the machine learning models for deepfake detection
+"""
+
 import os
-from typing import Dict, List, Optional, Tuple, Union, Any
+import random
+import time
+import numpy as np
+from datetime import datetime
+from PIL import Image, ImageDraw
 
 class BaseDetectionModel:
     """Base class for all detection models"""
     
-    def __init__(self, name: str, version: str = "1.0"):
+    def __init__(self, name, version="1.0"):
         self.name = name
         self.version = version
-        self.model_path = None
-    
+        self.type = "Base"
+        
     def preprocess(self, data):
         """Preprocess input data for model inference"""
-        raise NotImplementedError("Subclasses must implement preprocess")
+        # This should be implemented by subclasses
+        return data
     
     def predict(self, data):
         """Run inference on preprocessed data"""
-        raise NotImplementedError("Subclasses must implement predict")
-    
+        # This should be implemented by subclasses
+        # For the demo, we'll return random results
+        is_fake = random.random() > 0.6
+        confidence = random.uniform(0.7, 0.95)
+        
+        if is_fake:
+            authenticity = "MANIPULATED MEDIA"
+        else:
+            authenticity = "AUTHENTIC MEDIA"
+            
+        return {
+            "authenticity": authenticity,
+            "confidence": confidence * 100,  # Scale to percentage
+            "prediction_time": time.time()
+        }
+        
     def postprocess(self, prediction):
         """Process model output into standardized format"""
-        raise NotImplementedError("Subclasses must implement postprocess")
+        # Add common fields
+        prediction["timestamp"] = datetime.now().isoformat()
+        
+        # Add default key findings
+        if prediction["authenticity"] == "MANIPULATED MEDIA":
+            prediction["key_findings"] = [
+                "Manipulated content detected",
+                "Artificial patterns identified",
+                "Inconsistencies found in metadata",
+                "Statistical anomalies present"
+            ]
+        else:
+            prediction["key_findings"] = [
+                "No manipulation detected",
+                "Natural patterns verified",
+                "Metadata consistency confirmed",
+                "Statistical analysis shows authentic content"
+            ]
+            
+        return prediction
     
     def analyze(self, data):
         """End-to-end analysis pipeline"""
@@ -38,465 +76,406 @@ class BaseDetectionModel:
         return {
             "name": self.name,
             "version": self.version,
-            "type": self.__class__.__name__
+            "type": self.type
         }
+
 
 class FaceForensicsModel(BaseDetectionModel):
     """Advanced deepfake detection model based on face analysis"""
     
-    def __init__(self, version: str = "2.0"):
-        super().__init__("FaceForensics++", version)
-        self.accuracy = 0.96  # Reported accuracy in paper
+    def __init__(self):
+        super().__init__("SatyaAI Face Forensics", "2.0")
+        self.type = "CNN"
         
-        # In a real implementation, we would load the model here
-        # self.model = load_model("path/to/faceforensics_model.h5")
-    
     def preprocess(self, image_data):
         """Preprocess image for face analysis"""
-        # Simulate preprocessing steps: normalization, face extraction, etc.
-        time.sleep(0.5)  # Simulate processing time
-        return image_data
+        # In a real implementation, this would:
+        # 1. Detect faces in the image
+        # 2. Extract face regions
+        # 3. Normalize for lighting, scale, etc.
+        # 4. Transform to model input format
+        
+        # For the demo, we'll simulate this process
+        try:
+            # If it's a numpy array, assume it's already an image
+            if isinstance(image_data, np.ndarray):
+                # We'd do preprocessing here
+                pass
+            else:
+                # We'd load and process the image here
+                pass
+                
+            return image_data
+        except Exception as e:
+            print(f"Error preprocessing image: {str(e)}")
+            return image_data
     
-    def predict(self, preprocessed_data):
+    def predict(self, image_data):
         """Run face forensics detection"""
-        # Simulate prediction
-        time.sleep(1.5)
+        # In a real implementation, this would:
+        # 1. Run the image through a trained CNN model
+        # 2. Apply face-specific detection algorithms
+        # 3. Analyze facial inconsistencies
         
-        # Advanced randomization that's more realistic
-        # Higher probability of certain areas being manipulated (e.g. face regions)
-        authenticity_score = np.random.beta(5, 2) if np.random.random() > 0.3 else np.random.beta(2, 5)
-        manipulated = authenticity_score < 0.5
+        # For the demo, we'll return simulated results
+        is_fake = random.random() > 0.6
+        confidence = random.uniform(0.7, 0.95)
         
-        # Generate specific artifacts that would be found
-        artifacts = []
-        if manipulated:
-            possible_artifacts = [
-                "Inconsistent facial texture patterns",
-                "Unnatural eye reflections",
-                "Blending artifacts around facial boundaries",
-                "Inconsistent noise patterns across the face",
-                "Unnatural color distribution in skin tones",
-                "Temporal inconsistencies in facial expressions",
-                "Unrealistic facial proportions"
-            ]
-            # Select 2-4 artifacts
-            num_artifacts = np.random.randint(2, 5)
-            artifacts = np.random.choice(possible_artifacts, num_artifacts, replace=False).tolist()
+        if is_fake:
+            authenticity = "MANIPULATED MEDIA"
+            # Lower confidence to make it more realistic
+            confidence = random.uniform(0.6, 0.85)
+        else:
+            authenticity = "AUTHENTIC MEDIA"
+            
+        # Add face-specific metrics
+        temporal_consistency = random.uniform(0.8, 0.95)
+        lighting_consistency = random.uniform(0.75, 0.95)
+        
+        if is_fake:
+            temporal_consistency = random.uniform(0.3, 0.7)
+            lighting_consistency = random.uniform(0.4, 0.75)
         
         return {
-            "authenticity_score": float(authenticity_score),
-            "manipulated": manipulated,
-            "artifacts": artifacts,
-            "analysis_regions": ["face", "eyes", "mouth", "skin"]
+            "authenticity": authenticity,
+            "confidence": confidence * 100,
+            "prediction_time": time.time(),
+            "temporal_consistency": temporal_consistency,
+            "lighting_consistency": lighting_consistency
         }
     
     def postprocess(self, prediction):
         """Format prediction results"""
-        case_id = str(uuid.uuid4())
-        
-        result = "AUTHENTIC MEDIA" if prediction["authenticity_score"] >= 0.5 else "MANIPULATED MEDIA"
-        confidence = prediction["authenticity_score"] * 100 if result == "AUTHENTIC MEDIA" else (1 - prediction["authenticity_score"]) * 100
-        
-        # Generate more detailed and specific findings
-        key_findings = []
-        if result == "AUTHENTIC MEDIA":
-            key_findings = [
-                "Facial features show natural patterns and inconsistencies",
-                "Eye reflections are consistent with lighting conditions",
-                "Skin texture shows expected pore-level details",
-                "No evidence of synthetic generation or manipulation artifacts"
+        # Add key findings specific to face analysis
+        if prediction["authenticity"] == "MANIPULATED MEDIA":
+            prediction["key_findings"] = [
+                "Facial feature inconsistencies detected",
+                "Unnatural eye blinking patterns",
+                "Irregular edge transitions around face",
+                "Inconsistent lighting on facial features",
+                "Texture irregularities on skin regions"
             ]
         else:
-            # Use the specific artifacts found
-            key_findings = prediction["artifacts"]
+            prediction["key_findings"] = [
+                "Natural facial features confirmed",
+                "Normal eye blinking patterns",
+                "Consistent edge transitions around face",
+                "Natural lighting on facial features",
+                "Consistent texture across skin regions"
+            ]
             
-            # Add additional general findings
-            key_findings.append("Statistical analysis indicates synthetic generation patterns")
-            key_findings.append("Neural noise analysis shows manipulation signatures")
+        # Add timestamp
+        prediction["timestamp"] = datetime.now().isoformat()
         
-        return {
-            "authenticity": result,
-            "confidence": confidence,
-            "analysis_date": datetime.now().isoformat(),
-            "case_id": case_id,
-            "key_findings": key_findings,
-            "model_info": self.get_model_info(),
-            "regions_analyzed": prediction["analysis_regions"]
-        }
+        return prediction
+
 
 class AudioDeepfakeModel(BaseDetectionModel):
     """Advanced audio deepfake detection model"""
     
-    def __init__(self, version: str = "1.5"):
-        super().__init__("AudioSpectrogram", version)
-        self.accuracy = 0.92
+    def __init__(self):
+        super().__init__("SatyaAI Audio Forensics", "1.5")
+        self.type = "WaveNet"
         
-        # In a real implementation, we would load the model here
-        # self.model = load_model("path/to/audio_model.h5")
-    
     def preprocess(self, audio_data):
         """Preprocess audio data"""
-        # Simulate preprocessing steps: convert to spectrogram, normalize, etc.
-        time.sleep(0.8)
-        return audio_data
+        # In a real implementation, this would:
+        # 1. Convert audio to a standard format
+        # 2. Extract audio features (spectrograms, MFCCs, etc.)
+        # 3. Normalize the audio
+        
+        # For the demo, we'll simulate this process
+        try:
+            # Process audio data
+            return audio_data
+        except Exception as e:
+            print(f"Error preprocessing audio: {str(e)}")
+            return audio_data
     
-    def predict(self, preprocessed_data):
+    def predict(self, audio_data):
         """Run audio forensics detection"""
-        # Simulate prediction
-        time.sleep(1.2)
+        # In a real implementation, this would:
+        # 1. Run audio through a trained model
+        # 2. Detect voice synthesis artifacts
+        # 3. Analyze frequency distributions
         
-        # Advanced randomization with bias toward certain artifacts
-        authenticity_score = np.random.beta(4, 2) if np.random.random() > 0.35 else np.random.beta(2, 4)
-        manipulated = authenticity_score < 0.5
+        # For the demo, we'll return simulated results
+        is_fake = random.random() > 0.6
+        confidence = random.uniform(0.7, 0.95)
         
-        # Generate specific artifacts for audio
-        artifacts = []
-        if manipulated:
-            possible_artifacts = [
-                "Unnatural formant transitions between phonemes",
-                "Spectral discontinuities at splicing points",
-                "Missing or artificial breathing patterns",
-                "Inconsistent room acoustics throughout recording",
-                "Unnaturally consistent volume and pitch",
-                "Missing microphone-specific noise patterns",
-                "Statistical patterns consistent with voice synthesis"
-            ]
-            # Select 2-4 artifacts
-            num_artifacts = np.random.randint(2, 5)
-            artifacts = np.random.choice(possible_artifacts, num_artifacts, replace=False).tolist()
+        if is_fake:
+            authenticity = "MANIPULATED MEDIA"
+            confidence = random.uniform(0.6, 0.85)
+        else:
+            authenticity = "AUTHENTIC MEDIA"
+            
+        # Add audio-specific metrics
+        frequency_consistency = random.uniform(0.8, 0.95)
+        prosody_naturality = random.uniform(0.8, 0.95)
+        voice_timbre_consistency = random.uniform(0.75, 0.95)
+        
+        if is_fake:
+            frequency_consistency = random.uniform(0.4, 0.7)
+            prosody_naturality = random.uniform(0.3, 0.7)
+            voice_timbre_consistency = random.uniform(0.4, 0.75)
         
         return {
-            "authenticity_score": float(authenticity_score),
-            "manipulated": manipulated,
-            "artifacts": artifacts,
-            "frequency_analysis": {
-                "suspicious_bands": ["2-4kHz", "7-9kHz"] if manipulated else []
-            }
+            "authenticity": authenticity,
+            "confidence": confidence * 100,
+            "prediction_time": time.time(),
+            "frequency_consistency": frequency_consistency,
+            "prosody_naturality": prosody_naturality,
+            "voice_timbre_consistency": voice_timbre_consistency
         }
     
     def postprocess(self, prediction):
         """Format prediction results"""
-        case_id = str(uuid.uuid4())
-        
-        result = "AUTHENTIC MEDIA" if prediction["authenticity_score"] >= 0.5 else "MANIPULATED MEDIA"
-        confidence = prediction["authenticity_score"] * 100 if result == "AUTHENTIC MEDIA" else (1 - prediction["authenticity_score"]) * 100
-        
-        # Generate detailed findings
-        key_findings = []
-        if result == "AUTHENTIC MEDIA":
-            key_findings = [
-                "Natural voice cadence and breathing patterns detected",
-                "Formant transitions are physiologically consistent",
-                "Background noise shows expected environmental patterns",
-                "No evidence of synthetic generation or splicing artifacts"
+        # Add key findings specific to audio analysis
+        if prediction["authenticity"] == "MANIPULATED MEDIA":
+            prediction["key_findings"] = [
+                "Voice synthesis artifacts detected",
+                "Unnatural frequency distributions",
+                "Prosody patterns inconsistent with natural speech",
+                "Abrupt transitions in voice characteristics",
+                "Spectral anomalies in voice frequency bands"
             ]
         else:
-            # Use the specific artifacts found
-            key_findings = prediction["artifacts"]
+            prediction["key_findings"] = [
+                "Natural voice characteristics confirmed",
+                "Frequency distribution consistent with human speech",
+                "Natural prosody and intonation patterns",
+                "Smooth transitions in voice characteristics",
+                "Normal spectral distribution in voice frequency bands"
+            ]
             
-            # Add information about suspicious frequency bands if any were detected
-            if prediction["frequency_analysis"]["suspicious_bands"]:
-                bands = ", ".join(prediction["frequency_analysis"]["suspicious_bands"])
-                key_findings.append(f"Anomalous patterns detected in frequency bands: {bands}")
+        # Add timestamp
+        prediction["timestamp"] = datetime.now().isoformat()
         
-        return {
-            "authenticity": result,
-            "confidence": confidence,
-            "analysis_date": datetime.now().isoformat(),
-            "case_id": case_id,
-            "key_findings": key_findings,
-            "model_info": self.get_model_info(),
-            "frequency_analysis": prediction["frequency_analysis"]
-        }
+        return prediction
+
 
 class VideoDeepfakeModel(BaseDetectionModel):
     """Advanced video deepfake detection model"""
     
-    def __init__(self, version: str = "2.1"):
-        super().__init__("TemporalInconsistency", version)
-        self.accuracy = 0.94
+    def __init__(self):
+        super().__init__("SatyaAI Video Forensics", "2.1")
+        self.type = "CNN+LSTM"
         
-        # In a real implementation, we would load the model here
-        # self.model = load_model("path/to/video_model.h5")
-    
     def preprocess(self, video_data):
         """Preprocess video data"""
-        # Simulate preprocessing steps: frame extraction, optical flow calculation, etc.
-        time.sleep(1.0)
-        return video_data
+        # In a real implementation, this would:
+        # 1. Extract frames from video
+        # 2. Perform face detection on key frames
+        # 3. Normalize frames
+        # 4. Generate frame sequences for temporal analysis
+        
+        # For the demo, we'll simulate this process
+        try:
+            # Process video data
+            return video_data
+        except Exception as e:
+            print(f"Error preprocessing video: {str(e)}")
+            return video_data
     
-    def predict(self, preprocessed_data):
+    def predict(self, video_data):
         """Run video forensics detection"""
-        # Simulate prediction with more realistic timing
-        time.sleep(2.5)
+        # In a real implementation, this would:
+        # 1. Run frames through a CNN for spatial analysis
+        # 2. Apply LSTM for temporal consistency analysis
+        # 3. Detect frame manipulation artifacts
         
-        # Advanced randomization
-        authenticity_score = np.random.beta(4, 2) if np.random.random() > 0.4 else np.random.beta(2, 4)
-        manipulated = authenticity_score < 0.5
+        # For the demo, we'll return simulated results
+        is_fake = random.random() > 0.6
+        confidence = random.uniform(0.7, 0.95)
         
-        # Generate specific artifacts for video
-        artifacts = []
-        suspicious_frames = []
-        
-        if manipulated:
-            possible_artifacts = [
-                "Temporal inconsistencies in facial movements",
-                "Unnatural eye blink patterns",
-                "Flickering or warping artifacts between frames",
-                "Inconsistent lighting changes",
-                "Boundary artifacts around moving objects",
-                "Unnatural motion blur patterns",
-                "Perspective inconsistencies during head movements"
-            ]
-            # Select 3-5 artifacts
-            num_artifacts = np.random.randint(3, 6)
-            artifacts = np.random.choice(possible_artifacts, num_artifacts, replace=False).tolist()
+        if is_fake:
+            authenticity = "MANIPULATED MEDIA"
+            confidence = random.uniform(0.6, 0.85)
+        else:
+            authenticity = "AUTHENTIC MEDIA"
             
-            # Generate suspicious frame ranges
-            num_frame_ranges = np.random.randint(1, 4)
-            total_frames = 300  # Assume a 10-second video at 30fps
-            
-            for _ in range(num_frame_ranges):
-                start = np.random.randint(0, total_frames - 30)
-                end = start + np.random.randint(15, 60)
-                suspicious_frames.append(f"{start}-{end}")
+        # Add video-specific metrics
+        temporal_consistency = random.uniform(0.8, 0.95)
+        audio_visual_sync = random.uniform(0.8, 0.95)
+        face_movement_naturality = random.uniform(0.75, 0.95)
+        
+        if is_fake:
+            temporal_consistency = random.uniform(0.3, 0.7)
+            audio_visual_sync = random.uniform(0.4, 0.75)
+            face_movement_naturality = random.uniform(0.3, 0.7)
         
         return {
-            "authenticity_score": float(authenticity_score),
-            "manipulated": manipulated,
-            "artifacts": artifacts,
-            "suspicious_frames": suspicious_frames,
-            "analysis_metrics": {
-                "temporal_consistency": float(np.random.uniform(0.2, 0.8)) if manipulated else float(np.random.uniform(0.7, 0.98)),
-                "lighting_consistency": float(np.random.uniform(0.3, 0.9)) if manipulated else float(np.random.uniform(0.8, 0.99))
-            }
+            "authenticity": authenticity,
+            "confidence": confidence * 100,
+            "prediction_time": time.time(),
+            "temporal_consistency": temporal_consistency,
+            "audio_visual_sync": audio_visual_sync,
+            "face_movement_naturality": face_movement_naturality
         }
     
     def postprocess(self, prediction):
         """Format prediction results"""
-        case_id = str(uuid.uuid4())
-        
-        result = "AUTHENTIC MEDIA" if prediction["authenticity_score"] >= 0.5 else "MANIPULATED MEDIA"
-        confidence = prediction["authenticity_score"] * 100 if result == "AUTHENTIC MEDIA" else (1 - prediction["authenticity_score"]) * 100
-        
-        # Generate detailed findings
-        key_findings = []
-        if result == "AUTHENTIC MEDIA":
-            key_findings = [
-                "Temporal analysis shows natural motion patterns",
-                "Eye blink rate within normal physiological range",
-                "Lighting changes are physically consistent",
-                "No evidence of frame manipulation or synthetic generation artifacts"
+        # Add key findings specific to video analysis
+        if prediction["authenticity"] == "MANIPULATED MEDIA":
+            prediction["key_findings"] = [
+                "Temporal inconsistencies detected across frames",
+                "Unnatural movement patterns in face regions",
+                "Audio-visual synchronization issues",
+                "Frame transition anomalies identified",
+                "Inconsistent lighting changes between frames"
             ]
         else:
-            # Use the specific artifacts found
-            key_findings = prediction["artifacts"]
+            prediction["key_findings"] = [
+                "Temporal consistency verified across frames",
+                "Natural movement patterns in face regions",
+                "Proper audio-visual synchronization",
+                "Smooth and consistent frame transitions",
+                "Natural lighting changes between frames"
+            ]
             
-            # Add information about suspicious frames if any were detected
-            if prediction["suspicious_frames"]:
-                frames = ", ".join(prediction["suspicious_frames"])
-                key_findings.append(f"Manipulated frame sequences detected at frames: {frames}")
-                
-            # Add metric-based findings
-            metrics = prediction["analysis_metrics"]
-            if metrics["temporal_consistency"] < 0.6:
-                key_findings.append(f"Low temporal consistency score: {metrics['temporal_consistency']:.2f}")
-            if metrics["lighting_consistency"] < 0.7:
-                key_findings.append(f"Low lighting consistency score: {metrics['lighting_consistency']:.2f}")
+        # Add timestamp
+        prediction["timestamp"] = datetime.now().isoformat()
         
-        return {
-            "authenticity": result,
-            "confidence": confidence,
-            "analysis_date": datetime.now().isoformat(),
-            "case_id": case_id,
-            "key_findings": key_findings,
-            "model_info": self.get_model_info(),
-            "metrics": prediction["analysis_metrics"],
-            "suspicious_frames": prediction["suspicious_frames"] if result == "MANIPULATED MEDIA" else []
-        }
+        return prediction
+
 
 class MultimodalFusionModel(BaseDetectionModel):
     """Advanced multimodal fusion model that combines evidence from multiple sources"""
     
     def __init__(self):
-        super().__init__("MultimodalFusion", "3.0")
+        super().__init__("SatyaAI Multimodal Fusion", "3.0")
+        self.type = "Transformer"
         self.face_model = FaceForensicsModel()
         self.audio_model = AudioDeepfakeModel()
         self.video_model = VideoDeepfakeModel()
         
-        # Fusion weights (in reality, these would be learned)
-        self.weights = {
-            "face": 0.4,
-            "audio": 0.3,
-            "video": 0.3
-        }
-    
     def preprocess(self, data_dict):
         """Preprocess multiple data types"""
-        # Process each modality separately
-        processed = {}
+        # Process each modality with its specific preprocessor
+        processed_data = {}
         
-        if "image" in data_dict:
-            processed["image"] = self.face_model.preprocess(data_dict["image"])
-        
-        if "audio" in data_dict:
-            processed["audio"] = self.audio_model.preprocess(data_dict["audio"])
-        
-        if "video" in data_dict:
-            processed["video"] = self.video_model.preprocess(data_dict["video"])
+        if 'image' in data_dict and data_dict['image'] is not None:
+            processed_data['image'] = self.face_model.preprocess(data_dict['image'])
             
-        return processed
+        if 'audio' in data_dict and data_dict['audio'] is not None:
+            processed_data['audio'] = self.audio_model.preprocess(data_dict['audio'])
+            
+        if 'video' in data_dict and data_dict['video'] is not None:
+            processed_data['video'] = self.video_model.preprocess(data_dict['video'])
+            
+        return processed_data
     
-    def predict(self, preprocessed_data):
+    def predict(self, processed_data):
         """Run multimodal prediction by fusing results from individual models"""
-        # Get predictions from each model
+        # Get predictions for each available modality
         predictions = {}
-        all_artifacts = []
+        available_modalities = []
         
-        if "image" in preprocessed_data:
-            predictions["image"] = self.face_model.predict(preprocessed_data["image"])
-            all_artifacts.extend(predictions["image"].get("artifacts", []))
+        if 'image' in processed_data:
+            predictions['image'] = self.face_model.predict(processed_data['image'])
+            available_modalities.append('image')
+            
+        if 'audio' in processed_data:
+            predictions['audio'] = self.audio_model.predict(processed_data['audio'])
+            available_modalities.append('audio')
+            
+        if 'video' in processed_data:
+            predictions['video'] = self.video_model.predict(processed_data['video'])
+            available_modalities.append('video')
+            
+        # Fusion logic - in a real implementation, this would be more sophisticated
+        # For now, we'll use a weighted voting approach
+        if not predictions:
+            # No modalities available
+            return {
+                "authenticity": "UNKNOWN",
+                "confidence": 0,
+                "error": "No valid data provided for analysis"
+            }
         
-        if "audio" in preprocessed_data:
-            predictions["audio"] = self.audio_model.predict(preprocessed_data["audio"])
-            all_artifacts.extend(predictions["audio"].get("artifacts", []))
+        # Calculate weighted vote
+        authenticity_votes = {
+            "AUTHENTIC MEDIA": 0,
+            "MANIPULATED MEDIA": 0
+        }
         
-        if "video" in preprocessed_data:
-            predictions["video"] = self.video_model.predict(preprocessed_data["video"])
-            all_artifacts.extend(predictions["video"].get("artifacts", []))
-        
-        # Calculate weighted authenticity score
-        weighted_score = 0
         total_weight = 0
         
-        for modality, prediction in predictions.items():
-            if modality == "image":
-                weighted_score += prediction["authenticity_score"] * self.weights["face"]
-                total_weight += self.weights["face"]
-            elif modality == "audio":
-                weighted_score += prediction["authenticity_score"] * self.weights["audio"]
-                total_weight += self.weights["audio"]
-            elif modality == "video":
-                weighted_score += prediction["authenticity_score"] * self.weights["video"]
-                total_weight += self.weights["video"]
-        
-        # Normalize score
-        if total_weight > 0:
-            weighted_score /= total_weight
-        
-        # Calculate cross-modal consistency
-        cross_modal_consistency = 1.0
-        if len(predictions) > 1:
-            # Check if different modalities agree or disagree
-            authenticity_values = [p["authenticity_score"] >= 0.5 for p in predictions.values()]
-            if not all(authenticity_values) and any(authenticity_values):
-                # Some modalities disagree, which is suspicious
-                cross_modal_consistency = 0.6
-                
-                # If video and audio disagree, that's very suspicious
-                if "video" in predictions and "audio" in predictions:
-                    video_authentic = predictions["video"]["authenticity_score"] >= 0.5
-                    audio_authentic = predictions["audio"]["authenticity_score"] >= 0.5
-                    if video_authentic != audio_authentic:
-                        cross_modal_consistency = 0.3
-        
-        # Final decision with cross-modal evidence
-        # Lower the score if there's inconsistency between modalities
-        final_score = weighted_score * cross_modal_consistency
-        
-        return {
-            "authenticity_score": float(final_score),
-            "manipulated": final_score < 0.5,
-            "modality_scores": {k: v["authenticity_score"] for k, v in predictions.items()},
-            "cross_modal_consistency": cross_modal_consistency,
-            "artifacts": all_artifacts,
-            "individual_predictions": predictions
+        # Assign weights to each modality
+        weights = {
+            'image': 0.3,
+            'audio': 0.2,
+            'video': 0.5
         }
+        
+        for modality, prediction in predictions.items():
+            weight = weights.get(modality, 0.33)
+            authenticity = prediction["authenticity"]
+            confidence = prediction["confidence"] / 100  # Convert back to 0-1 scale
+            
+            # Weight the vote by confidence
+            authenticity_votes[authenticity] += weight * confidence
+            total_weight += weight
+        
+        # Normalize weights
+        if total_weight > 0:
+            for key in authenticity_votes:
+                authenticity_votes[key] /= total_weight
+        
+        # Make final decision
+        if authenticity_votes["MANIPULATED MEDIA"] > authenticity_votes["AUTHENTIC MEDIA"]:
+            final_authenticity = "MANIPULATED MEDIA"
+            final_confidence = authenticity_votes["MANIPULATED MEDIA"] * 100
+        else:
+            final_authenticity = "AUTHENTIC MEDIA"
+            final_confidence = authenticity_votes["AUTHENTIC MEDIA"] * 100
+        
+        # Calculate overall confidence
+        merged_prediction = {
+            "authenticity": final_authenticity,
+            "confidence": final_confidence,
+            "prediction_time": time.time(),
+            "modalities_used": available_modalities,
+            "modality_predictions": predictions
+        }
+        
+        return merged_prediction
     
     def postprocess(self, prediction):
         """Format multimodal fusion results"""
-        case_id = str(uuid.uuid4())
+        # Combine key findings from all modalities
+        all_findings = []
         
-        result = "AUTHENTIC MEDIA" if prediction["authenticity_score"] >= 0.5 else "MANIPULATED MEDIA"
-        confidence = prediction["authenticity_score"] * 100 if result == "AUTHENTIC MEDIA" else (1 - prediction["authenticity_score"]) * 100
+        if 'modality_predictions' in prediction:
+            for modality, modal_pred in prediction['modality_predictions'].items():
+                # Get processed findings from each model
+                if modality == 'image':
+                    findings = self.face_model.postprocess(modal_pred)["key_findings"]
+                elif modality == 'audio':
+                    findings = self.audio_model.postprocess(modal_pred)["key_findings"]
+                elif modality == 'video':
+                    findings = self.video_model.postprocess(modal_pred)["key_findings"]
+                
+                # Add modality prefix to each finding
+                prefixed_findings = [f"[{modality.upper()}] {finding}" for finding in findings[:2]]
+                all_findings.extend(prefixed_findings)
         
-        # Get modalities used
-        modalities_used = list(prediction["modality_scores"].keys())
-        modalities_str = ", ".join(modalities_used)
-        
-        # Generate detailed findings
-        key_findings = []
-        
-        # Add cross-modal consistency findings
-        if prediction["cross_modal_consistency"] < 0.7 and len(modalities_used) > 1:
-            key_findings.append(f"Inconsistencies detected between {modalities_str} modalities")
-            
-            # Add specific inconsistencies
-            scores = prediction["modality_scores"]
-            for m1 in modalities_used:
-                for m2 in modalities_used:
-                    if m1 < m2:  # Only compare each pair once
-                        m1_authentic = scores[m1] >= 0.5
-                        m2_authentic = scores[m2] >= 0.5
-                        if m1_authentic != m2_authentic:
-                            key_findings.append(f"Conflicting indicators between {m1} and {m2} analysis")
-        
-        # Add general findings
-        if result == "AUTHENTIC MEDIA":
-            key_findings.extend([
-                f"Cross-modal consistency verified across {modalities_str}",
-                "Temporal and spatial patterns are consistent with authentic media",
-                "No manipulation signatures detected in any modality"
+        # Add multimodal-specific findings
+        if prediction["authenticity"] == "MANIPULATED MEDIA":
+            all_findings.extend([
+                "Evidence from multiple modalities indicates manipulation",
+                "Cross-modal inconsistencies detected"
             ])
         else:
-            # Add most significant artifacts from individual modalities
-            artifacts = prediction["artifacts"]
-            selected_artifacts = list(set(artifacts))[:5]  # Limit to 5 unique artifacts
-            key_findings.extend(selected_artifacts)
-            
-            # Add fusion-specific findings
-            key_findings.append(f"Advanced multimodal analysis indicates synthetic or manipulated content")
-            
-            if prediction["cross_modal_consistency"] < 0.5:
-                key_findings.append("Significant cross-modal inconsistencies detected (strong indicator of manipulation)")
+            all_findings.extend([
+                "Consistent evidence across multiple modalities confirms authenticity",
+                "Cross-modal coherence verified"
+            ])
         
-        # Add specific modality scores
-        modality_details = {}
-        for modality, score in prediction["modality_scores"].items():
-            modality_result = "authentic" if score >= 0.5 else "manipulated"
-            modality_confidence = score * 100 if score >= 0.5 else (1 - score) * 100
-            modality_details[modality] = {
-                "result": modality_result,
-                "confidence": modality_confidence
-            }
+        # Set combined findings in the result
+        prediction["key_findings"] = all_findings
         
-        return {
-            "authenticity": result,
-            "confidence": confidence,
-            "analysis_date": datetime.now().isoformat(),
-            "case_id": case_id,
-            "key_findings": key_findings,
-            "model_info": self.get_model_info(),
-            "modalities_used": modalities_used,
-            "modality_results": modality_details,
-            "cross_modal_consistency": prediction["cross_modal_consistency"]
-        }
-
-# Initialize models for export
-face_model = FaceForensicsModel()
-audio_model = AudioDeepfakeModel()
-video_model = VideoDeepfakeModel()
-multimodal_model = MultimodalFusionModel()
-
-# Function to get appropriate model for media type
-def get_model(media_type):
-    if media_type == 'image':
-        return face_model
-    elif media_type == 'audio':
-        return audio_model
-    elif media_type == 'video':
-        return video_model
-    elif media_type == 'multimodal':
-        return multimodal_model
-    else:
-        raise ValueError(f"Unsupported media type: {media_type}")
+        # Add timestamp
+        prediction["timestamp"] = datetime.now().isoformat()
+        
+        return prediction
