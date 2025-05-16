@@ -2,38 +2,53 @@
 SatyaAI - 3D Animations Module
 This module provides 3D visualizations for the deepfake detection system
 """
-
+import os
+import base64
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib import animation, cm, colors
+from matplotlib import cm
+from io import BytesIO
 from mpl_toolkits.mplot3d import Axes3D
-import io
-import base64
-import os
 import time
-from PIL import Image, ImageDraw, ImageFont
-import logging
-
-logger = logging.getLogger(__name__)
+import random
 
 class AnimationGenerator:
     """Base class for all animations"""
     
     def __init__(self, size=(800, 600), dpi=100):
+        """Initialize with figure size and DPI"""
         self.size = size
         self.dpi = dpi
-        
+        self.theme_colors = {
+            'primary': '#0ff5fc',
+            'secondary': '#0070ff',
+            'dark': '#0a1420',
+            'darker': '#050a14',
+            'light_text': '#e9f8ff',
+            'success': '#22ff22',
+            'warning': '#ff9500',
+            'danger': '#ff3b30',
+        }
+        # Set global plot style
+        plt.style.use('dark_background')
+        plt.rcParams['axes.facecolor'] = self.theme_colors['darker']
+        plt.rcParams['figure.facecolor'] = self.theme_colors['darker']
+        plt.rcParams['text.color'] = self.theme_colors['light_text']
+        plt.rcParams['axes.labelcolor'] = self.theme_colors['light_text']
+        plt.rcParams['xtick.color'] = self.theme_colors['light_text']
+        plt.rcParams['ytick.color'] = self.theme_colors['light_text']
+    
     def save_frame(self, fig, output_path=None):
         """Save a single frame to a file or return as base64"""
         if output_path:
             fig.savefig(output_path, dpi=self.dpi, bbox_inches='tight')
             return output_path
         else:
-            buf = io.BytesIO()
+            # Save to buffer and convert to base64
+            buf = BytesIO()
             fig.savefig(buf, format='png', dpi=self.dpi, bbox_inches='tight')
             buf.seek(0)
-            img_str = base64.b64encode(buf.read()).decode('ascii')
-            return img_str
+            return base64.b64encode(buf.read()).decode('utf-8')
     
     def create_animation(self, frames=30, fps=15, output_path=None):
         """Create animation and save to file or return as base64"""
@@ -45,6 +60,45 @@ class NeuralNetworkAnimation(AnimationGenerator):
     
     def __init__(self, size=(800, 600), dpi=100):
         super().__init__(size, dpi)
+        
+        # Neural network parameters
+        self.layers = [8, 16, 32, 64, 32, 16, 8, 4, 2]  # Nodes per layer
+        self.layer_spacing = 0.5
+        
+        # Generate initial node positions
+        self.nodes = []
+        for i, layer_size in enumerate(self.layers):
+            layer = []
+            for j in range(layer_size):
+                # Position nodes in a circle
+                angle = 2 * np.pi * j / layer_size
+                radius = 0.3 + 0.05 * layer_size
+                x = radius * np.cos(angle)
+                y = radius * np.sin(angle)
+                z = i * self.layer_spacing
+                
+                # Add node with random activation
+                layer.append({
+                    'pos': (x, y, z),
+                    'activation': random.random()
+                })
+            self.nodes.append(layer)
+        
+        # Generate connections between layers
+        self.connections = []
+        for i in range(len(self.layers) - 1):
+            layer_connections = []
+            # Connect each node in current layer to every node in next layer
+            for node1 in self.nodes[i]:
+                for node2 in self.nodes[i+1]:
+                    # Random weight for connection
+                    weight = random.random()
+                    layer_connections.append({
+                        'start': node1['pos'],
+                        'end': node2['pos'],
+                        'weight': weight
+                    })
+            self.connections.append(layer_connections)
     
     def create_static_frame(self, authenticity="AUTHENTIC MEDIA", confidence=85):
         """Create a static neural network visualization"""
@@ -52,222 +106,175 @@ class NeuralNetworkAnimation(AnimationGenerator):
         ax = fig.add_subplot(111, projection='3d')
         
         # Set background color
-        fig.patch.set_facecolor('#0A1128')
-        ax.set_facecolor('#0A1128')
+        ax.set_facecolor(self.theme_colors['darker'])
         
-        # Remove axes and grid
+        # Determine color based on authenticity
+        main_color = self.theme_colors['success'] if authenticity == "AUTHENTIC MEDIA" else self.theme_colors['danger']
+        
+        # Plot connections
+        for i, layer_connections in enumerate(self.connections):
+            for conn in layer_connections:
+                xs = [conn['start'][0], conn['end'][0]]
+                ys = [conn['start'][1], conn['end'][1]]
+                zs = [conn['start'][2], conn['end'][2]]
+                
+                # Color based on weight and confidence
+                weight_color = conn['weight'] * (confidence / 100)
+                ax.plot(xs, ys, zs, alpha=weight_color*0.5, 
+                        color=main_color, linewidth=weight_color*2)
+        
+        # Plot nodes
+        for i, layer in enumerate(self.nodes):
+            for node in layer:
+                x, y, z = node['pos']
+                
+                # Size and color based on activation and confidence
+                size = 50 + 150 * node['activation'] * (confidence / 100)
+                
+                # Determine color for node
+                if i == 0:  # Input layer
+                    color = self.theme_colors['primary']
+                elif i == len(self.nodes) - 1:  # Output layer
+                    color = main_color
+                else:  # Hidden layers
+                    color = self.theme_colors['secondary']
+                
+                ax.scatter(x, y, z, s=size, c=color, alpha=0.8, edgecolors='white', linewidth=0.5)
+        
+        # Add title and labels
+        title_y_pos = 1.05
+        title = fig.suptitle(f"Neural Network Analysis: {authenticity}", 
+                           color=main_color, fontsize=16, y=title_y_pos, fontweight='bold')
+        
+        confidence_text = ax.text2D(0.5, 0.95, f"Confidence: {confidence:.1f}%", 
+                                   transform=ax.transAxes, fontsize=12, ha='center',
+                                   color=self.theme_colors['light_text'])
+        
+        # Add SatyaAI logo/watermark
+        fig.text(0.05, 0.02, "SatyaAI", fontsize=14, color=self.theme_colors['primary'], 
+                 fontstyle='italic', fontweight='bold')
+        
+        # Set the view angle
+        ax.view_init(elev=20, azim=30)
+        
+        # Remove axis labels and ticks
         ax.set_axis_off()
         
-        # Create network layers
-        layer_sizes = [8, 16, 32, 16, 8, 4, 1]
-        layer_positions = np.linspace(-3, 3, len(layer_sizes))
-        
-        # Generate node positions
-        nodes = []
-        for i, size in enumerate(layer_sizes):
-            z = layer_positions[i]
-            for j in range(size):
-                angle = j * 2 * np.pi / size
-                r = 1.5 * np.sqrt(size) / 4  # Radius based on layer size
-                x = r * np.cos(angle)
-                y = r * np.sin(angle)
-                nodes.append((x, y, z))
-        
-        nodes = np.array(nodes)
-        
-        # Generate connections between adjacent layers
-        connections = []
-        node_index = 0
-        for i in range(len(layer_sizes) - 1):
-            layer1_size = layer_sizes[i]
-            layer2_size = layer_sizes[i + 1]
-            
-            for j in range(layer1_size):
-                idx1 = node_index + j
-                for k in range(layer2_size):
-                    idx2 = node_index + layer1_size + k
-                    connections.append((idx1, idx2))
-        
-            node_index += layer1_size
-        
-        # Colors based on authenticity
-        if authenticity == "AUTHENTIC MEDIA":
-            edge_color = '#00FF88'
-            node_color = '#00D870'
-        else:
-            edge_color = '#FF3A00'
-            node_color = '#D83000'
-            
-        # Plot connections first (edges)
-        for start, end in connections:
-            if np.random.random() < 0.3:  # Only draw some connections for clarity
-                ax.plot3D(
-                    [nodes[start][0], nodes[end][0]],
-                    [nodes[start][1], nodes[end][1]],
-                    [nodes[start][2], nodes[end][2]],
-                    alpha=0.3, linewidth=0.5, color=edge_color
-                )
-        
-        # Plot neurons (nodes)
-        ax.scatter(
-            nodes[:, 0], nodes[:, 1], nodes[:, 2],
-            c=[node_color] * len(nodes),
-            s=50 * (0.1 + 0.9 * np.random.random(len(nodes))),  # Varying sizes
-            alpha=0.7, edgecolors='none'
-        )
-            
-        # Set consistent viewpoint
-        ax.view_init(elev=20, azim=30)
-        ax.set_xlim(-2, 2)
-        ax.set_ylim(-2, 2)
-        ax.set_zlim(-3.5, 3.5)
-        
-        # Add title
-        authenticity_color = '#00FF88' if authenticity == "AUTHENTIC MEDIA" else '#FF3A00'
-        title = f"{'AUTHENTIC MEDIA' if authenticity == 'AUTHENTIC MEDIA' else 'MANIPULATED MEDIA'}"
-        subtitle = f"Confidence: {confidence}%"
-        
-        ax.text2D(0.5, 0.95, title, transform=ax.transAxes, 
-                 fontsize=14, fontweight='bold', ha='center', color=authenticity_color)
-        ax.text2D(0.5, 0.9, subtitle, transform=ax.transAxes, 
-                 fontsize=12, ha='center', color='white', alpha=0.8)
+        # Set plot limits
+        ax.set_xlim(-1, 1)
+        ax.set_ylim(-1, 1)
+        ax.set_zlim(0, (len(self.layers) - 1) * self.layer_spacing)
         
         return fig
     
     def create_animation(self, frames=30, fps=15, authenticity="AUTHENTIC MEDIA", confidence=85, output_path=None):
         """Create a neural network animation"""
-        fig = plt.figure(figsize=(self.size[0]/self.dpi, self.size[1]/self.dpi), dpi=self.dpi)
-        ax = fig.add_subplot(111, projection='3d')
-        
-        # Set background color
-        fig.patch.set_facecolor('#0A1128')
-        ax.set_facecolor('#0A1128')
-        
-        # Remove axes and grid
-        ax.set_axis_off()
-        
-        # Create network layers
-        layer_sizes = [8, 16, 32, 16, 8, 4, 1]
-        layer_positions = np.linspace(-3, 3, len(layer_sizes))
-        
-        # Generate node positions
-        nodes = []
-        for i, size in enumerate(layer_sizes):
-            z = layer_positions[i]
-            for j in range(size):
-                angle = j * 2 * np.pi / size
-                r = 1.5 * np.sqrt(size) / 4  # Radius based on layer size
-                x = r * np.cos(angle)
-                y = r * np.sin(angle)
-                nodes.append((x, y, z))
-        
-        nodes = np.array(nodes)
-        
-        # Generate connections between adjacent layers
-        connections = []
-        node_index = 0
-        for i in range(len(layer_sizes) - 1):
-            layer1_size = layer_sizes[i]
-            layer2_size = layer_sizes[i + 1]
-            
-            for j in range(layer1_size):
-                idx1 = node_index + j
-                for k in range(layer2_size):
-                    idx2 = node_index + layer1_size + k
-                    connections.append((idx1, idx2))
-        
-            node_index += layer1_size
-        
-        # Colors based on authenticity
-        if authenticity == "AUTHENTIC MEDIA":
-            edge_color = '#00FF88'
-            node_color = '#00D870'
-        else:
-            edge_color = '#FF3A00'
-            node_color = '#D83000'
-            
-        # Set title
-        authenticity_color = '#00FF88' if authenticity == "AUTHENTIC MEDIA" else '#FF3A00'
-        title = f"{'AUTHENTIC MEDIA' if authenticity == 'AUTHENTIC MEDIA' else 'MANIPULATED MEDIA'}"
-        subtitle = f"Confidence: {confidence}%"
-        
-        ax.text2D(0.5, 0.95, title, transform=ax.transAxes, 
-                 fontsize=14, fontweight='bold', ha='center', color=authenticity_color)
-        ax.text2D(0.5, 0.9, subtitle, transform=ax.transAxes, 
-                 fontsize=12, ha='center', color='white', alpha=0.8)
-        
-        # Plot connections (edges)
-        edge_plots = []
-        for start, end in connections:
-            if np.random.random() < 0.3:  # Only draw some connections for clarity
-                line, = ax.plot3D(
-                    [nodes[start][0], nodes[end][0]],
-                    [nodes[start][1], nodes[end][1]],
-                    [nodes[start][2], nodes[end][2]],
-                    alpha=0.3, linewidth=0.5, color=edge_color
-                )
-                edge_plots.append(line)
-        
-        # Plot neurons (nodes)
-        scatter = ax.scatter(
-            nodes[:, 0], nodes[:, 1], nodes[:, 2],
-            c=[node_color] * len(nodes),
-            s=50 * (0.1 + 0.9 * np.random.random(len(nodes))),  # Varying sizes
-            alpha=0.7, edgecolors='none'
-        )
-        
-        # Set consistent viewpoint
-        ax.view_init(elev=20, azim=30)
-        ax.set_xlim(-2, 2)
-        ax.set_ylim(-2, 2)
-        ax.set_zlim(-3.5, 3.5)
-        
-        # Animation update function
+        # Function to update the plot for each frame
         def update(frame):
-            # Rotate the view
-            ax.view_init(elev=20, azim=30 + frame * 3)
+            # Create a new figure for each frame
+            fig = plt.figure(figsize=(self.size[0]/self.dpi, self.size[1]/self.dpi), dpi=self.dpi)
+            ax = fig.add_subplot(111, projection='3d')
             
-            # Pulse the nodes by changing their size
-            time_factor = frame / frames
-            sizes = 50 * (0.3 + 0.7 * (0.5 + 0.5 * np.sin(time_factor * 2 * np.pi + np.arange(len(nodes)))))
-            scatter._sizes = sizes
+            # Set background color
+            ax.set_facecolor(self.theme_colors['darker'])
             
-            # Pulse the edges
-            for i, (start, end) in enumerate(connections):
-                if i < len(edge_plots):
-                    alpha = 0.1 + 0.3 * (0.5 + 0.5 * np.sin(time_factor * 2 * np.pi + i * 0.1))
-                    edge_plots[i].set_alpha(alpha)
+            # Determine color based on authenticity
+            main_color = self.theme_colors['success'] if authenticity == "AUTHENTIC MEDIA" else self.theme_colors['danger']
             
-            return [scatter] + edge_plots
-        
-        # Create the animation
-        anim = animation.FuncAnimation(
-            fig, update, frames=frames, interval=1000/fps, blit=True
-        )
-        
-        if output_path:
-            # Save as video or GIF
-            try:
-                if output_path.endswith('.mp4'):
-                    writer = animation.FFMpegWriter(fps=fps)
-                    anim.save(output_path, writer=writer)
-                else:
-                    anim.save(output_path, writer='pillow', fps=fps)
-                return output_path
-            except Exception as e:
-                logger.error(f"Error saving animation: {e}")
-                # Fallback: save a single frame
-                return self.save_frame(fig, output_path)
-        else:
-            # Return a sequence of base64 encoded frames
-            frames_base64 = []
-            for i in range(frames):
-                update(i)
-                frame_base64 = self.save_frame(fig)
-                frames_base64.append(frame_base64)
+            # Update activation values for animation
+            for layer in self.nodes:
+                for node in layer:
+                    # Adjust activation with some random fluctuation
+                    node['activation'] = min(1.0, max(0.1, node['activation'] + 
+                                                    random.uniform(-0.1, 0.1)))
             
+            # Update connection weights
+            for layer_connections in self.connections:
+                for conn in layer_connections:
+                    # Adjust weight with some random fluctuation
+                    conn['weight'] = min(1.0, max(0.1, conn['weight'] + 
+                                                  random.uniform(-0.05, 0.05)))
+            
+            # Rotate the view angle
+            ax.view_init(elev=20, azim=30 + frame * (360/frames))
+            
+            # Plot connections with animation effects
+            for i, layer_connections in enumerate(self.connections):
+                for conn in layer_connections:
+                    xs = [conn['start'][0], conn['end'][0]]
+                    ys = [conn['start'][1], conn['end'][1]]
+                    zs = [conn['start'][2], conn['end'][2]]
+                    
+                    # Pulse effect on connection opacity
+                    pulse = 0.5 + 0.5 * np.sin(frame * 0.2 + i * 0.5)
+                    
+                    # Color based on weight, confidence and pulse
+                    weight_color = conn['weight'] * (confidence / 100) * pulse
+                    ax.plot(xs, ys, zs, alpha=weight_color*0.5, 
+                            color=main_color, linewidth=weight_color*2)
+            
+            # Plot nodes with animation effects
+            for i, layer in enumerate(self.nodes):
+                for j, node in enumerate(layer):
+                    x, y, z = node['pos']
+                    
+                    # Pulse effect on node size
+                    pulse = 1.0 + 0.3 * np.sin(frame * 0.2 + i * 0.5 + j * 0.2)
+                    
+                    # Size and color based on activation, confidence and pulse
+                    size = (50 + 150 * node['activation'] * (confidence / 100)) * pulse
+                    
+                    # Determine color for node
+                    if i == 0:  # Input layer
+                        color = self.theme_colors['primary']
+                    elif i == len(self.nodes) - 1:  # Output layer
+                        color = main_color
+                    else:  # Hidden layers
+                        color = self.theme_colors['secondary']
+                    
+                    ax.scatter(x, y, z, s=size, c=color, alpha=0.8, edgecolors='white', linewidth=0.5)
+            
+            # Add title and labels
+            title_y_pos = 1.05
+            title = fig.suptitle(f"Neural Network Analysis: {authenticity}", 
+                               color=main_color, fontsize=16, y=title_y_pos, fontweight='bold')
+            
+            confidence_text = ax.text2D(0.5, 0.95, f"Confidence: {confidence:.1f}%", 
+                                       transform=ax.transAxes, fontsize=12, ha='center',
+                                       color=self.theme_colors['light_text'])
+            
+            # Add SatyaAI logo/watermark
+            fig.text(0.05, 0.02, "SatyaAI", fontsize=14, color=self.theme_colors['primary'], 
+                     fontstyle='italic', fontweight='bold')
+                     
+            # Add processing text with frame counter
+            process_text = f"Processing frame {frame+1}/{frames}"
+            fig.text(0.95, 0.02, process_text, fontsize=10, color=self.theme_colors['light_text'],
+                     ha='right')
+            
+            # Remove axis labels and ticks
+            ax.set_axis_off()
+            
+            # Set plot limits
+            ax.set_xlim(-1, 1)
+            ax.set_ylim(-1, 1)
+            ax.set_zlim(0, (len(self.layers) - 1) * self.layer_spacing)
+            
+            # Save the frame
+            frame_data = self.save_frame(fig, 
+                                         output_path=f"{output_path}_frame_{frame}.png" if output_path else None)
+            
+            # Close the figure to avoid memory leak
             plt.close(fig)
-            return frames_base64
+            
+            return frame_data
+        
+        # Generate and collect all frames
+        frame_data = []
+        for i in range(frames):
+            frame_data.append(update(i))
+        
+        return frame_data
 
 
 class BlockchainAnimation(AnimationGenerator):
@@ -275,267 +282,245 @@ class BlockchainAnimation(AnimationGenerator):
     
     def __init__(self, size=(800, 600), dpi=100):
         super().__init__(size, dpi)
+        
+        # Generate blockchain structure
+        self.num_blocks = 10
+        self.blocks = []
+        
+        # Create blockchain blocks with random data
+        for i in range(self.num_blocks):
+            self.blocks.append({
+                'index': i,
+                'pos': (0, 0, i),
+                'hash': ''.join(random.choices('0123456789abcdef', k=16)),
+                'prev_hash': ''.join(random.choices('0123456789abcdef', k=16)) if i > 0 else '0' * 16,
+                'rotation': random.uniform(0, 360)
+            })
     
     def create_static_frame(self, is_verified=True, verification_progress=100):
         """Create a static blockchain visualization"""
         fig = plt.figure(figsize=(self.size[0]/self.dpi, self.size[1]/self.dpi), dpi=self.dpi)
         ax = fig.add_subplot(111, projection='3d')
         
-        # Set dark background
-        fig.patch.set_facecolor('#10172A')
-        ax.set_facecolor('#10172A')
+        # Set background color
+        ax.set_facecolor(self.theme_colors['darker'])
         
-        # Remove axes and grid
-        ax.set_axis_off()
-        
-        # Create blockchain
-        num_blocks = 12
-        block_positions = np.zeros((num_blocks, 3))
-        
-        # Position blocks in a helix
-        t = np.linspace(0, 4 * np.pi, num_blocks)
-        radius = 3
-        block_positions[:, 0] = radius * np.cos(t)  # x
-        block_positions[:, 1] = radius * np.sin(t)  # y
-        block_positions[:, 2] = np.linspace(-3, 3, num_blocks)  # z
-        
-        # Colors based on verification status
-        if is_verified:
-            block_color = '#22cc88'
-            edge_color = '#00aa66'
-        else:
-            block_color = '#cc5522'
-            edge_color = '#aa3300'
-            
-        # Determine how many blocks to highlight based on progress
-        progress_blocks = int(np.ceil(num_blocks * verification_progress / 100))
-        
-        # Plot connections (chain links)
-        for i in range(num_blocks - 1):
-            if i < progress_blocks - 1:
-                color = edge_color
-                alpha = 0.8
-            else:
-                color = '#4a8dff'
-                alpha = 0.4
-                
-            ax.plot3D(
-                block_positions[i:i+2, 0],
-                block_positions[i:i+2, 1],
-                block_positions[i:i+2, 2],
-                color=color, alpha=alpha, linewidth=2
-            )
+        # Determine main color based on verification status
+        main_color = self.theme_colors['success'] if is_verified else self.theme_colors['danger']
         
         # Plot blockchain blocks
-        for i in range(num_blocks):
-            if i < progress_blocks:
-                color = block_color
-                alpha = 0.9
-            else:
-                color = '#2a5db0'
-                alpha = 0.6
+        for i, block in enumerate(self.blocks):
+            # Only show blocks up to verification progress
+            if (i / self.num_blocks) * 100 <= verification_progress:
+                # Block dimensions
+                width, height, depth = 0.8, 0.4, 0.3
                 
-            ax.scatter(
-                block_positions[i, 0],
-                block_positions[i, 1],
-                block_positions[i, 2],
-                color=color, alpha=alpha,
-                s=300, edgecolors='white', linewidths=1
-            )
-            
-            # Add hash-like text for each block
-            hash_text = f"#{hex(i + 0x1000)[2:]}"
-            ax.text(
-                block_positions[i, 0], 
-                block_positions[i, 1], 
-                block_positions[i, 2] + 0.2, 
-                hash_text, 
-                color='white', 
-                fontsize=8, 
-                ha='center', 
-                va='center'
-            )
+                # Block position
+                x, y, z = 0, 0, i * 0.6
+                
+                # Create a cuboid to represent the block
+                xx, yy = np.meshgrid(
+                    [x - width/2, x + width/2],
+                    [y - height/2, y + height/2]
+                )
+                
+                # Draw block faces
+                # Bottom face
+                ax.plot_surface(xx, yy, np.ones_like(xx) * (z - depth/2),
+                                color=main_color, alpha=0.7, edgecolor='white', shade=True)
+                
+                # Top face
+                ax.plot_surface(xx, yy, np.ones_like(xx) * (z + depth/2),
+                                color=main_color, alpha=0.7, edgecolor='white', shade=True)
+                
+                # Side faces
+                for dx, dy in [(-width/2, 0), (width/2, 0), (0, -height/2), (0, height/2)]:
+                    if dx != 0:  # X-facing side
+                        x_face = np.ones((2, 2)) * (x + dx)
+                        y_face = np.array([[y - height/2, y + height/2], [y - height/2, y + height/2]])
+                        z_face = np.array([[z - depth/2, z - depth/2], [z + depth/2, z + depth/2]])
+                    else:  # Y-facing side
+                        x_face = np.array([[x - width/2, x + width/2], [x - width/2, x + width/2]])
+                        y_face = np.ones((2, 2)) * (y + dy)
+                        z_face = np.array([[z - depth/2, z - depth/2], [z + depth/2, z + depth/2]])
+                    
+                    ax.plot_surface(x_face, y_face, z_face,
+                                    color=main_color, alpha=0.7, edgecolor='white', shade=True)
+                
+                # Draw hash text
+                ax.text(x, y, z, f"#{block['index']} {block['hash'][:4]}...",
+                        color=self.theme_colors['light_text'], fontsize=8,
+                        horizontalalignment='center', verticalalignment='center')
+                
+                # Draw connections between blocks
+                if i > 0:
+                    ax.plot([0, 0], [0, 0], [z - 0.6, z - 0.3],
+                            color=main_color, linewidth=2, linestyle='-')
         
-        # Set viewpoint
+        # Add title based on verification status
+        title_text = "BLOCKCHAIN VERIFIED" if is_verified else "VERIFICATION FAILED"
+        title = fig.suptitle(title_text, color=main_color, fontsize=16, y=1.05, fontweight='bold')
+        
+        # Add verification progress
+        progress_text = ax.text2D(0.5, 0.95, f"Verification Progress: {verification_progress:.1f}%", 
+                                 transform=ax.transAxes, fontsize=12, ha='center',
+                                 color=self.theme_colors['light_text'])
+        
+        # Add SatyaChain watermark
+        fig.text(0.05, 0.02, "SatyaChain™", fontsize=14, color=self.theme_colors['primary'], 
+                 fontstyle='italic', fontweight='bold')
+        
+        # Set the view angle
         ax.view_init(elev=30, azim=45)
-        ax.set_xlim(-5, 5)
-        ax.set_ylim(-5, 5)
-        ax.set_zlim(-5, 5)
         
-        # Add title
-        verification_color = '#22cc88' if is_verified else '#cc5522'
-        if verification_progress < 100:
-            title = f"SatyaChain™ Verification in Progress"
-            subtitle = f"Progress: {verification_progress}%"
-        else:
-            status = "VERIFIED" if is_verified else "FAILED"
-            title = f"SatyaChain™ Verification: {status}"
-            subtitle = "Blockchain verification complete"
-            
-        ax.text2D(0.5, 0.95, title, transform=ax.transAxes, 
-                 fontsize=14, fontweight='bold', ha='center', color=verification_color)
-        ax.text2D(0.5, 0.9, subtitle, transform=ax.transAxes, 
-                 fontsize=12, ha='center', color='white', alpha=0.8)
+        # Remove axis labels and ticks
+        ax.set_axis_off()
+        
+        # Set plot limits
+        margin = 1
+        ax.set_xlim(-margin, margin)
+        ax.set_ylim(-margin, margin)
+        ax.set_zlim(-1, self.num_blocks * 0.6)
         
         return fig
     
     def create_animation(self, frames=30, fps=15, is_verified=True, output_path=None):
         """Create a blockchain animation"""
-        fig = plt.figure(figsize=(self.size[0]/self.dpi, self.size[1]/self.dpi), dpi=self.dpi)
-        ax = fig.add_subplot(111, projection='3d')
-        
-        # Set dark background
-        fig.patch.set_facecolor('#10172A')
-        ax.set_facecolor('#10172A')
-        
-        # Remove axes and grid
-        ax.set_axis_off()
-        
-        # Create blockchain
-        num_blocks = 12
-        block_positions = np.zeros((num_blocks, 3))
-        
-        # Position blocks in a helix
-        t = np.linspace(0, 4 * np.pi, num_blocks)
-        radius = 3
-        block_positions[:, 0] = radius * np.cos(t)  # x
-        block_positions[:, 1] = radius * np.sin(t)  # y
-        block_positions[:, 2] = np.linspace(-3, 3, num_blocks)  # z
-        
-        # Colors based on verification status
-        if is_verified:
-            verified_block_color = '#22cc88'
-            verified_edge_color = '#00aa66'
-        else:
-            verified_block_color = '#cc5522'
-            verified_edge_color = '#aa3300'
-        
-        pending_block_color = '#2a5db0'
-        pending_edge_color = '#4a8dff'
-        
-        # Plot initial connections (chain links)
-        lines = []
-        for i in range(num_blocks - 1):
-            line, = ax.plot3D(
-                block_positions[i:i+2, 0],
-                block_positions[i:i+2, 1],
-                block_positions[i:i+2, 2],
-                color=pending_edge_color, alpha=0.4, linewidth=2
-            )
-            lines.append(line)
-        
-        # Plot initial blockchain blocks
-        blocks = ax.scatter(
-            block_positions[:, 0],
-            block_positions[:, 1],
-            block_positions[:, 2],
-            color=pending_block_color, alpha=0.6,
-            s=300, edgecolors='white', linewidths=1
-        )
-        
-        # Add hash-like text for each block
-        texts = []
-        for i in range(num_blocks):
-            hash_text = f"#{hex(i + 0x1000)[2:]}"
-            text = ax.text(
-                block_positions[i, 0], 
-                block_positions[i, 1], 
-                block_positions[i, 2] + 0.2, 
-                hash_text, 
-                color='white', 
-                fontsize=8, 
-                ha='center', 
-                va='center'
-            )
-            texts.append(text)
-        
-        # Set viewpoint
-        ax.view_init(elev=30, azim=45)
-        ax.set_xlim(-5, 5)
-        ax.set_ylim(-5, 5)
-        ax.set_zlim(-5, 5)
-        
-        # Add title
-        verification_color = '#22cc88' if is_verified else '#cc5522'
-        title_obj = ax.text2D(0.5, 0.95, "SatyaChain™ Verification in Progress", 
-                             transform=ax.transAxes, fontsize=14, fontweight='bold', 
-                             ha='center', color=verification_color)
-        subtitle_obj = ax.text2D(0.5, 0.9, "Progress: 0%", 
-                                transform=ax.transAxes, fontsize=12, 
-                                ha='center', color='white', alpha=0.8)
-        
-        # Animation update function
+        # Function to update the plot for each frame
         def update(frame):
-            # Rotate the view
-            ax.view_init(elev=30, azim=45 + frame * 2)
+            # Create a new figure for each frame
+            fig = plt.figure(figsize=(self.size[0]/self.dpi, self.size[1]/self.dpi), dpi=self.dpi)
+            ax = fig.add_subplot(111, projection='3d')
             
-            # Calculate progress
-            progress = min(100, int((frame / (frames - 1)) * 100))
-            progress_blocks = int(np.ceil(num_blocks * progress / 100))
+            # Set background color
+            ax.set_facecolor(self.theme_colors['darker'])
             
-            # Update blocks colors
-            colors = []
-            sizes = []
-            for i in range(num_blocks):
-                if i < progress_blocks:
-                    colors.append(verified_block_color if is_verified else verified_block_color)
-                    sizes.append(300 * (1.0 + 0.1 * np.sin(frame * 0.2 + i * 0.5)))
-                else:
-                    colors.append(pending_block_color)
-                    sizes.append(300)
+            # Calculate verification progress for this frame
+            progress = min(100, (frame + 1) / frames * 100 * 2)  # Complete by 50% of frames
             
-            # Update block colors and sizes
-            blocks._facecolor3d = colors
-            blocks._sizes = sizes
-            
-            # Update chain links
-            for i, line in enumerate(lines):
-                if i < progress_blocks - 1:
-                    line.set_color(verified_edge_color if is_verified else verified_edge_color)
-                    line.set_alpha(0.8)
-                else:
-                    line.set_color(pending_edge_color)
-                    line.set_alpha(0.4)
-            
-            # Update title
-            if progress < 100:
-                title_obj.set_text(f"SatyaChain™ Verification in Progress")
-                subtitle_obj.set_text(f"Progress: {progress}%")
+            # Determine color based on verification status and current progress
+            if is_verified:
+                main_color = self.theme_colors['success'] if progress == 100 else self.theme_colors['primary']
             else:
-                status = "VERIFIED" if is_verified else "FAILED"
-                title_obj.set_text(f"SatyaChain™ Verification: {status}")
-                subtitle_obj.set_text("Blockchain verification complete")
+                main_color = self.theme_colors['danger'] if progress == 100 else self.theme_colors['warning']
             
-            return [blocks, title_obj, subtitle_obj] + lines + texts
-        
-        # Create the animation
-        anim = animation.FuncAnimation(
-            fig, update, frames=frames, interval=1000/fps, blit=True
-        )
-        
-        if output_path:
-            # Save as video or GIF
-            try:
-                if output_path.endswith('.mp4'):
-                    writer = animation.FFMpegWriter(fps=fps)
-                    anim.save(output_path, writer=writer)
-                else:
-                    anim.save(output_path, writer='pillow', fps=fps)
-                return output_path
-            except Exception as e:
-                logger.error(f"Error saving animation: {e}")
-                # Fallback: save a single frame
-                return self.save_frame(fig, output_path)
-        else:
-            # Return a sequence of base64 encoded frames
-            frames_base64 = []
-            for i in range(frames):
-                update(i)
-                frame_base64 = self.save_frame(fig)
-                frames_base64.append(frame_base64)
+            # Plot blockchain blocks
+            for i, block in enumerate(self.blocks):
+                # Only show blocks up to verification progress
+                if (i / self.num_blocks) * 100 <= progress:
+                    # Block dimensions
+                    width, height, depth = 0.8, 0.4, 0.3
+                    
+                    # Block position with slight movement
+                    x = 0.05 * np.sin(frame * 0.1 + i * 0.5)
+                    y = 0.05 * np.cos(frame * 0.1 + i * 0.5)
+                    z = i * 0.6
+                    
+                    # Rotation for animation
+                    angle = block['rotation'] + frame * 5
+                    
+                    # Create a cuboid to represent the block
+                    xx, yy = np.meshgrid(
+                        [x - width/2, x + width/2],
+                        [y - height/2, y + height/2]
+                    )
+                    
+                    # Draw block faces with animation effects
+                    alpha = 0.7 + 0.3 * np.sin(frame * 0.1 + i * 0.5)
+                    
+                    # Bottom face
+                    ax.plot_surface(xx, yy, np.ones_like(xx) * (z - depth/2),
+                                    color=main_color, alpha=alpha, edgecolor='white', shade=True)
+                    
+                    # Top face
+                    ax.plot_surface(xx, yy, np.ones_like(xx) * (z + depth/2),
+                                    color=main_color, alpha=alpha, edgecolor='white', shade=True)
+                    
+                    # Side faces
+                    for dx, dy in [(-width/2, 0), (width/2, 0), (0, -height/2), (0, height/2)]:
+                        if dx != 0:  # X-facing side
+                            x_face = np.ones((2, 2)) * (x + dx)
+                            y_face = np.array([[y - height/2, y + height/2], [y - height/2, y + height/2]])
+                            z_face = np.array([[z - depth/2, z - depth/2], [z + depth/2, z + depth/2]])
+                        else:  # Y-facing side
+                            x_face = np.array([[x - width/2, x + width/2], [x - width/2, x + width/2]])
+                            y_face = np.ones((2, 2)) * (y + dy)
+                            z_face = np.array([[z - depth/2, z - depth/2], [z + depth/2, z + depth/2]])
+                        
+                        ax.plot_surface(x_face, y_face, z_face,
+                                        color=main_color, alpha=alpha, edgecolor='white', shade=True)
+                    
+                    # Draw hash text with blinking effect
+                    blink_alpha = 0.5 + 0.5 * np.sin(frame * 0.5 + i)
+                    ax.text(x, y, z, f"#{block['index']} {block['hash'][:4]}...",
+                            color=self.theme_colors['light_text'], fontsize=8, alpha=blink_alpha,
+                            horizontalalignment='center', verticalalignment='center')
+                    
+                    # Draw connections between blocks with pulsing effect
+                    if i > 0:
+                        pulse = 1 + 0.5 * np.sin(frame * 0.3 + i)
+                        ax.plot([x_prev, x], [y_prev, y], [z_prev + depth/2, z - depth/2],
+                                color=main_color, linewidth=1 * pulse, linestyle='-')
+                    
+                    # Store previous block coordinates for connection
+                    x_prev, y_prev, z_prev = x, y, z
             
+            # Add title based on verification status
+            if progress < 100:
+                title_text = f"BLOCKCHAIN VERIFICATION IN PROGRESS ({progress:.0f}%)"
+                title_color = self.theme_colors['primary']
+            else:
+                title_text = "BLOCKCHAIN VERIFIED" if is_verified else "VERIFICATION FAILED"
+                title_color = self.theme_colors['success'] if is_verified else self.theme_colors['danger']
+            
+            title = fig.suptitle(title_text, color=title_color, fontsize=16, y=1.05, fontweight='bold')
+            
+            # Add verification progress bar as a text visualization
+            bar_length = 20
+            completed = int(progress / 100 * bar_length)
+            progress_bar = '[' + '■' * completed + '□' * (bar_length - completed) + ']'
+            progress_text = ax.text2D(0.5, 0.95, f"{progress_bar} {progress:.1f}%", 
+                                     transform=ax.transAxes, fontsize=10, ha='center',
+                                     color=self.theme_colors['light_text'])
+            
+            # Add SatyaChain watermark
+            fig.text(0.05, 0.02, "SatyaChain™", fontsize=14, color=self.theme_colors['primary'], 
+                     fontstyle='italic', fontweight='bold')
+                     
+            # Add processing text with frame counter
+            process_text = f"Processing frame {frame+1}/{frames}"
+            fig.text(0.95, 0.02, process_text, fontsize=10, color=self.theme_colors['light_text'],
+                     ha='right')
+            
+            # Set the view angle with rotation for animation
+            elevation = 20 + 10 * np.sin(frame * 0.1)
+            azimuth = 30 + frame * (180 / frames)
+            ax.view_init(elev=elevation, azim=azimuth)
+            
+            # Remove axis labels and ticks
+            ax.set_axis_off()
+            
+            # Set plot limits
+            margin = 1
+            ax.set_xlim(-margin, margin)
+            ax.set_ylim(-margin, margin)
+            ax.set_zlim(-1, self.num_blocks * 0.6)
+            
+            # Save the frame
+            frame_data = self.save_frame(fig, 
+                                         output_path=f"{output_path}_frame_{frame}.png" if output_path else None)
+            
+            # Close the figure to avoid memory leak
             plt.close(fig)
-            return frames_base64
+            
+            return frame_data
+        
+        # Generate and collect all frames
+        frame_data = []
+        for i in range(frames):
+            frame_data.append(update(i))
+        
+        return frame_data
 
 
 class WaveformAnimation(AnimationGenerator):
@@ -543,297 +528,296 @@ class WaveformAnimation(AnimationGenerator):
     
     def __init__(self, size=(800, 600), dpi=100, language="english"):
         super().__init__(size, dpi)
-        self.language = language
         
-        # Color themes for different languages
-        self.color_themes = {
-            "english": {
-                "primary": "#2979ff",
-                "secondary": "#00d4ff",
-                "background": "#0a1428",
-                "text": "#ffffff"
+        # Language settings
+        self.language = language
+        self.language_settings = {
+            'english': {
+                'color': self.theme_colors['primary'],
+                'display_name': 'English',
+                'wave_freq': 1.0,
+                'wave_complexity': 1.0
             },
-            "hindi": {
-                "primary": "#ff2979",
-                "secondary": "#ff0080",
-                "background": "#280a14",
-                "text": "#ffffff"
+            'hindi': {
+                'color': '#FFA500',  # Orange
+                'display_name': 'Hindi',
+                'wave_freq': 1.2,
+                'wave_complexity': 1.3
             },
-            "tamil": {
-                "primary": "#79ff29",
-                "secondary": "#adff00",
-                "background": "#14280a",
-                "text": "#ffffff"
+            'mandarin': {
+                'color': '#FF0000',  # Red
+                'display_name': 'Mandarin',
+                'wave_freq': 1.5,
+                'wave_complexity': 1.6
+            },
+            'french': {
+                'color': '#0000FF',  # Blue
+                'display_name': 'French',
+                'wave_freq': 0.8,
+                'wave_complexity': 1.2
+            },
+            'spanish': {
+                'color': '#FFFF00',  # Yellow
+                'display_name': 'Spanish',
+                'wave_freq': 1.1,
+                'wave_complexity': 1.1
             }
         }
         
-        # Use english as fallback
-        if language not in self.color_themes:
-            self.language = "english"
+        # Default to English if language not found
+        if language not in self.language_settings:
+            self.language = 'english'
+        
+        # Generate waveform data
+        self.waveform_length = 100
+        self.waveform_data = self.generate_waveform()
+        self.lip_sync_data = self.generate_lip_sync_data()
+    
+    def generate_waveform(self):
+        """Generate synthetic waveform data based on language"""
+        settings = self.language_settings[self.language]
+        
+        # Basic sine wave with language-specific frequency
+        x = np.linspace(0, 10, self.waveform_length)
+        base_wave = np.sin(x * settings['wave_freq'])
+        
+        # Add complexity based on language
+        complex_wave = base_wave.copy()
+        for i in range(1, int(5 * settings['wave_complexity'])):
+            harmonic = np.sin(x * settings['wave_freq'] * (i + 1)) / (i + 1)
+            complex_wave += harmonic * random.uniform(0.1, 0.3)
+        
+        # Normalize
+        complex_wave = complex_wave / np.max(np.abs(complex_wave))
+        
+        return complex_wave
+    
+    def generate_lip_sync_data(self):
+        """Generate synthetic lip sync data for the waveform"""
+        settings = self.language_settings[self.language]
+        
+        # Generate lip movement data
+        lip_data = []
+        for i in range(self.waveform_length):
+            # Lip positions (open/close)
+            lip_position = 0.3 + 0.7 * abs(self.waveform_data[i])
+            
+            # Add mouth shape variations based on language
+            shape_variation = random.uniform(0.8, 1.2) * settings['wave_complexity']
+            
+            lip_data.append({
+                'position': lip_position,
+                'shape': shape_variation
+            })
+        
+        return lip_data
     
     def create_static_frame(self, sync_score=85):
         """Create a static waveform visualization"""
         fig = plt.figure(figsize=(self.size[0]/self.dpi, self.size[1]/self.dpi), dpi=self.dpi)
-        
-        # Get color theme
-        theme = self.color_themes[self.language]
+        ax = fig.add_subplot(111, projection='3d')
         
         # Set background color
-        fig.patch.set_facecolor(theme["background"])
+        ax.set_facecolor(self.theme_colors['darker'])
         
-        # Create grid for waveform and mouth visualization
-        grid = plt.GridSpec(3, 1, height_ratios=[1, 2, 1])
+        # Determine color based on sync score
+        if sync_score >= 80:
+            main_color = self.theme_colors['success']
+        elif sync_score >= 60:
+            main_color = self.theme_colors['warning']
+        else:
+            main_color = self.theme_colors['danger']
         
-        # Top section - title and language indicator
-        ax_top = fig.add_subplot(grid[0])
-        ax_top.set_facecolor(theme["background"])
-        ax_top.set_xlim(0, 10)
-        ax_top.set_ylim(0, 1)
-        ax_top.axis('off')
+        # Language-specific color
+        language_color = self.language_settings[self.language]['color']
         
-        # Add title
-        ax_top.text(5, 0.6, f"{self.language.upper()} LIP-SYNC ANALYZER", 
-                   fontsize=16, fontweight='bold', color=theme["text"],
-                   ha='center', va='center')
+        # Create a 3D waveform visualization
+        x = np.arange(self.waveform_length)
+        y = np.zeros_like(x)
+        z = self.waveform_data
         
-        # Add language indicator
-        ax_top.scatter(3, 0.6, color=theme["primary"], s=100, edgecolors='white', linewidths=1)
+        # Line plot for waveform
+        ax.plot(x, y, z, color=language_color, linewidth=2)
         
-        # Middle section - waveform
-        ax_mid = fig.add_subplot(grid[1])
-        ax_mid.set_facecolor(theme["background"])
-        ax_mid.set_xlim(0, 100)
-        ax_mid.set_ylim(-1, 1)
-        ax_mid.axis('off')
+        # Add 3D markers for key points
+        for i in range(0, self.waveform_length, 5):
+            ax.scatter(x[i], y[i], z[i], 
+                      color=language_color, s=30, alpha=0.7, edgecolors='white')
         
-        # Generate waveform data
-        x = np.linspace(0, 100, 1000)
-        y1 = 0.7 * np.sin(x * 0.2) + 0.3 * np.sin(x * 0.5)
-        y2 = 0.5 * np.sin(x * 0.3) + 0.2 * np.sin(x * 0.7)
-        y3 = 0.3 * np.sin(x * 0.4) + 0.1 * np.sin(x * 0.9)
+        # Add a reflection effect
+        ax.plot(x, y - 0.5, -z * 0.3, color=language_color, linewidth=1, alpha=0.3)
         
-        # Plot multiple waveforms
-        ax_mid.fill_between(x, y1, alpha=0.3, color=theme["secondary"])
-        ax_mid.fill_between(x, y2, alpha=0.2, color=theme["secondary"])
-        ax_mid.plot(x, y1, color=theme["primary"], alpha=0.8, linewidth=2)
-        ax_mid.plot(x, y2, color=theme["primary"], alpha=0.6, linewidth=1.5)
-        ax_mid.plot(x, y3, color=theme["primary"], alpha=0.4, linewidth=1)
-        
-        # Bottom section - phoneme visualization and score
-        ax_bot = fig.add_subplot(grid[2])
-        ax_bot.set_facecolor(theme["background"])
-        ax_bot.set_xlim(0, 10)
-        ax_bot.set_ylim(0, 1)
-        ax_bot.axis('off')
-        
-        # Get phonemes based on language
-        if self.language == "english":
-            phonemes = ["AA", "AE", "AH", "AO", "EH", "IH", "IY", "UH"]
-        elif self.language == "hindi":
-            phonemes = ["अ", "आ", "इ", "ई", "उ", "ऊ", "ए", "ऐ"]
-        else:  # tamil
-            phonemes = ["அ", "ஆ", "இ", "ஈ", "உ", "ஊ", "எ", "ஏ"]
+        # Add lip sync visualization
+        for i in range(0, self.waveform_length, 10):
+            # Create a circle to represent mouth position
+            lip_data = self.lip_sync_data[i]
+            theta = np.linspace(0, 2 * np.pi, 20)
             
-        # Plot phoneme indicators
-        phoneme_positions = np.linspace(1, 9, len(phonemes))
-        for i, (pos, phoneme) in enumerate(zip(phoneme_positions, phonemes)):
-            # Random activation for visual interest
-            is_active = np.random.random() > 0.7
-            color = theme["primary"] if is_active else 'gray'
-            alpha = 0.9 if is_active else 0.4
+            # Ellipse coordinates to represent mouth shape
+            a = lip_data['position']  # horizontal radius
+            b = lip_data['position'] * lip_data['shape']  # vertical radius
             
-            ax_bot.scatter(pos, 0.7, color=color, alpha=alpha, s=120, edgecolors='white', linewidths=1)
-            ax_bot.text(pos, 0.7, phoneme, color='white', ha='center', va='center', fontsize=9)
+            x_lip = x[i] + a * np.cos(theta)
+            y_lip = -1 + np.zeros_like(theta)
+            z_lip = z[i] + b * np.sin(theta)
+            
+            ax.plot(x_lip, y_lip, z_lip, color=main_color, alpha=0.7)
+        
+        # Add title and labels
+        language_name = self.language_settings[self.language]['display_name']
+        title = fig.suptitle(f"Lip Sync Analysis: {language_name}", 
+                           color=language_color, fontsize=16, y=1.05, fontweight='bold')
         
         # Add sync score
-        score_color = '#22cc88' if sync_score >= 70 else '#cc5522'
-        ax_bot.text(5, 0.2, f"Sync Confidence: {sync_score}%", 
-                   fontsize=14, fontweight='bold', color=score_color,
-                   ha='center', va='center')
+        if sync_score >= 80:
+            sync_text = "High Sync Probability"
+        elif sync_score >= 60:
+            sync_text = "Medium Sync Probability"
+        else:
+            sync_text = "Low Sync Probability"
+            
+        score_text = ax.text2D(0.5, 0.95, f"Sync Score: {sync_score}% - {sync_text}", 
+                              transform=ax.transAxes, fontsize=12, ha='center',
+                              color=main_color)
+        
+        # Add SatyaAI logo/watermark
+        fig.text(0.05, 0.02, "SatyaAI", fontsize=14, color=self.theme_colors['primary'], 
+                 fontstyle='italic', fontweight='bold')
+        
+        # Set the view angle
+        ax.view_init(elev=20, azim=30)
+        
+        # Remove axis labels and ticks
+        ax.set_axis_off()
+        
+        # Set plot limits
+        ax.set_xlim(0, self.waveform_length)
+        ax.set_ylim(-1.5, 0.5)
+        ax.set_zlim(-1.5, 1.5)
         
         return fig
     
     def create_animation(self, frames=30, fps=15, sync_score=85, output_path=None):
         """Create a waveform animation"""
-        fig = plt.figure(figsize=(self.size[0]/self.dpi, self.size[1]/self.dpi), dpi=self.dpi)
-        
-        # Get color theme
-        theme = self.color_themes[self.language]
-        
-        # Set background color
-        fig.patch.set_facecolor(theme["background"])
-        
-        # Create grid for waveform and mouth visualization
-        grid = plt.GridSpec(3, 1, height_ratios=[1, 2, 1])
-        
-        # Top section - title and language indicator
-        ax_top = fig.add_subplot(grid[0])
-        ax_top.set_facecolor(theme["background"])
-        ax_top.set_xlim(0, 10)
-        ax_top.set_ylim(0, 1)
-        ax_top.axis('off')
-        
-        # Add title
-        title = ax_top.text(5, 0.6, f"{self.language.upper()} LIP-SYNC ANALYZER", 
-                           fontsize=16, fontweight='bold', color=theme["text"],
-                           ha='center', va='center')
-        
-        # Add language indicator
-        indicator = ax_top.scatter(3, 0.6, color=theme["primary"], s=100, edgecolors='white', linewidths=1)
-        
-        # Middle section - waveform
-        ax_mid = fig.add_subplot(grid[1])
-        ax_mid.set_facecolor(theme["background"])
-        ax_mid.set_xlim(0, 100)
-        ax_mid.set_ylim(-1, 1)
-        ax_mid.axis('off')
-        
-        # Generate initial waveform data
-        x = np.linspace(0, 100, 1000)
-        y1 = 0.7 * np.sin(x * 0.2) + 0.3 * np.sin(x * 0.5)
-        y2 = 0.5 * np.sin(x * 0.3) + 0.2 * np.sin(x * 0.7)
-        y3 = 0.3 * np.sin(x * 0.4) + 0.1 * np.sin(x * 0.9)
-        
-        # Plot multiple waveforms
-        fill1 = ax_mid.fill_between(x, y1, alpha=0.3, color=theme["secondary"])
-        fill2 = ax_mid.fill_between(x, y2, alpha=0.2, color=theme["secondary"])
-        line1, = ax_mid.plot(x, y1, color=theme["primary"], alpha=0.8, linewidth=2)
-        line2, = ax_mid.plot(x, y2, color=theme["primary"], alpha=0.6, linewidth=1.5)
-        line3, = ax_mid.plot(x, y3, color=theme["primary"], alpha=0.4, linewidth=1)
-        
-        # Bottom section - phoneme visualization and score
-        ax_bot = fig.add_subplot(grid[2])
-        ax_bot.set_facecolor(theme["background"])
-        ax_bot.set_xlim(0, 10)
-        ax_bot.set_ylim(0, 1)
-        ax_bot.axis('off')
-        
-        # Get phonemes based on language
-        if self.language == "english":
-            phonemes = ["AA", "AE", "AH", "AO", "EH", "IH", "IY", "UH"]
-        elif self.language == "hindi":
-            phonemes = ["अ", "आ", "इ", "ई", "उ", "ऊ", "ए", "ऐ"]
-        else:  # tamil
-            phonemes = ["அ", "ஆ", "இ", "ஈ", "உ", "ஊ", "எ", "ஏ"]
-            
-        # Plot phoneme indicators and text
-        phoneme_positions = np.linspace(1, 9, len(phonemes))
-        phoneme_dots = []
-        phoneme_texts = []
-        
-        for i, (pos, phoneme) in enumerate(zip(phoneme_positions, phonemes)):
-            # Initial state (all inactive)
-            dot = ax_bot.scatter(pos, 0.7, color='gray', alpha=0.4, s=120, edgecolors='white', linewidths=1)
-            text = ax_bot.text(pos, 0.7, phoneme, color='white', ha='center', va='center', fontsize=9)
-            
-            phoneme_dots.append(dot)
-            phoneme_texts.append(text)
-        
-        # Add sync score
-        score_color = '#22cc88' if sync_score >= 70 else '#cc5522'
-        score_text = ax_bot.text(5, 0.2, f"Sync Confidence: {sync_score}%", 
-                                fontsize=14, fontweight='bold', color=score_color,
-                                ha='center', va='center')
-        
-        # Animation update function
+        # Function to update the plot for each frame
         def update(frame):
-            time_factor = frame / frames
+            # Create a new figure for each frame
+            fig = plt.figure(figsize=(self.size[0]/self.dpi, self.size[1]/self.dpi), dpi=self.dpi)
+            ax = fig.add_subplot(111, projection='3d')
             
-            # Update waveform
-            # Apply phase shift based on frame for animation
-            shift = time_factor * 10
-            y1_new = 0.7 * np.sin(x * 0.2 + shift) + 0.3 * np.sin(x * 0.5 + shift * 1.5)
-            y2_new = 0.5 * np.sin(x * 0.3 + shift) + 0.2 * np.sin(x * 0.7 + shift * 1.5)
-            y3_new = 0.3 * np.sin(x * 0.4 + shift) + 0.1 * np.sin(x * 0.9 + shift * 1.5)
+            # Set background color
+            ax.set_facecolor(self.theme_colors['darker'])
             
-            # Update line data
-            line1.set_ydata(y1_new)
-            line2.set_ydata(y2_new)
-            line3.set_ydata(y3_new)
+            # Determine color based on sync score
+            if sync_score >= 80:
+                main_color = self.theme_colors['success']
+            elif sync_score >= 60:
+                main_color = self.theme_colors['warning']
+            else:
+                main_color = self.theme_colors['danger']
             
-            # Can't update fill_between directly, so we clear and redraw
-            fill1.remove()
-            fill2.remove()
-            fill1 = ax_mid.fill_between(x, y1_new, alpha=0.3, color=theme["secondary"])
-            fill2 = ax_mid.fill_between(x, y2_new, alpha=0.2, color=theme["secondary"])
+            # Language-specific color
+            language_color = self.language_settings[self.language]['color']
             
-            # Update phoneme indicators
-            # Randomly activate different phonemes for each frame
-            active_indices = np.random.choice(
-                len(phonemes), size=2, replace=False
-            )
+            # Create a 3D waveform visualization with animation
+            x = np.arange(self.waveform_length)
+            y = np.zeros_like(x)
             
-            for i, dot in enumerate(phoneme_dots):
-                # Reset all dots to inactive
-                dot.set_color('gray')
-                dot.set_alpha(0.4)
+            # Animate the waveform with a ripple effect
+            ripple = np.roll(self.waveform_data, frame * 2 % self.waveform_length)
+            z = ripple + 0.2 * np.sin(x * 0.1 + frame * 0.2)
+            
+            # Line plot for waveform
+            ax.plot(x, y, z, color=language_color, linewidth=2)
+            
+            # Add 3D markers for key points with pulsing effect
+            for i in range(0, self.waveform_length, 5):
+                pulse = 20 + 20 * np.sin(frame * 0.2 + i * 0.1)
+                ax.scatter(x[i], y[i], z[i], 
+                          color=language_color, s=pulse, alpha=0.7, edgecolors='white')
+            
+            # Add a reflection effect
+            ax.plot(x, y - 0.5, -z * 0.3, color=language_color, linewidth=1, alpha=0.3)
+            
+            # Add lip sync visualization with animation
+            for i in range(0, self.waveform_length, 10):
+                # Create a circle to represent mouth position
+                lip_data = self.lip_sync_data[i]
+                theta = np.linspace(0, 2 * np.pi, 20)
                 
-                # Activate selected dots
-                if i in active_indices:
-                    dot.set_color(theme["primary"])
-                    dot.set_alpha(0.9)
+                # Animate mouth shape
+                phase = frame * 0.2 + i * 0.05
+                a = lip_data['position'] * (0.8 + 0.2 * np.sin(phase))  # horizontal radius
+                b = lip_data['position'] * lip_data['shape'] * (0.8 + 0.2 * np.sin(phase + np.pi/2))  # vertical radius
+                
+                x_lip = x[i] + a * np.cos(theta)
+                y_lip = -1 + np.zeros_like(theta)
+                z_lip = z[i] + b * np.sin(theta)
+                
+                ax.plot(x_lip, y_lip, z_lip, color=main_color, alpha=0.7)
             
-            # Pulse the language indicator
-            indicator_size = 100 + 20 * np.sin(time_factor * 2 * np.pi)
-            indicator.set_sizes([indicator_size])
+            # Add moving analysis lines at current frame position
+            scan_pos = frame % self.waveform_length
+            if scan_pos < self.waveform_length - 1:
+                # Vertical scan line
+                ax.plot([scan_pos, scan_pos], [0, 0], [-1.5, 1.5], 
+                        color='white', linewidth=1, alpha=0.5, linestyle='--')
+                
+                # Horizontal scan line at current height
+                ax.plot([0, self.waveform_length], [0, 0], [z[scan_pos], z[scan_pos]], 
+                        color='white', linewidth=1, alpha=0.3, linestyle=':')
             
-            return [line1, line2, line3, indicator, score_text] + phoneme_dots + phoneme_texts
-        
-        # Create the animation
-        anim = animation.FuncAnimation(
-            fig, update, frames=frames, interval=1000/fps, blit=True
-        )
-        
-        if output_path:
-            # Save as video or GIF
-            try:
-                if output_path.endswith('.mp4'):
-                    writer = animation.FFMpegWriter(fps=fps)
-                    anim.save(output_path, writer=writer)
-                else:
-                    anim.save(output_path, writer='pillow', fps=fps)
-                return output_path
-            except Exception as e:
-                logger.error(f"Error saving animation: {e}")
-                # Fallback: save a single frame
-                return self.save_frame(fig, output_path)
-        else:
-            # Return a sequence of base64 encoded frames
-            frames_base64 = []
-            for i in range(frames):
-                update(i)
-                frame_base64 = self.save_frame(fig)
-                frames_base64.append(frame_base64)
+            # Add title and labels
+            language_name = self.language_settings[self.language]['display_name']
+            title = fig.suptitle(f"Lip Sync Analysis: {language_name}", 
+                               color=language_color, fontsize=16, y=1.05, fontweight='bold')
             
+            # Add sync score with animation
+            animated_score = sync_score * (0.9 + 0.1 * np.sin(frame * 0.2))
+            
+            if animated_score >= 80:
+                sync_text = "High Sync Probability"
+            elif animated_score >= 60:
+                sync_text = "Medium Sync Probability"
+            else:
+                sync_text = "Low Sync Probability"
+                
+            score_text = ax.text2D(0.5, 0.95, f"Sync Score: {animated_score:.1f}% - {sync_text}", 
+                                  transform=ax.transAxes, fontsize=12, ha='center',
+                                  color=main_color)
+            
+            # Add SatyaAI logo/watermark
+            fig.text(0.05, 0.02, "SatyaAI", fontsize=14, color=self.theme_colors['primary'], 
+                     fontstyle='italic', fontweight='bold')
+                     
+            # Add processing text with frame counter
+            process_text = f"Processing frame {frame+1}/{frames}"
+            fig.text(0.95, 0.02, process_text, fontsize=10, color=self.theme_colors['light_text'],
+                     ha='right')
+            
+            # Set the view angle with rotation for animation
+            ax.view_init(elev=20, azim=30 + frame * (360/frames))
+            
+            # Remove axis labels and ticks
+            ax.set_axis_off()
+            
+            # Set plot limits
+            ax.set_xlim(0, self.waveform_length)
+            ax.set_ylim(-1.5, 0.5)
+            ax.set_zlim(-1.5, 1.5)
+            
+            # Save the frame
+            frame_data = self.save_frame(fig, 
+                                         output_path=f"{output_path}_frame_{frame}.png" if output_path else None)
+            
+            # Close the figure to avoid memory leak
             plt.close(fig)
-            return frames_base64
-
-
-# Test and generate example animations
-if __name__ == "__main__":
-    output_dir = "animations"
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # Neural network animation
-    print("Creating neural network animation...")
-    nn_anim = NeuralNetworkAnimation()
-    nn_fig = nn_anim.create_static_frame(authenticity="AUTHENTIC MEDIA", confidence=85)
-    nn_anim.save_frame(nn_fig, f"{output_dir}/neural_network.png")
-    plt.close(nn_fig)
-    
-    # Blockchain animation
-    print("Creating blockchain animation...")
-    bc_anim = BlockchainAnimation()
-    bc_fig = bc_anim.create_static_frame(is_verified=True, verification_progress=100)
-    bc_anim.save_frame(bc_fig, f"{output_dir}/blockchain.png")
-    plt.close(bc_fig)
-    
-    # Waveform animation for different languages
-    for language in ["english", "hindi", "tamil"]:
-        print(f"Creating {language} waveform animation...")
-        wf_anim = WaveformAnimation(language=language)
-        wf_fig = wf_anim.create_static_frame(sync_score=85)
-        wf_anim.save_frame(wf_fig, f"{output_dir}/waveform_{language}.png")
-        plt.close(wf_fig)
-    
-    print("All animations created successfully!")
+            
+            return frame_data
+        
+        # Generate and collect all frames
+        frame_data = []
+        for i in range(frames):
+            frame_data.append(update(i))
+        
+        return frame_data

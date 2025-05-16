@@ -3,149 +3,114 @@
 SatyaAI - Advanced Deepfake Detection System
 Main entry point script
 """
-
 import os
 import sys
-import argparse
-import subprocess
 import time
-import logging
-import platform
-
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('satyaai.log')
-    ]
-)
-logger = logging.getLogger(__name__)
+import subprocess
+import requests
+from datetime import datetime
 
 def check_dependencies():
     """Check if required Python dependencies are installed"""
-    required_packages = [
-        'flask', 'numpy', 'pillow', 'flask-cors'
-    ]
-    
-    missing_packages = []
-    
-    for package in required_packages:
-        try:
-            __import__(package)
-        except ImportError:
-            missing_packages.append(package)
-    
-    if missing_packages:
-        logger.warning(f"Missing required packages: {', '.join(missing_packages)}")
-        logger.info("Installing missing packages...")
-        
-        try:
-            subprocess.check_call([sys.executable, '-m', 'pip', 'install', *missing_packages])
-            logger.info("Successfully installed missing packages")
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to install packages: {e}")
-            return False
-    
-    return True
+    try:
+        import flask
+        import numpy
+        import cv2
+        import matplotlib
+        import PIL
+        print("✅ All required dependencies are installed.")
+        return True
+    except ImportError as e:
+        print(f"❌ Missing dependency: {e}")
+        print("Please install required packages with: pip install flask numpy opencv-python-headless matplotlib pillow flask-cors")
+        return False
 
 def start_server(port=5000, debug=False):
     """Start the SatyaAI server"""
-    script_path = os.path.join('server', 'python', 'main.py')
-    
-    if not os.path.exists(script_path):
-        logger.error(f"Server script not found at: {script_path}")
+    if not check_dependencies():
         return False
     
+    print(f"🚀 Starting SatyaAI Python server on port {port}...")
+    
+    # Get the directory of the current script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # Path to the Python server script
+    server_script = os.path.join(script_dir, "server", "python", "main.py")
+    
+    # Check if the server script exists
+    if not os.path.exists(server_script):
+        print(f"❌ Server script not found at {server_script}")
+        return False
+    
+    # Set environment variables
+    env = os.environ.copy()
+    env["PORT"] = str(port)
+    
+    # Start the server process
     try:
-        cmd = [sys.executable, script_path, '--port', str(port)]
         if debug:
-            cmd.append('--debug')
-        
-        logger.info(f"Starting SatyaAI server on port {port}")
-        server_process = subprocess.Popen(cmd)
-        
-        time.sleep(2)  # Give it a moment to start
-        
-        if server_process.poll() is not None:
-            logger.error("Server failed to start")
-            return False
-        
-        logger.info("Server started successfully")
-        return server_process
+            # Run in foreground with debug output
+            subprocess.run([sys.executable, server_script], env=env)
+        else:
+            # Run in background
+            if os.name == 'nt':  # Windows
+                subprocess.Popen([sys.executable, server_script], 
+                                env=env, 
+                                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
+            else:  # Unix/Linux/Mac
+                subprocess.Popen([sys.executable, server_script],
+                                env=env,
+                                start_new_session=True)
+            
+            # Wait for server to start
+            print("⏳ Waiting for server to start...")
+            return check_server_status(port)
     except Exception as e:
-        logger.error(f"Error starting server: {e}")
+        print(f"❌ Failed to start server: {e}")
         return False
 
 def check_server_status(port=5000):
     """Check if the server is running"""
-    import urllib.request
-    import json
+    url = f"http://localhost:{port}/health"
+    max_attempts = 10
+    wait_seconds = 1
     
-    try:
-        response = urllib.request.urlopen(f"http://localhost:{port}/health")
-        data = response.read().decode('utf-8')
-        
+    for attempt in range(max_attempts):
         try:
-            status = json.loads(data)
-            if status.get('status') == 'ready':
-                logger.info("Server is running and ready")
+            response = requests.get(url, timeout=2)
+            if response.status_code == 200:
+                print(f"✅ SatyaAI server is running on port {port}")
                 return True
-        except json.JSONDecodeError:
+        except requests.exceptions.RequestException:
             pass
         
-        logger.warning("Server is running but not ready")
-        return False
-    except Exception:
-        logger.warning("Server is not running")
-        return False
+        if attempt < max_attempts - 1:
+            dot_animation = "." * (attempt % 3 + 1)
+            print(f"⏳ Waiting for server{dot_animation}", end='\r')
+            time.sleep(wait_seconds)
+    
+    print(f"❌ Failed to connect to server on port {port} after {max_attempts} attempts")
+    return False
 
 def main():
     """Main entry point"""
-    parser = argparse.ArgumentParser(description='SatyaAI Deepfake Detection System')
-    parser.add_argument('--port', type=int, default=5000, help='Port to run the server on')
-    parser.add_argument('--debug', action='store_true', help='Run in debug mode')
-    args = parser.parse_args()
+    print("=" * 50)
+    print("🔍 SatyaAI - Advanced Deepfake Detection System")
+    print("=" * 50)
+    print(f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 50)
     
-    logger.info("Starting SatyaAI - Advanced Deepfake Detection System")
-    logger.info(f"Python version: {platform.python_version()}")
-    logger.info(f"Platform: {platform.platform()}")
+    port = int(os.environ.get("PORT", 5000))
+    debug_mode = "--debug" in sys.argv
     
-    # Check dependencies
-    logger.info("Checking dependencies...")
-    if not check_dependencies():
-        logger.error("Failed to satisfy dependencies. Exiting.")
-        return 1
-    
-    # Check if server is already running
-    if check_server_status(args.port):
-        logger.info(f"SatyaAI server is already running on port {args.port}")
-        return 0
-    
-    # Start server
-    server_process = start_server(args.port, args.debug)
-    if not server_process:
-        logger.error("Failed to start SatyaAI server. Exiting.")
-        return 1
-    
-    try:
-        # Wait for server to be ready
-        for _ in range(10):
-            if check_server_status(args.port):
-                break
-            time.sleep(1)
-        
-        # Keep the server running
-        logger.info("SatyaAI system is now running. Press Ctrl+C to stop.")
-        server_process.wait()
-    except KeyboardInterrupt:
-        logger.info("Shutting down SatyaAI...")
-        server_process.terminate()
-        server_process.wait()
-        logger.info("SatyaAI shutdown complete")
-    
-    return 0
+    if "--check" in sys.argv:
+        # Just check if the server is running
+        return check_server_status(port)
+    else:
+        # Start the server
+        return start_server(port, debug_mode)
 
 if __name__ == "__main__":
-    sys.exit(main())
+    success = main()
+    sys.exit(0 if success else 1)

@@ -1,66 +1,82 @@
 /**
  * Python Bridge - Connects Node.js/Express with Python deepfake detection
  */
-
-const { spawn, exec } = require('child_process');
+const { spawn } = require('child_process');
+const axios = require('axios');
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
-const axios = require('axios');
+const FormData = require('form-data');
 
-let pythonServer = null;
-let serverPort = 5001; // Python server port (different from Express)
-const SERVER_URL = `http://localhost:${serverPort}`;
-const ANIMATION_CACHE = {};
+// Default configuration
+const PYTHON_SERVER_PORT = process.env.PYTHON_SERVER_PORT || 5000;
+const PYTHON_SERVER_URL = `http://localhost:${PYTHON_SERVER_PORT}`;
+
+// References to the Python server process
+let pythonProcess = null;
 
 /**
  * Start the Python server as a child process
  */
 async function startPythonServer() {
-    if (pythonServer) {
-        console.log('Python server already running');
-        return true;
-    }
-
-    // Path to Python script
-    const scriptPath = path.join(__dirname, 'python', 'main.py');
-    
-    // Check if script exists
-    if (!fs.existsSync(scriptPath)) {
-        console.error(`Python script not found at: ${scriptPath}`);
-        return false;
-    }
-    
-    // Determine Python executable (python3 for Unix, python for Windows)
-    const pythonExe = os.platform() === 'win32' ? 'python' : 'python3';
-    
     try {
-        // Start the Python server as a child process
-        console.log(`Starting Python server: ${pythonExe} ${scriptPath} --port ${serverPort}`);
-        pythonServer = spawn(pythonExe, [scriptPath, '--port', serverPort.toString()]);
+        // Check if server is already running
+        const serverRunning = await checkServerRunning();
+        if (serverRunning) {
+            console.log('Python server is already running');
+            return true;
+        }
+
+        console.log('Starting Python server...');
+        
+        // Path to the Python script
+        const scriptPath = path.join(__dirname, '..', 'run_satyaai.py');
+        
+        // Check if script exists
+        if (!fs.existsSync(scriptPath)) {
+            console.error(`Python script not found: ${scriptPath}`);
+            return false;
+        }
+        
+        // Start the Python process
+        pythonProcess = spawn('python', [scriptPath], {
+            stdio: 'pipe',
+            detached: false
+        });
         
         // Handle stdout
-        pythonServer.stdout.on('data', (data) => {
-            console.log(`[Python] ${data.toString().trim()}`);
+        pythonProcess.stdout.on('data', (data) => {
+            console.log(`Python server: ${data.toString().trim()}`);
         });
         
         // Handle stderr
-        pythonServer.stderr.on('data', (data) => {
-            console.error(`[Python Error] ${data.toString().trim()}`);
+        pythonProcess.stderr.on('data', (data) => {
+            console.error(`Python server error: ${data.toString().trim()}`);
         });
         
-        // Handle process exit
-        pythonServer.on('exit', (code, signal) => {
-            console.log(`Python server exited with code ${code} and signal ${signal}`);
-            pythonServer = null;
+        // Handle exit
+        pythonProcess.on('exit', (code) => {
+            console.log(`Python server exited with code: ${code}`);
+            pythonProcess = null;
+        });
+        
+        // Handle errors
+        pythonProcess.on('error', (err) => {
+            console.error(`Failed to start Python server: ${err.message}`);
+            pythonProcess = null;
         });
         
         // Wait for server to be ready
-        const isReady = await waitForServerReady();
-        
-        return isReady;
+        const serverReady = await waitForServerReady();
+        if (serverReady) {
+            console.log('Python server is ready');
+            return true;
+        } else {
+            console.error('Timed out waiting for Python server to start');
+            stopPythonServer();
+            return false;
+        }
     } catch (error) {
-        console.error('Failed to start Python server:', error);
+        console.error(`Error starting Python server: ${error.message}`);
         return false;
     }
 }
@@ -69,13 +85,34 @@ async function startPythonServer() {
  * Stop the Python server
  */
 function stopPythonServer() {
-    if (pythonServer) {
-        pythonServer.kill();
-        pythonServer = null;
-        console.log('Python server stopped');
-        return true;
+    if (pythonProcess) {
+        console.log('Stopping Python server...');
+        
+        // Kill the process
+        if (process.platform === 'win32') {
+            // Windows
+            spawn('taskkill', ['/pid', pythonProcess.pid, '/f', '/t']);
+        } else {
+            // Unix/Linux/Mac
+            pythonProcess.kill('SIGTERM');
+        }
+        
+        pythonProcess = null;
     }
-    return false;
+}
+
+/**
+ * Check if the Python server is running
+ */
+async function checkServerRunning() {
+    try {
+        const response = await axios.get(`${PYTHON_SERVER_URL}/health`, { 
+            timeout: 1000 
+        });
+        return response.status === 200;
+    } catch (error) {
+        return false;
+    }
 }
 
 /**
@@ -83,166 +120,193 @@ function stopPythonServer() {
  */
 async function waitForServerReady(maxAttempts = 30, interval = 1000) {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        try {
-            const response = await axios.get(`${SERVER_URL}/health`);
-            if (response.data.status === 'ready') {
-                console.log('Python server is ready');
-                return true;
-            }
-        } catch (error) {
-            // Server not ready yet, try again after interval
+        const isRunning = await checkServerRunning();
+        if (isRunning) {
+            return true;
         }
         
+        // Wait before next attempt
         await new Promise(resolve => setTimeout(resolve, interval));
     }
     
-    console.error('Timed out waiting for Python server to be ready');
     return false;
-}
-
-/**
- * Login to the Python server
- */
-async function login(username, password) {
-    try {
-        const response = await axios.post(`${SERVER_URL}/api/login`, {
-            username,
-            password
-        });
-        
-        return response.data;
-    } catch (error) {
-        console.error('Login error:', error.response?.data || error.message);
-        throw error;
-    }
-}
-
-/**
- * Logout from the Python server
- */
-async function logout() {
-    try {
-        const response = await axios.post(`${SERVER_URL}/api/logout`);
-        return response.data;
-    } catch (error) {
-        console.error('Logout error:', error.response?.data || error.message);
-        throw error;
-    }
-}
-
-/**
- * Validate user session
- */
-async function validateSession(token) {
-    try {
-        const response = await axios.get(`${SERVER_URL}/api/user`, {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
-        
-        return response.data;
-    } catch (error) {
-        console.error('Session validation error:', error.response?.data || error.message);
-        throw error;
-    }
 }
 
 /**
  * Send an image to the Python server for analysis
  */
-async function analyzeImage(imageData, token = null) {
+async function analyzeImage(imageBuffer, token = null) {
     try {
-        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+        // Create a multipart form
+        const form = new FormData();
+        form.append('image', imageBuffer, {
+            filename: 'image.jpg',
+            contentType: 'image/jpeg'
+        });
         
-        const response = await axios.post(`${SERVER_URL}/api/analyze/image`, {
-            image_data: imageData
-        }, { headers });
+        // Add token if provided
+        if (token) {
+            form.append('token', token);
+        }
+        
+        // Send request to Python server
+        const response = await axios.post(`${PYTHON_SERVER_URL}/api/analyze/image`, form, {
+            headers: form.getHeaders(),
+            timeout: 30000  // 30 seconds timeout
+        });
         
         return response.data;
     } catch (error) {
-        console.error('Image analysis error:', error.response?.data || error.message);
-        throw error;
+        console.error(`Error analyzing image: ${error.message}`);
+        if (error.response) {
+            console.error(`Server response: ${JSON.stringify(error.response.data)}`);
+        }
+        
+        // Return error information
+        return {
+            error: 'Failed to analyze image',
+            details: error.message,
+            authenticity: 'ANALYSIS FAILED',
+            confidence: 0
+        };
     }
 }
 
 /**
  * Send a video to the Python server for analysis
  */
-async function analyzeVideo(videoBuffer, filename, token = null) {
+async function analyzeVideo(videoBuffer, filename = 'video.mp4', token = null) {
     try {
-        const formData = new FormData();
-        formData.append('video', new Blob([videoBuffer]), filename);
+        // Create a multipart form
+        const form = new FormData();
+        form.append('video', videoBuffer, {
+            filename: filename,
+            contentType: 'video/mp4'
+        });
         
-        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+        // Add token if provided
+        if (token) {
+            form.append('token', token);
+        }
         
-        const response = await axios.post(`${SERVER_URL}/api/analyze/video`, formData, {
-            headers,
-            maxContentLength: Infinity,
-            maxBodyLength: Infinity
+        // Send request to Python server
+        const response = await axios.post(`${PYTHON_SERVER_URL}/api/analyze/video`, form, {
+            headers: form.getHeaders(),
+            timeout: 60000  // 60 seconds timeout
         });
         
         return response.data;
     } catch (error) {
-        console.error('Video analysis error:', error.response?.data || error.message);
-        throw error;
+        console.error(`Error analyzing video: ${error.message}`);
+        if (error.response) {
+            console.error(`Server response: ${JSON.stringify(error.response.data)}`);
+        }
+        
+        // Return error information
+        return {
+            error: 'Failed to analyze video',
+            details: error.message,
+            authenticity: 'ANALYSIS FAILED',
+            confidence: 0
+        };
     }
 }
 
 /**
  * Send audio to the Python server for analysis
  */
-async function analyzeAudio(audioBuffer, filename, token = null) {
+async function analyzeAudio(audioBuffer, filename = 'audio.mp3', token = null) {
     try {
-        const formData = new FormData();
-        formData.append('audio', new Blob([audioBuffer]), filename);
+        // Create a multipart form
+        const form = new FormData();
+        form.append('audio', audioBuffer, {
+            filename: filename,
+            contentType: 'audio/mpeg'
+        });
         
-        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+        // Add token if provided
+        if (token) {
+            form.append('token', token);
+        }
         
-        const response = await axios.post(`${SERVER_URL}/api/analyze/audio`, formData, {
-            headers,
-            maxContentLength: Infinity,
-            maxBodyLength: Infinity
+        // Send request to Python server
+        const response = await axios.post(`${PYTHON_SERVER_URL}/api/analyze/audio`, form, {
+            headers: form.getHeaders(),
+            timeout: 30000  // 30 seconds timeout
         });
         
         return response.data;
     } catch (error) {
-        console.error('Audio analysis error:', error.response?.data || error.message);
-        throw error;
+        console.error(`Error analyzing audio: ${error.message}`);
+        if (error.response) {
+            console.error(`Server response: ${JSON.stringify(error.response.data)}`);
+        }
+        
+        // Return error information
+        return {
+            error: 'Failed to analyze audio',
+            details: error.message,
+            authenticity: 'ANALYSIS FAILED',
+            confidence: 0
+        };
     }
 }
 
 /**
  * Send multiple media types to the Python server for multimodal analysis
  */
-async function analyzeMultimodal(imageBuffer, audioBuffer, videoBuffer, token = null) {
+async function analyzeMultimodal(imageBuffer = null, audioBuffer = null, videoBuffer = null, token = null) {
     try {
-        const formData = new FormData();
+        // Create a multipart form
+        const form = new FormData();
         
+        // Add media files if provided
         if (imageBuffer) {
-            formData.append('image', new Blob([imageBuffer]), 'image.jpg');
+            form.append('image', imageBuffer, {
+                filename: 'image.jpg',
+                contentType: 'image/jpeg'
+            });
         }
         
         if (audioBuffer) {
-            formData.append('audio', new Blob([audioBuffer]), 'audio.wav');
+            form.append('audio', audioBuffer, {
+                filename: 'audio.mp3',
+                contentType: 'audio/mpeg'
+            });
         }
         
         if (videoBuffer) {
-            formData.append('video', new Blob([videoBuffer]), 'video.mp4');
+            form.append('video', videoBuffer, {
+                filename: 'video.mp4',
+                contentType: 'video/mp4'
+            });
         }
         
-        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+        // Add token if provided
+        if (token) {
+            form.append('token', token);
+        }
         
-        const response = await axios.post(`${SERVER_URL}/api/analyze/multimodal`, formData, {
-            headers,
-            maxContentLength: Infinity,
-            maxBodyLength: Infinity
+        // Send request to Python server
+        const response = await axios.post(`${PYTHON_SERVER_URL}/api/analyze/multimodal`, form, {
+            headers: form.getHeaders(),
+            timeout: 60000  // 60 seconds timeout
         });
         
         return response.data;
     } catch (error) {
-        console.error('Multimodal analysis error:', error.response?.data || error.message);
-        throw error;
+        console.error(`Error performing multimodal analysis: ${error.message}`);
+        if (error.response) {
+            console.error(`Server response: ${JSON.stringify(error.response.data)}`);
+        }
+        
+        // Return error information
+        return {
+            error: 'Failed to perform multimodal analysis',
+            details: error.message,
+            authenticity: 'ANALYSIS FAILED',
+            confidence: 0
+        };
     }
 }
 
@@ -250,307 +314,41 @@ async function analyzeMultimodal(imageBuffer, audioBuffer, videoBuffer, token = 
  * Send webcam image data to the Python server for analysis
  */
 async function analyzeWebcam(imageData, token = null) {
-    return analyzeImage(imageData, token);
-}
-
-/**
- * Generate 3D neural network animation
- */
-async function generateNeuralNetworkAnimation(authenticity = "AUTHENTIC MEDIA", confidence = 85, token = null) {
     try {
-        // Check if animation is cached
-        const cacheKey = `nn_${authenticity}_${confidence}`;
-        if (ANIMATION_CACHE[cacheKey]) {
-            return ANIMATION_CACHE[cacheKey];
+        // Send request to Python server
+        const response = await axios.post(`${PYTHON_SERVER_URL}/api/analyze/webcam`, {
+            imageData: imageData,
+            token: token
+        }, {
+            timeout: 30000  // 30 seconds timeout
+        });
+        
+        return response.data;
+    } catch (error) {
+        console.error(`Error analyzing webcam image: ${error.message}`);
+        if (error.response) {
+            console.error(`Server response: ${JSON.stringify(error.response.data)}`);
         }
         
-        // Execute Python animation script directly
-        const pythonExe = os.platform() === 'win32' ? 'python' : 'python3';
-        const animationScript = `
-import sys
-sys.path.append('${path.join(__dirname, 'python')}')
-from animations import NeuralNetworkAnimation
-import json
-
-# Create animation
-animation = NeuralNetworkAnimation()
-frames = animation.create_animation(frames=30, fps=15, authenticity="${authenticity}", confidence=${confidence})
-
-# Output as JSON
-print(json.dumps(frames))
-`;
-        
-        const tempScriptPath = path.join(os.tmpdir(), `anim_nn_${Date.now()}.py`);
-        fs.writeFileSync(tempScriptPath, animationScript);
-        
-        const frames = await new Promise((resolve, reject) => {
-            exec(`${pythonExe} ${tempScriptPath}`, {
-                maxBuffer: 10 * 1024 * 1024 // 10MB buffer
-            }, (error, stdout, stderr) => {
-                fs.unlinkSync(tempScriptPath);
-                
-                if (error) {
-                    console.error('Animation error:', stderr);
-                    reject(error);
-                } else {
-                    try {
-                        const framesData = JSON.parse(stdout);
-                        resolve(framesData);
-                    } catch (e) {
-                        reject(new Error('Failed to parse animation frames'));
-                    }
-                }
-            });
-        });
-        
-        // Cache the animation
-        ANIMATION_CACHE[cacheKey] = frames;
-        
-        return frames;
-    } catch (error) {
-        console.error('Neural network animation error:', error);
-        throw error;
+        // Return error information
+        return {
+            error: 'Failed to analyze webcam image',
+            details: error.message,
+            authenticity: 'ANALYSIS FAILED',
+            confidence: 0
+        };
     }
 }
 
-/**
- * Generate 3D blockchain verification animation
- */
-async function generateBlockchainAnimation(isVerified = true, token = null) {
-    try {
-        // Check if animation is cached
-        const cacheKey = `bc_${isVerified}`;
-        if (ANIMATION_CACHE[cacheKey]) {
-            return ANIMATION_CACHE[cacheKey];
-        }
-        
-        // Execute Python animation script directly
-        const pythonExe = os.platform() === 'win32' ? 'python' : 'python3';
-        const animationScript = `
-import sys
-sys.path.append('${path.join(__dirname, 'python')}')
-from animations import BlockchainAnimation
-import json
-
-# Create animation
-animation = BlockchainAnimation()
-frames = animation.create_animation(frames=30, fps=15, is_verified=${isVerified ? 'True' : 'False'})
-
-# Output as JSON
-print(json.dumps(frames))
-`;
-        
-        const tempScriptPath = path.join(os.tmpdir(), `anim_bc_${Date.now()}.py`);
-        fs.writeFileSync(tempScriptPath, animationScript);
-        
-        const frames = await new Promise((resolve, reject) => {
-            exec(`${pythonExe} ${tempScriptPath}`, {
-                maxBuffer: 10 * 1024 * 1024 // 10MB buffer
-            }, (error, stdout, stderr) => {
-                fs.unlinkSync(tempScriptPath);
-                
-                if (error) {
-                    console.error('Animation error:', stderr);
-                    reject(error);
-                } else {
-                    try {
-                        const framesData = JSON.parse(stdout);
-                        resolve(framesData);
-                    } catch (e) {
-                        reject(new Error('Failed to parse animation frames'));
-                    }
-                }
-            });
-        });
-        
-        // Cache the animation
-        ANIMATION_CACHE[cacheKey] = frames;
-        
-        return frames;
-    } catch (error) {
-        console.error('Blockchain animation error:', error);
-        throw error;
-    }
-}
-
-/**
- * Generate 3D waveform animation for lip-sync analysis
- */
-async function generateWaveformAnimation(language = "english", syncScore = 85, token = null) {
-    try {
-        // Check if animation is cached
-        const cacheKey = `wf_${language}_${syncScore}`;
-        if (ANIMATION_CACHE[cacheKey]) {
-            return ANIMATION_CACHE[cacheKey];
-        }
-        
-        // Execute Python animation script directly
-        const pythonExe = os.platform() === 'win32' ? 'python' : 'python3';
-        const animationScript = `
-import sys
-sys.path.append('${path.join(__dirname, 'python')}')
-from animations import WaveformAnimation
-import json
-
-# Create animation
-animation = WaveformAnimation(language="${language}")
-frames = animation.create_animation(frames=30, fps=15, sync_score=${syncScore})
-
-# Output as JSON
-print(json.dumps(frames))
-`;
-        
-        const tempScriptPath = path.join(os.tmpdir(), `anim_wf_${Date.now()}.py`);
-        fs.writeFileSync(tempScriptPath, animationScript);
-        
-        const frames = await new Promise((resolve, reject) => {
-            exec(`${pythonExe} ${tempScriptPath}`, {
-                maxBuffer: 10 * 1024 * 1024 // 10MB buffer
-            }, (error, stdout, stderr) => {
-                fs.unlinkSync(tempScriptPath);
-                
-                if (error) {
-                    console.error('Animation error:', stderr);
-                    reject(error);
-                } else {
-                    try {
-                        const framesData = JSON.parse(stdout);
-                        resolve(framesData);
-                    } catch (e) {
-                        reject(new Error('Failed to parse animation frames'));
-                    }
-                }
-            });
-        });
-        
-        // Cache the animation
-        ANIMATION_CACHE[cacheKey] = frames;
-        
-        return frames;
-    } catch (error) {
-        console.error('Waveform animation error:', error);
-        throw error;
-    }
-}
-
-/**
- * Verify media on SatyaChain blockchain
- */
-async function verifySatyaChain(mediaHash, token = null) {
-    try {
-        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-        
-        const response = await axios.post(`${SERVER_URL}/api/verify/blockchain`, {
-            media_hash: mediaHash
-        }, { headers });
-        
-        return response.data;
-    } catch (error) {
-        console.error('Blockchain verification error:', error.response?.data || error.message);
-        throw error;
-    }
-}
-
-/**
- * Check media on darkweb
- */
-async function checkDarkweb(mediaHash, token = null) {
-    try {
-        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-        
-        const response = await axios.post(`${SERVER_URL}/api/check/darkweb`, {
-            media_hash: mediaHash
-        }, { headers });
-        
-        return response.data;
-    } catch (error) {
-        console.error('Darkweb check error:', error.response?.data || error.message);
-        throw error;
-    }
-}
-
-/**
- * Analyze lip sync for a specific language
- */
-async function analyzeLanguageLipSync(videoBuffer, language = 'english', token = null) {
-    try {
-        const formData = new FormData();
-        formData.append('video', new Blob([videoBuffer]), 'video.mp4');
-        formData.append('language', language);
-        
-        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-        
-        const response = await axios.post(`${SERVER_URL}/api/analyze/lip-sync`, formData, {
-            headers,
-            maxContentLength: Infinity,
-            maxBodyLength: Infinity
-        });
-        
-        return response.data;
-    } catch (error) {
-        console.error('Lip sync analysis error:', error.response?.data || error.message);
-        throw error;
-    }
-}
-
-/**
- * Analyze emotion conflict
- */
-async function analyzeEmotionConflict(videoBuffer, token = null) {
-    try {
-        const formData = new FormData();
-        formData.append('video', new Blob([videoBuffer]), 'video.mp4');
-        
-        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-        
-        const response = await axios.post(`${SERVER_URL}/api/analyze/emotion-conflict`, formData, {
-            headers,
-            maxContentLength: Infinity,
-            maxBodyLength: Infinity
-        });
-        
-        return response.data;
-    } catch (error) {
-        console.error('Emotion conflict analysis error:', error.response?.data || error.message);
-        throw error;
-    }
-}
-
-/**
- * Get information about available models
- */
-async function getModelsInfo(token = null) {
-    try {
-        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-        
-        const response = await axios.get(`${SERVER_URL}/api/models/info`, { headers });
-        
-        return response.data;
-    } catch (error) {
-        console.error('Models info error:', error.response?.data || error.message);
-        throw error;
-    }
-}
-
-// Export the functions
+// Export functions
 module.exports = {
     startPythonServer,
     stopPythonServer,
     waitForServerReady,
-    login,
-    logout,
-    validateSession,
+    checkServerRunning,
     analyzeImage,
     analyzeVideo,
     analyzeAudio,
     analyzeMultimodal,
-    analyzeWebcam,
-    generateNeuralNetworkAnimation,
-    generateBlockchainAnimation,
-    generateWaveformAnimation,
-    verifySatyaChain,
-    checkDarkweb,
-    analyzeLanguageLipSync,
-    analyzeEmotionConflict,
-    getModelsInfo
+    analyzeWebcam
 };
