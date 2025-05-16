@@ -67,34 +67,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Process file using the advanced deepfake detector service
       let detectionResult;
-      if (type === 'image') {
+      const mediaType = type as 'image' | 'video' | 'audio';
+      
+      if (mediaType === 'image') {
         detectionResult = await advancedDeepfakeDetector.analyzeImage(file.buffer);
-      } else if (type === 'video') {
+      } else if (mediaType === 'video') {
         detectionResult = await advancedDeepfakeDetector.analyzeVideo(file.buffer);
-      } else if (type === 'audio') {
+      } else if (mediaType === 'audio') {
         detectionResult = await advancedDeepfakeDetector.analyzeAudio(file.buffer);
       } else {
         return res.status(400).json({ message: 'Unsupported media type' });
       }
       
-      // Convert detection result to scan record format
-      const scanData = advancedDeepfakeDetector.convertToScanRecord(
-        detectionResult, 
-        file.originalname,
-        type as 'image' | 'video' | 'audio'
-      );
-      
       // Save scan to database with user ID 1 (demo user)
       const result = await storage.createScan({
         userId: 1,
         filename: file.originalname,
-        type: type as 'image' | 'video' | 'audio',
+        type: mediaType,
         result: detectionResult.authenticity === 'AUTHENTIC MEDIA' ? 'authentic' : 'deepfake',
         confidenceScore: detectionResult.confidence,
         detectionDetails: detectionResult.key_findings,
         metadata: {
-          resolution: type === 'image' ? '1920x1080' : undefined,
-          duration: type === 'video' || type === 'audio' ? '00:02:34' : undefined,
+          resolution: mediaType === 'image' ? '1920x1080' : undefined,
+          duration: mediaType === 'video' || mediaType === 'audio' ? '00:02:34' : undefined,
           size: `${(file.size / (1024 * 1024)).toFixed(2)} MB`
         }
       });
@@ -128,7 +123,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         filename: 'webcam_capture.jpg',
         type: 'image',
         result: detectionResult.authenticity === 'AUTHENTIC MEDIA' ? 'authentic' : 'deepfake',
-        confidenceScore: detectionResult.confidence,
+        confidenceScore: Math.round(detectionResult.confidence),
         detectionDetails: detectionResult.key_findings,
         metadata: {
           resolution: '1280x720',
@@ -183,17 +178,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         filename = files.audio[0].originalname;
       }
       
-      // Convert to scan record
-      const scanData = advancedDeepfakeDetector.convertToScanRecord(
-        detectionResult,
-        filename,
-        primaryType
-      );
-      
       // Save multimodal analysis to database
       const result = await storage.createScan({
         userId: 1,
-        ...scanData
+        filename: filename || 'multimodal_analysis.json',
+        type: primaryType,
+        result: detectionResult.authenticity === 'AUTHENTIC MEDIA' ? 'authentic' : 'deepfake',
+        confidenceScore: Math.round(detectionResult.confidence),
+        detectionDetails: detectionResult.key_findings,
+        metadata: {
+          description: 'Advanced multimodal analysis using cross-modal detection',
+          timestamp: new Date().toISOString(),
+          combinedFileTypes: Object.keys(files).join('+')
+        }
       });
       
       res.json(result);
