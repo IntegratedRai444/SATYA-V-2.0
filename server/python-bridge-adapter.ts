@@ -1,5 +1,6 @@
 /**
- * Python Bridge - Connects Node.js/Express with Python deepfake detection
+ * SatyaAI - Python Bridge Adapter
+ * Provides compatibility between ES modules and the Python bridge
  * 
  * ███████╗ █████╗ ████████╗██╗   ██╗ █████╗      █████╗ ██╗
  * ██╔════╝██╔══██╗╚══██╔══╝╚██╗ ██╔╝██╔══██╗    ██╔══██╗██║
@@ -8,30 +9,31 @@
  * ███████║██║  ██║   ██║      ██║   ██║  ██║    ██║  ██║██║
  * ╚══════╝╚═╝  ╚═╝   ╚═╝      ╚═╝   ╚═╝  ╚═╝    ╚═╝  ╚═╝╚═╝
  * 
- * Advanced Deepfake Detection System
+ * SYNTHETIC AUTHENTICATION TECHNOLOGY FOR YOUR ANALYSIS
  */
+
 import { spawn } from 'child_process';
 import axios from 'axios';
 import path from 'path';
 import fs from 'fs';
-import FormData from 'form-data';
 import { fileURLToPath } from 'url';
+import FormData from 'form-data';
 
 // Get current file directory (equivalent to __dirname in CommonJS)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Default configuration
-const PYTHON_SERVER_PORT = process.env.PYTHON_SERVER_PORT || 5000;
+const PYTHON_SERVER_PORT = process.env.PYTHON_SERVER_PORT || 5001;
 const PYTHON_SERVER_URL = `http://localhost:${PYTHON_SERVER_PORT}`;
 
 // References to the Python server process
-let pythonProcess = null;
+let pythonProcess: any = null;
 
 /**
  * Start the Python server as a child process
  */
-async function startPythonServer() {
+export async function startPythonServer(): Promise<boolean> {
     try {
         // Check if server is already running
         const serverRunning = await checkServerRunning();
@@ -58,23 +60,23 @@ async function startPythonServer() {
         });
         
         // Handle stdout
-        pythonProcess.stdout.on('data', (data) => {
+        pythonProcess.stdout.on('data', (data: Buffer) => {
             console.log(`Python server: ${data.toString().trim()}`);
         });
         
         // Handle stderr
-        pythonProcess.stderr.on('data', (data) => {
+        pythonProcess.stderr.on('data', (data: Buffer) => {
             console.error(`Python server error: ${data.toString().trim()}`);
         });
         
         // Handle exit
-        pythonProcess.on('exit', (code) => {
+        pythonProcess.on('exit', (code: number) => {
             console.log(`Python server exited with code: ${code}`);
             pythonProcess = null;
         });
         
         // Handle errors
-        pythonProcess.on('error', (err) => {
+        pythonProcess.on('error', (err: Error) => {
             console.error(`Failed to start Python server: ${err.message}`);
             pythonProcess = null;
         });
@@ -90,7 +92,7 @@ async function startPythonServer() {
             return false;
         }
     } catch (error) {
-        console.error(`Error starting Python server: ${error.message}`);
+        console.error(`Error starting Python server: ${(error as Error).message}`);
         return false;
     }
 }
@@ -98,7 +100,7 @@ async function startPythonServer() {
 /**
  * Stop the Python server
  */
-function stopPythonServer() {
+export function stopPythonServer(): void {
     if (pythonProcess) {
         console.log('Stopping Python server...');
         
@@ -118,7 +120,7 @@ function stopPythonServer() {
 /**
  * Check if the Python server is running
  */
-async function checkServerRunning() {
+export async function checkServerRunning(): Promise<boolean> {
     try {
         const response = await axios.get(`${PYTHON_SERVER_URL}/health`, { 
             timeout: 1000 
@@ -132,7 +134,7 @@ async function checkServerRunning() {
 /**
  * Wait for the Python server to be ready
  */
-async function waitForServerReady(maxAttempts = 30, interval = 1000) {
+export async function waitForServerReady(maxAttempts = 30, interval = 1000): Promise<boolean> {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         const isRunning = await checkServerRunning();
         if (isRunning) {
@@ -149,7 +151,7 @@ async function waitForServerReady(maxAttempts = 30, interval = 1000) {
 /**
  * Send an image to the Python server for analysis
  */
-async function analyzeImage(imageBuffer, token = null) {
+export async function analyzeImage(imageBuffer: Buffer, token: string | null = null): Promise<any> {
     try {
         // Create a multipart form
         const form = new FormData();
@@ -170,7 +172,7 @@ async function analyzeImage(imageBuffer, token = null) {
         });
         
         return response.data;
-    } catch (error) {
+    } catch (error: any) {
         console.error(`Error analyzing image: ${error.message}`);
         if (error.response) {
             console.error(`Server response: ${JSON.stringify(error.response.data)}`);
@@ -189,12 +191,12 @@ async function analyzeImage(imageBuffer, token = null) {
 /**
  * Send a video to the Python server for analysis
  */
-async function analyzeVideo(videoBuffer, filename = 'video.mp4', token = null) {
+export async function analyzeVideo(videoBuffer: Buffer, filename = 'video.mp4', token: string | null = null): Promise<any> {
     try {
         // Create a multipart form
         const form = new FormData();
         form.append('video', videoBuffer, {
-            filename: filename,
+            filename,
             contentType: 'video/mp4'
         });
         
@@ -210,7 +212,7 @@ async function analyzeVideo(videoBuffer, filename = 'video.mp4', token = null) {
         });
         
         return response.data;
-    } catch (error) {
+    } catch (error: any) {
         console.error(`Error analyzing video: ${error.message}`);
         if (error.response) {
             console.error(`Server response: ${JSON.stringify(error.response.data)}`);
@@ -229,12 +231,12 @@ async function analyzeVideo(videoBuffer, filename = 'video.mp4', token = null) {
 /**
  * Send audio to the Python server for analysis
  */
-async function analyzeAudio(audioBuffer, filename = 'audio.mp3', token = null) {
+export async function analyzeAudio(audioBuffer: Buffer, filename = 'audio.mp3', token: string | null = null): Promise<any> {
     try {
         // Create a multipart form
         const form = new FormData();
         form.append('audio', audioBuffer, {
-            filename: filename,
+            filename,
             contentType: 'audio/mpeg'
         });
         
@@ -250,7 +252,7 @@ async function analyzeAudio(audioBuffer, filename = 'audio.mp3', token = null) {
         });
         
         return response.data;
-    } catch (error) {
+    } catch (error: any) {
         console.error(`Error analyzing audio: ${error.message}`);
         if (error.response) {
             console.error(`Server response: ${JSON.stringify(error.response.data)}`);
@@ -269,7 +271,12 @@ async function analyzeAudio(audioBuffer, filename = 'audio.mp3', token = null) {
 /**
  * Send multiple media types to the Python server for multimodal analysis
  */
-async function analyzeMultimodal(imageBuffer = null, audioBuffer = null, videoBuffer = null, token = null) {
+export async function analyzeMultimodal(
+    imageBuffer: Buffer | null = null, 
+    audioBuffer: Buffer | null = null, 
+    videoBuffer: Buffer | null = null, 
+    token: string | null = null
+): Promise<any> {
     try {
         // Create a multipart form
         const form = new FormData();
@@ -308,7 +315,7 @@ async function analyzeMultimodal(imageBuffer = null, audioBuffer = null, videoBu
         });
         
         return response.data;
-    } catch (error) {
+    } catch (error: any) {
         console.error(`Error performing multimodal analysis: ${error.message}`);
         if (error.response) {
             console.error(`Server response: ${JSON.stringify(error.response.data)}`);
@@ -327,18 +334,18 @@ async function analyzeMultimodal(imageBuffer = null, audioBuffer = null, videoBu
 /**
  * Send webcam image data to the Python server for analysis
  */
-async function analyzeWebcam(imageData, token = null) {
+export async function analyzeWebcam(imageData: string, token: string | null = null): Promise<any> {
     try {
         // Send request to Python server
         const response = await axios.post(`${PYTHON_SERVER_URL}/api/analyze/webcam`, {
-            imageData: imageData,
-            token: token
+            imageData,
+            token
         }, {
             timeout: 30000  // 30 seconds timeout
         });
         
         return response.data;
-    } catch (error) {
+    } catch (error: any) {
         console.error(`Error analyzing webcam image: ${error.message}`);
         if (error.response) {
             console.error(`Server response: ${JSON.stringify(error.response.data)}`);
@@ -353,16 +360,3 @@ async function analyzeWebcam(imageData, token = null) {
         };
     }
 }
-
-// Export functions
-export {
-    startPythonServer,
-    stopPythonServer,
-    waitForServerReady,
-    checkServerRunning,
-    analyzeImage,
-    analyzeVideo,
-    analyzeAudio,
-    analyzeMultimodal,
-    analyzeWebcam
-};

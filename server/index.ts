@@ -5,6 +5,7 @@ import { db } from "./db";
 import { users, scans, userPreferences } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import * as bcrypt from "bcrypt";
+import * as pythonBridge from "./python-bridge-adapter";
 
 const app = express();
 app.use(express.json({ limit: '50mb' })); // Increase limit for base64 images
@@ -193,6 +194,16 @@ async function seedInitialData() {
   try {
     // Initialize and seed database
     await seedInitialData();
+    
+    // Initialize advanced detection capabilities
+    console.log("Initializing advanced detection capabilities");
+    // Start the Python server for deepfake detection
+    try {
+      await pythonBridge.startPythonServer();
+    } catch (error) {
+      console.log(`Python server initialization failed: ${error.message}`);
+      console.log("Continuing with mock detection services...");
+    }
     
     // Register API routes
     const server = await registerRoutes(app);

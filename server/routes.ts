@@ -5,7 +5,7 @@ import { z } from "zod";
 import { insertScanSchema } from "@shared/schema";
 import multer from "multer";
 import { deepfakeDetector } from "./services/deepfake-detector";
-import { advancedDeepfakeDetector } from "./services/advanced-deepfake-detector";
+import { advancedDeepfakeDetector } from "./services/advanced-detection-service";
 import { mockAuthService as authService } from "./services/mock-auth-service";
 import { generatePDFReport } from "./services/report-generator";
 import * as mockDetector from "./services/mock-detection-service";
@@ -302,8 +302,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'No media files provided for multimodal analysis' });
       }
       
-      // Use our mock multimodal analysis
-      const detectionResult = await mockDetector.analyzeMultimodal(
+      // Use advanced detection service for multimodal analysis
+      const detectionResult = await advancedDeepfakeDetector.analyzeMultimodal(
         imageBuffer, 
         audioBuffer,
         videoBuffer
