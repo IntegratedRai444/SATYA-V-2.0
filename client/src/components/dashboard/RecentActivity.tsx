@@ -1,14 +1,14 @@
 import { useState } from "react";
-import { useNavigate } from "wouter";
 import { Image, Video, Mic } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import { ScanResult } from "@/lib/types";
+import { useNavigation } from "@/hooks/useNavigation";
 
 export default function RecentActivity() {
-  const navigate = useNavigate();
+  const { navigate } = useNavigation();
   
   // Fetch recent activities
   const { data: recentActivities, isLoading } = useQuery<ScanResult[]>({

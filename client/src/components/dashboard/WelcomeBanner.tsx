@@ -1,9 +1,9 @@
 import { UploadCloud, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useNavigate } from "wouter";
+import { useNavigation } from "@/hooks/useNavigation";
 
 export default function WelcomeBanner() {
-  const navigate = useNavigate();
+  const { navigate } = useNavigation();
 
   const handleUploadClick = () => {
     navigate("/scan");

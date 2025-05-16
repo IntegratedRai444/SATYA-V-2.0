@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from "react";
-import { useLocation, useNavigate } from "wouter";
+import { useLocation } from "wouter";
 import { Upload, Image, Video, Mic, Camera, Info, ScanLine } from "lucide-react";
+import { useNavigation } from "@/hooks/useNavigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -12,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function UploadSection() {
   const [location, setLocation] = useLocation();
-  const navigate = useNavigate();
+  const { navigate } = useNavigation();
   const { toast } = useToast();
   
   // Get the active tab from URL query parameter

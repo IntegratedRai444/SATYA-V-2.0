@@ -1,9 +1,9 @@
-import { useNavigate } from "wouter";
 import { cn } from "@/lib/utils";
 import { Image as ImageIcon, Video, Mic, Camera } from "lucide-react";
+import { useNavigation } from "@/hooks/useNavigation";
 
 export default function QuickAccessTiles() {
-  const navigate = useNavigate();
+  const { navigate } = useNavigation();
 
   const mediaTypes = [
     {

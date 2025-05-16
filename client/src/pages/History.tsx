@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Helmet } from 'react-helmet';
 import { useLocation } from "wouter";
+import { useNavigation } from "@/hooks/useNavigation";
 import { useQuery } from "@tanstack/react-query";
 import { ScanResult } from "@/lib/types";
 import { Input } from "@/components/ui/input";
@@ -33,7 +34,8 @@ import { Search, Filter, Trash2, FileDown } from "lucide-react";
 import AnalysisResults from "@/components/results/AnalysisResults";
 
 export default function History() {
-  const [location, setLocation] = useLocation();
+  const [location] = useLocation();
+  const { navigate } = useNavigation();
   const [searchQuery, setSearchQuery] = useState("");
   const [mediaTypeFilter, setMediaTypeFilter] = useState("all");
   const [resultFilter, setResultFilter] = useState("all");
@@ -68,7 +70,7 @@ export default function History() {
 
   // Handle row click
   const handleRowClick = (id: string) => {
-    setLocation(`/history/${id}`);
+    navigate(`/history/${id}`);
   };
 
   return (
@@ -83,7 +85,7 @@ export default function History() {
         <div>
           <div className="mb-6 flex justify-between items-center">
             <h1 className="text-3xl font-bold">Scan Details</h1>
-            <Button variant="outline" onClick={() => setLocation("/history")}>
+            <Button variant="outline" onClick={() => navigate("/history")}>
               Back to History
             </Button>
           </div>
@@ -221,7 +223,7 @@ export default function History() {
                       Clear Filters
                     </Button>
                   ) : (
-                    <Button onClick={() => setLocation("/scan")}>
+                    <Button onClick={() => navigate("/scan")}>
                       Scan New Media
                     </Button>
                   )}
