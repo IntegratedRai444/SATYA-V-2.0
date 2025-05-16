@@ -1,14 +1,26 @@
 import axios from 'axios';
-import { startPythonServer, login as pythonLogin, logout as pythonLogout, validateSession } from '../../server/python-bridge';
 
 // Authentication functions
 export async function login(username: string, password: string) {
   try {
-    // Check if server is started
-    await startPythonServer();
+    // Call login API endpoint
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ username, password }),
+    });
     
-    // Call login function from python-bridge
-    const result = await pythonLogin(username, password);
+    const result = await response.json();
+    
+    if (result.success && result.token) {
+      // Store token and user info in local storage
+      localStorage.setItem('satyaai_token', result.token);
+      if (result.user) {
+        localStorage.setItem('satyaai_user', JSON.stringify(result.user));
+      }
+    }
     
     return result;
   } catch (error) {
@@ -22,18 +34,41 @@ export async function login(username: string, password: string) {
 
 export async function logout() {
   try {
-    // Call logout function from python-bridge
-    const result = await pythonLogout();
+    // Get token from local storage
+    const token = localStorage.getItem('satyaai_token');
     
-    if (result.success) {
-      // Clear local storage
-      localStorage.removeItem('satyaai_token');
-      localStorage.removeItem('satyaai_user');
+    if (token) {
+      // Call logout API endpoint
+      const response = await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token }),
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        // Clear local storage
+        localStorage.removeItem('satyaai_token');
+        localStorage.removeItem('satyaai_user');
+      }
+      
+      return result;
     }
     
-    return result;
+    // If no token exists, just clear any storage items
+    localStorage.removeItem('satyaai_token');
+    localStorage.removeItem('satyaai_user');
+    
+    return { success: true, message: 'Logged out successfully' };
   } catch (error) {
     console.error('Logout error:', error);
+    // Clear local storage anyway as a fallback
+    localStorage.removeItem('satyaai_token');
+    localStorage.removeItem('satyaai_user');
+    
     return {
       success: false,
       message: 'Logout system error'
@@ -54,7 +89,15 @@ export async function checkAuth() {
     }
     
     // Validate token with server
-    const result = await validateSession(token);
+    const response = await fetch('/api/auth/validate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ token }),
+    });
+    
+    const result = await response.json();
     
     if (!result.valid) {
       // Clear invalid token

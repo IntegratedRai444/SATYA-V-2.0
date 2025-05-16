@@ -6,6 +6,7 @@ import { insertScanSchema } from "@shared/schema";
 import multer from "multer";
 import { deepfakeDetector } from "./services/deepfake-detector";
 import { advancedDeepfakeDetector } from "./services/advanced-deepfake-detector";
+import { authService } from "./services/auth-service";
 import { 
   startPythonServer,
   analyzeImage, 
@@ -28,8 +29,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Start advanced detection services
   console.log('Initializing advanced detection capabilities');
   
+  // Initialize auth service
+  await authService.initialize();
+  
   // Set up API routes
   const apiRouter = app.route('/api');
+  
+  // Authentication routes
+  app.post('/api/auth/login', async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      
+      if (!username || !password) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Username and password are required' 
+        });
+      }
+      
+      const result = await authService.login(username, password);
+      res.json(result);
+    } catch (error) {
+      console.error('Login route error:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: 'Authentication service error' 
+      });
+    }
+  });
+  
+  app.post('/api/auth/logout', async (req, res) => {
+    try {
+      const { token } = req.body;
+      
+      if (!token) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Session token is required' 
+        });
+      }
+      
+      const result = await authService.logout(token);
+      res.json(result);
+    } catch (error) {
+      console.error('Logout route error:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: 'Logout service error' 
+      });
+    }
+  });
+  
+  app.post('/api/auth/validate', async (req, res) => {
+    try {
+      const { token } = req.body;
+      
+      if (!token) {
+        return res.status(400).json({ 
+          valid: false, 
+          message: 'Session token is required' 
+        });
+      }
+      
+      const result = await authService.validateSession(token);
+      res.json(result);
+    } catch (error) {
+      console.error('Session validation route error:', error);
+      res.status(500).json({ 
+        valid: false, 
+        message: 'Session validation service error' 
+      });
+    }
+  });
 
   // Get recent scans
   app.get('/api/scans/recent', async (req, res) => {
