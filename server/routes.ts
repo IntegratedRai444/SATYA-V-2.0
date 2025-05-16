@@ -8,15 +8,7 @@ import { deepfakeDetector } from "./services/deepfake-detector";
 import { advancedDeepfakeDetector } from "./services/advanced-deepfake-detector";
 import { authService } from "./services/auth-service";
 import { generatePDFReport } from "./services/report-generator";
-import { 
-  startPythonServer,
-  analyzeImage, 
-  analyzeVideo, 
-  analyzeAudio, 
-  analyzeMultimodal, 
-  analyzeWebcam,
-  waitForServerReady 
-} from "./python-bridge.js";
+import * as mockDetector from "./services/mock-detection-service";
 
 // Setup multer for file uploads
 const upload = multer({
@@ -239,7 +231,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         filename: file.originalname,
         type: mediaType,
         result: detectionResult.authenticity === 'AUTHENTIC MEDIA' ? 'authentic' : 'deepfake',
-        confidenceScore: detectionResult.confidence,
+        confidenceScore: Math.round(detectionResult.confidence * 100), // Convert to integer percentage
         detectionDetails: detectionResult.key_findings,
         metadata: {
           resolution: mediaType === 'image' ? '1920x1080' : undefined,
@@ -277,7 +269,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         filename: 'webcam_capture.jpg',
         type: 'image',
         result: detectionResult.authenticity === 'AUTHENTIC MEDIA' ? 'authentic' : 'deepfake',
-        confidenceScore: Math.round(detectionResult.confidence),
+        confidenceScore: Math.round(detectionResult.confidence * 100), // Convert to integer percentage
         detectionDetails: detectionResult.key_findings,
         metadata: {
           resolution: '1280x720',
@@ -338,7 +330,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         filename: filename || 'multimodal_analysis.json',
         type: primaryType,
         result: detectionResult.authenticity === 'AUTHENTIC MEDIA' ? 'authentic' : 'deepfake',
-        confidenceScore: Math.round(detectionResult.confidence),
+        confidenceScore: Math.round(detectionResult.confidence * 100), // Convert to integer percentage
         detectionDetails: detectionResult.key_findings,
         metadata: {
           description: 'Advanced multimodal analysis using cross-modal detection',
@@ -449,7 +441,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         filename: req.file?.originalname || 'ai_image_scan.jpg',
         type: 'image',
         result: enhancedResult.authenticity === 'AUTHENTIC MEDIA' ? 'authentic' : 'deepfake',
-        confidenceScore: Math.round(enhancedResult.confidence),
+        confidenceScore: Math.round(enhancedResult.confidence * 100), // Convert to integer percentage
         detectionDetails: enhancedResult.key_findings,
         metadata: {
           analysis_date: enhancedResult.analysis_date,
@@ -522,7 +514,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         filename: req.file.originalname,
         type: 'video',
         result: enhancedResult.authenticity === 'AUTHENTIC MEDIA' ? 'authentic' : 'deepfake',
-        confidenceScore: Math.round(enhancedResult.confidence),
+        confidenceScore: Math.round(enhancedResult.confidence * 100), // Convert to integer percentage
         detectionDetails: enhancedResult.key_findings,
         metadata: {
           analysis_date: enhancedResult.analysis_date,

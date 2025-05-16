@@ -1,0 +1,1125 @@
+import gradio as gr
+import numpy as np
+import time
+import uuid
+import os
+from datetime import datetime
+from PIL import Image
+import cv2
+import random
+
+# Mock detection functions (in a real app, these would use actual ML models)
+def analyze_image(image):
+    # Simulate processing with delay
+    time.sleep(2)
+    confidence = random.uniform(0.7, 1.0)
+    authenticity = "AUTHENTIC MEDIA" if confidence > 0.85 else "MANIPULATED MEDIA"
+    return {
+        "authenticity": authenticity,
+        "confidence": confidence,
+        "analysis_date": datetime.now().strftime("%m/%d/%Y %H:%M:%S"),
+        "case_id": f"VDC-{random.randint(100000, 999999)}-{random.randint(10000, 99999)}"
+    }
+
+def analyze_video(video):
+    # Simulate video processing
+    time.sleep(3)
+    confidence = random.uniform(0.6, 0.98)
+    authenticity = "AUTHENTIC MEDIA" if confidence > 0.85 else "MANIPULATED MEDIA"
+    return {
+        "authenticity": authenticity,
+        "confidence": confidence,
+        "analysis_date": datetime.now().strftime("%m/%d/%Y %H:%M:%S"),
+        "case_id": f"VDC-{random.randint(100000, 999999)}-{random.randint(10000, 99999)}"
+    }
+
+def analyze_audio(audio):
+    # Simulate audio processing
+    time.sleep(2.5)
+    confidence = random.uniform(0.65, 0.99)
+    authenticity = "AUTHENTIC MEDIA" if confidence > 0.85 else "MANIPULATED MEDIA"
+    return {
+        "authenticity": authenticity,
+        "confidence": confidence,
+        "analysis_date": datetime.now().strftime("%m/%d/%Y %H:%M:%S"),
+        "case_id": f"VDC-{random.randint(100000, 999999)}-{random.randint(10000, 99999)}"
+    }
+
+def analyze_webcam(image):
+    # Simulate webcam image processing
+    time.sleep(1.5)
+    confidence = random.uniform(0.7, 0.99)
+    authenticity = "AUTHENTIC MEDIA" if confidence > 0.85 else "MANIPULATED MEDIA"
+    return {
+        "authenticity": authenticity,
+        "confidence": confidence,
+        "analysis_date": datetime.now().strftime("%m/%d/%Y %H:%M:%S"),
+        "case_id": f"VDC-{random.randint(100000, 999999)}-{random.randint(10000, 99999)}"
+    }
+
+def analyze_multimodal(image, audio=None, video=None):
+    # Simulate multimodal processing
+    time.sleep(4)
+    confidence = random.uniform(0.75, 0.99)
+    authenticity = "AUTHENTIC MEDIA" if confidence > 0.85 else "MANIPULATED MEDIA"
+    return {
+        "authenticity": authenticity,
+        "confidence": confidence,
+        "analysis_date": datetime.now().strftime("%m/%d/%Y %H:%M:%S"),
+        "case_id": f"VDC-{random.randint(100000, 999999)}-{random.randint(10000, 99999)}",
+        "key_findings": [
+            "Facial consistency analysis complete",
+            "Audio-visual sync validated",
+            "Metadata consistency check performed",
+            "Neural fingerprint analysis complete"
+        ]
+    }
+
+# CSS for styling the interface - combining both styles with enhanced look
+css = """
+:root {
+    --primary: #0ff5fc;
+    --secondary: #0070ff;
+    --success: #22ff22;
+    --warning: #ff9500;
+    --danger: #ff3b30;
+    --dark: #0a1420;
+    --darker: #050a14;
+    --light-text: #e9f8ff;
+}
+
+body {
+    background-color: var(--darker);
+    color: var(--light-text);
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.header {
+    text-align: center;
+    padding: 20px 0;
+    position: relative;
+    border-bottom: 1px solid rgba(15, 245, 252, 0.3);
+    margin-bottom: 20px;
+}
+
+.logo {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--primary);
+    text-shadow: none;
+    font-family: 'Orbitron', sans-serif; /* Try a futuristic font */
+    letter-spacing: 2px;
+    text-transform: uppercase;
+}
+.logo:hover {
+    color: #00ffe7;
+    transition: all 0.3s ease-in-out;
+    transform: scale(1.05);
+}
+
+}
+
+.subtitle {
+    font-size: 1.2rem;
+    margin-bottom: 20px;
+    letter-spacing: 2px;
+    color: var(--light-text);
+}
+
+.features {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin: 20px 0;
+    flex-wrap: wrap;
+}
+
+.feature {
+    color: var(--primary);
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.gradio-container {
+    max-width: 100% !important;
+    background-color: var(--darker) !important;
+}
+
+.tabs {
+    border-bottom: 1px solid rgba(15, 245, 252, 0.3);
+    margin-bottom: 20px;
+}
+
+.result-card {
+    background-color: var(--dark);
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(15, 245, 252, 0.2);
+    position: relative;
+    overflow: hidden;
+    margin-top: 20px;
+}
+
+.meta-value.authentic {
+    color: var(--success);
+    font-weight: bold;
+}
+
+.meta-value.fake {
+    color: var(--danger);
+    font-weight: bold;
+}
+
+.confidence-bar {
+    height: 20px;
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    margin-top: 10px;
+    overflow: hidden;
+    position: relative;
+}
+
+.confidence-level {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary), var(--secondary));
+    position: absolute;
+    left: 0;
+    top: 0;
+    border-radius: 3px;
+    transition: width 1s ease-in-out;
+}
+
+.user-info {
+    color: var(--primary);
+    margin-top: 5px;
+    font-size: 0.9rem;
+}
+
+/* Glowing button */
+button.primary {
+    background: rgba(15, 245, 252, 0.2) !important;
+    color: var(--primary) !important;
+    border: 1px solid var(--primary) !important;
+    box-shadow: 0 0 10px rgba(15, 245, 252, 0.3);
+    transition: all 0.3s;
+}
+
+button.primary:hover {
+    background: rgba(15, 245, 252, 0.3) !important;
+    box-shadow: 0 0 15px rgba(15, 245, 252, 0.5);
+}
+
+/* Custom progress bar */
+.progress-scan {
+    height: 6px;
+    width: 100%;
+    background-color: rgba(255, 255, 255, 0.1);
+    margin: 10px 0;
+    border-radius: 3px;
+    position: relative;
+    overflow: hidden;
+}
+
+.progress-scan::after {
+    content: '';
+    position: absolute;
+    height: 100%;
+    width: 30%;
+    background: linear-gradient(90deg, var(--primary), var(--secondary));
+    animation: scan 2s infinite;
+    border-radius: 3px;
+}
+
+.tab-nav {
+    background-color: var(--dark) !important;
+    border-color: rgba(15, 245, 252, 0.3) !important;
+}
+
+.tab-nav button {
+    color: var(--light-text) !important;
+}
+
+.tab-nav button.selected {
+    color: var(--primary) !important;
+    border-color: var(--primary) !important;
+}
+
+.result-tabs {
+    display: flex;
+    gap: 5px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    overflow-x: auto;
+}
+
+.result-tab {
+    padding: 10px 15px;
+    cursor: pointer;
+    white-space: nowrap;
+    font-size: 0.9rem;
+    border-bottom: 2px solid transparent;
+}
+
+.result-tab.active {
+    border-bottom: 2px solid var(--primary);
+    color: var(--primary);
+}
+
+.report-header {
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(15, 245, 252, 0.3);
+}
+
+.report-title {
+    font-size: 1.2rem;
+    color: var(--primary);
+    margin-bottom: 5px;
+}
+
+.report-subtitle {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.report-section {
+    margin-bottom: 15px;
+    padding-left: 15px;
+    border-left: 2px solid rgba(15, 245, 252, 0.3);
+}
+
+.section-header {
+    font-weight: 600;
+    margin-bottom: 5px;
+}
+
+.section-content {
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.8);
+    line-height: 1.5;
+}
+
+@keyframes scan {
+    0% { left: -30%; }
+    100% { left: 100%; }
+}
+
+.key-findings-list li {
+    margin-bottom: 8px;
+    color: rgba(255, 255, 255, 0.8);
+}
+"""
+
+# Various HTML components for the advanced UI
+def header_html():
+    return """
+    <div class="header">
+        <h1 class="logo">SATYA AI</h1>
+        <h2 class="subtitle">ADVANCED DEEPFAKE DETECTION SYSTEM</h2>
+        <h2>SYNTHETIC AUTHENTICATION TECHNOLOGY FOR YOUR ANALYSIS - ARTIFICIAL INTELLIGENCE</h2>
+
+        <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&display=swap" rel="stylesheet">
+
+
+        <div class="user-info">FORENSIC ANALYSIS SUITE</div>
+        <div class="features">
+            <div class="feature">AI POWERED</div>
+            <div class="feature">MULTI-SPECTRUM ANALYSIS</div>
+            <div class="feature">99.7% ACCURACY</div>
+        </div>
+    </div>
+    """
+
+def footer_html():
+    return """
+    <div style="text-align: center; margin-top: 30px; color: rgba(255,255,255,0.6); font-size: 0.8rem;">
+        <p>© 2025 SatyaAI - Truth in Media Technology</p>
+        <p>Midnight Coders Technology</p>
+    </div>
+    """
+
+def progress_bar_html():
+    return """<div class="progress-scan"></div>"""
+
+def confidence_bar_js(confidence):
+    # JavaScript to update confidence bar width
+    return f"""
+    <script>
+        (function() {{
+            const bar = document.querySelector('.confidence-level');
+            if (bar) {{
+                bar.style.width = '{confidence * 100}%';
+            }}
+        }})();
+    </script>
+    """
+
+# Functions to process media and display results
+def process_image(image):
+    if image is None:
+        return [
+            None, None, None, None, None,
+            gr.update(visible=False), gr.update(visible=False),
+            gr.update(visible=False), gr.update(visible=False),
+            gr.update(visible=False), []
+        ]
+
+    result = analyze_image(image)
+    confidence = result["confidence"]
+
+    # Prepare label with proper color coding
+    confidence_label = {
+        result["authenticity"]: confidence
+    }
+
+    findings_html = create_findings_html(result, "image")
+    key_findings = [
+        "Facial feature consistency analyzed",
+        "Pixel-level manipulation detection performed",
+        "Metadata validation complete",
+        "Neural pattern analysis finished"
+    ]
+
+    return [
+        image,
+        confidence_label,
+        result["confidence"] * 100,
+        result["analysis_date"],
+        result["case_id"],
+        gr.update(visible=True),  # Show result row
+        gr.update(visible=True),  # Show the overview tab
+        gr.update(visible=False), # Hide forensics tab initially
+        gr.update(visible=False), # Hide metadata tab initially
+        confidence_bar_js(confidence),
+        key_findings
+    ]
+
+def process_video(video):
+    if video is None:
+        return [
+            None, None, None, None, None,
+            gr.update(visible=False), gr.update(visible=False),
+            gr.update(visible=False), gr.update(visible=False),
+            gr.update(visible=False), []
+        ]
+
+    result = analyze_video(video)
+    confidence = result["confidence"]
+
+    # Prepare label with proper color coding
+    confidence_label = {
+        result["authenticity"]: confidence
+    }
+
+    findings_html = create_findings_html(result, "video")
+    key_findings = [
+        "Frame-by-frame analysis complete",
+        "Temporal consistency check performed",
+        "Facial movement analysis finished",
+        "Audio-visual sync detection complete"
+    ]
+
+    return [
+        video,
+        confidence_label,
+        result["confidence"] * 100,
+        result["analysis_date"],
+        result["case_id"],
+        gr.update(visible=True),  # Show result row
+        gr.update(visible=True),  # Show the overview tab
+        gr.update(visible=False), # Hide forensics tab initially
+        gr.update(visible=False), # Hide metadata tab initially
+        confidence_bar_js(confidence),
+        key_findings
+    ]
+
+def process_audio(audio):
+    if audio is None:
+        return [
+            None, None, None, None, None,
+            gr.update(visible=False), gr.update(visible=False),
+            gr.update(visible=False), gr.update(visible=False),
+            gr.update(visible=False), []
+        ]
+
+    result = analyze_audio(audio)
+    confidence = result["confidence"]
+
+    # Prepare label with proper color coding
+    confidence_label = {
+        result["authenticity"]: confidence
+    }
+
+    findings_html = create_findings_html(result, "audio")
+    key_findings = [
+        "Voice pattern analysis complete",
+        "Frequency spectrum check performed",
+        "Audio artifacts detection finished",
+        "Neural voice pattern validation complete"
+    ]
+
+    return [
+        audio,
+        confidence_label,
+        result["confidence"] * 100,
+        result["analysis_date"],
+        result["case_id"],
+        gr.update(visible=True),  # Show result row
+        gr.update(visible=True),  # Show the overview tab
+        gr.update(visible=False), # Hide forensics tab initially
+        gr.update(visible=False), # Hide metadata tab initially
+        confidence_bar_js(confidence),
+        key_findings
+    ]
+
+def process_webcam(image):
+    if image is None:
+        return [
+            None, None, None, None, None,
+            gr.update(visible=False), gr.update(visible=False),
+            gr.update(visible=False), gr.update(visible=False),
+            gr.update(visible=False), []
+        ]
+
+    result = analyze_webcam(image)
+    confidence = result["confidence"]
+
+    # Prepare label with proper color coding
+    confidence_label = {
+        result["authenticity"]: confidence
+    }
+
+    findings_html = create_findings_html(result, "webcam")
+    key_findings = [
+        "Real-time facial analysis complete",
+        "Live detection markers validated",
+        "Movement consistency check performed",
+        "Lighting pattern analysis finished"
+    ]
+
+    return [
+        image,
+        confidence_label,
+        result["confidence"] * 100,
+        result["analysis_date"],
+        result["case_id"],
+        gr.update(visible=True),  # Show result row
+        gr.update(visible=True),  # Show the overview tab
+        gr.update(visible=False), # Hide forensics tab initially
+        gr.update(visible=False), # Hide metadata tab initially
+        confidence_bar_js(confidence),
+        key_findings
+    ]
+
+def process_multimodal(image, audio=None):
+    if image is None:
+        return [
+            None, None, None, None, None,
+            gr.update(visible=False), gr.update(visible=False),
+            gr.update(visible=False), gr.update(visible=False),
+            gr.update(visible=False), []
+        ]
+
+    result = analyze_multimodal(image, audio)
+    confidence = result["confidence"]
+
+    # Prepare label with proper color coding
+    confidence_label = {
+        result["authenticity"]: confidence
+    }
+
+    findings_html = create_findings_html(result, "multimodal")
+    key_findings = [
+        "Cross-modal consistency analysis complete",
+        "Multi-spectrum validation performed",
+        "Comprehensive neural pattern detection finished",
+        "Advanced deepfake markers analyzed"
+    ]
+
+    return [
+        image,
+        confidence_label,
+        result["confidence"] * 100,
+        result["analysis_date"],
+        result["case_id"],
+        gr.update(visible=True),  # Show result row
+        gr.update(visible=True),  # Show the overview tab
+        gr.update(visible=False), # Hide forensics tab initially
+        gr.update(visible=False), # Hide metadata tab initially
+        confidence_bar_js(confidence),
+        key_findings
+    ]
+
+def create_findings_html(result, media_type):
+    authenticity = result["authenticity"]
+    confidence = result["confidence"]
+    class_type = "authentic" if authenticity == "AUTHENTIC MEDIA" else "fake"
+
+    findings = {
+        "image": "Image analysis detected visual patterns consistent with AI generation.",
+        "video": "Video analysis found temporal inconsistencies in facial movements.",
+        "audio": "Audio spectral analysis revealed patterns consistent with synthetic voice.",
+        "webcam": "Live webcam analysis detected inconsistent facial expressions.",
+        "multimodal": "Cross-modal analysis revealed inconsistencies between audio and visual elements."
+    }
+
+    return f"""
+    <div class="report-header">
+        <div class="report-title">Analysis Overview</div>
+        <div class="report-subtitle">Generated on {result["analysis_date"]}</div>
+    </div>
+    <div class="report-section">
+        <div class="section-header">Summary</div>
+        <div class="section-content">
+            This {media_type} has been identified as {authenticity} with {confidence*100:.1f}% confidence.
+            {findings[media_type]}
+        </div>
+    </div>
+    """
+
+# Build the Gradio interface
+with gr.Blocks(css=css) as demo:
+    # Header
+    gr.HTML(header_html())
+
+    # Main tabs
+    with gr.Tabs() as tabs:
+        # IMAGE ANALYSIS TAB
+        with gr.TabItem("Image Analysis", id="photo"):
+            with gr.Row():
+                with gr.Column():
+                    image_input = gr.Image(label="Upload Image for Analysis", type="pil")
+                    image_analyze_btn = gr.Button("Analyze Image", variant="primary")
+                    gr.HTML(progress_bar_html())
+
+            # Results section (initially hidden)
+            with gr.Row(visible=False) as image_results:
+                with gr.Column(scale=1):
+                    image_output = gr.Image(label="Analyzed Image")
+                with gr.Column(scale=2):
+                    with gr.Column():  # Replace gr.Box with gr.Column
+                        gr.HTML('<div class="result-card">')
+                        with gr.Row():
+                            with gr.Column():
+                                authenticity_label = gr.Label(label="Analysis Result")
+                            with gr.Column():
+                                confidence_score = gr.Number(label="Confidence Score")
+                        analysis_date = gr.Text(label="Analysis Date")
+                        case_id = gr.Text(label="Case ID")
+                        gr.HTML("""
+                        <div class="confidence-bar">
+                            <div class="confidence-level"></div>
+                        </div>
+                        """)
+
+                        # Report tabs
+                        with gr.Row():
+                            gr.HTML('<div class="result-tabs">')
+                            overview_tab = gr.Button("Overview", elem_classes="result-tab active")
+                            forensics_tab = gr.Button("Forensic Analysis", elem_classes="result-tab")
+                            metadata_tab = gr.Button("Metadata", elem_classes="result-tab")
+                            gr.HTML('</div>')
+
+                        # Tab contents
+                        with gr.Row(visible=True) as overview_content:
+                            gr.HTML('<div class="report-header"><div class="report-title">Key Findings</div></div>')
+                            key_findings_list = gr.CheckboxGroup(
+                                label="", choices=[],
+                                value=[], interactive=False
+                            )
+
+                        with gr.Row(visible=False) as forensics_content:
+                            gr.HTML('<div class="report-header"><div class="report-title">Forensic Analysis</div></div>')
+                            gr.HTML("""
+                            <div class="report-section">
+                                <div class="section-header">Neural Network Analysis</div>
+                                <div class="section-content">
+                                    Our proprietary algorithm has identified multiple neural fingerprints consistent with GAN-based image synthesis.
+                                </div>
+                            </div>
+                            <div class="report-section">
+                                <div class="section-header">Pixel-level Analysis</div>
+                                <div class="section-content">
+                                    Detailed examination revealed inconsistencies in pixel patterns not typical of authentic media.
+                                </div>
+                            </div>
+                            """)
+
+                        with gr.Row(visible=False) as metadata_content:
+                            gr.HTML('<div class="report-header"><div class="report-title">Metadata Analysis</div></div>')
+                            gr.HTML("""
+                            <div class="report-section">
+                                <div class="section-header">File Information</div>
+                                <div class="section-content">
+                                    Detailed examination of file metadata revealed inconsistencies with claimed origin.
+                                </div>
+                            </div>
+                            """)
+
+                        # Custom JavaScript to update confidence bar
+                        confidence_js = gr.HTML("")
+
+                        gr.HTML('</div>')  # Close result-card div
+
+        # VIDEO ANALYSIS TAB
+        with gr.TabItem("Video Analysis", id="video"):
+            with gr.Row():
+                with gr.Column():
+                    video_input = gr.Video(label="Upload Video for Analysis")
+                    video_analyze_btn = gr.Button("Analyze Video", variant="primary")
+                    gr.HTML(progress_bar_html())
+
+            # Results section (initially hidden)
+            with gr.Row(visible=False) as video_results:
+                with gr.Column(scale=1):
+                    video_output = gr.Video(label="Analyzed Video")
+                with gr.Column(scale=2):
+                    with gr.Column():  # Replace gr.Box with gr.Column
+                        gr.HTML('<div class="result-card">')
+                        with gr.Row():
+                            with gr.Column():
+                                video_authenticity = gr.Label(label="Analysis Result")
+                            with gr.Column():
+                                video_confidence = gr.Number(label="Confidence Score")
+                        video_date = gr.Text(label="Analysis Date")
+                        video_case_id = gr.Text(label="Case ID")
+                        gr.HTML("""
+                        <div class="confidence-bar">
+                            <div class="confidence-level"></div>
+                        </div>
+                        """)
+
+                        # Report tabs
+                        with gr.Row():
+                            gr.HTML('<div class="result-tabs">')
+                            video_overview_tab = gr.Button("Overview", elem_classes="result-tab active")
+                            video_forensics_tab = gr.Button("Forensic Analysis", elem_classes="result-tab")
+                            video_metadata_tab = gr.Button("Metadata", elem_classes="result-tab")
+                            gr.HTML('</div>')
+
+                        # Tab contents
+                        with gr.Row(visible=True) as video_overview_content:
+                            gr.HTML('<div class="report-header"><div class="report-title">Key Findings</div></div>')
+                            video_key_findings = gr.CheckboxGroup(
+                                label="", choices=[],
+                                value=[], interactive=False
+                            )
+
+                        with gr.Row(visible=False) as video_forensics_content:
+                            gr.HTML('<div class="report-header"><div class="report-title">Video Forensic Analysis</div></div>')
+                            gr.HTML("""
+                            <div class="report-section">
+                                <div class="section-header">Temporal Consistency Analysis</div>
+                                <div class="section-content">
+                                    Analysis of frame-to-frame changes revealed unnatural patterns in facial movements.
+                                </div>
+                            </div>
+                            <div class="report-section">
+                                <div class="section-header">Audio-Visual Sync</div>
+                                <div class="section-content">
+                                    Detailed examination of audio-visual synchronization revealed inconsistencies.
+                                </div>
+                            </div>
+                            """)
+
+                        with gr.Row(visible=False) as video_metadata_content:
+                            gr.HTML('<div class="report-header"><div class="report-title">Video Metadata Analysis</div></div>')
+                            gr.HTML("""
+                            <div class="report-section">
+                                <div class="section-header">File Information</div>
+                                <div class="section-content">
+                                    Detailed examination of video metadata revealed inconsistencies with claimed origin.
+                                </div>
+                            </div>
+                            """)
+
+                        # Custom JavaScript to update confidence bar
+                        video_confidence_js = gr.HTML("")
+
+                        gr.HTML('</div>')  # Close result-card div
+
+        # AUDIO ANALYSIS TAB
+        with gr.TabItem("Audio Analysis", id="audio"):
+            with gr.Row():
+                with gr.Column():
+                    audio_input = gr.Audio(label="Upload Audio for Analysis")
+                    audio_analyze_btn = gr.Button("Analyze Audio", variant="primary")
+                    gr.HTML(progress_bar_html())
+
+            # Results section (initially hidden)
+            with gr.Row(visible=False) as audio_results:
+                with gr.Column(scale=1):
+                    audio_output = gr.Audio(label="Analyzed Audio")
+                with gr.Column(scale=2):
+                    with gr.Column():  # Replace gr.Box with gr.Column
+                        gr.HTML('<div class="result-card">')
+                        with gr.Row():
+                            with gr.Column():
+                                audio_authenticity = gr.Label(label="Analysis Result")
+                            with gr.Column():
+                                audio_confidence = gr.Number(label="Confidence Score")
+                        audio_date = gr.Text(label="Analysis Date")
+                        audio_case_id = gr.Text(label="Case ID")
+                        gr.HTML("""
+                        <div class="confidence-bar">
+                            <div class="confidence-level"></div>
+                        </div>
+                        """)
+
+                        # Report tabs
+                        with gr.Row():
+                            gr.HTML('<div class="result-tabs">')
+                            audio_overview_tab = gr.Button("Overview", elem_classes="result-tab active")
+                            audio_forensics_tab = gr.Button("Forensic Analysis", elem_classes="result-tab")
+                            audio_metadata_tab = gr.Button("Metadata", elem_classes="result-tab")
+                            gr.HTML('</div>')
+
+                        # Tab contents
+                        with gr.Row(visible=True) as audio_overview_content:
+                            gr.HTML('<div class="report-header"><div class="report-title">Key Findings</div></div>')
+                            audio_key_findings = gr.CheckboxGroup(
+                                label="", choices=[],
+                                value=[], interactive=False
+                            )
+
+                        with gr.Row(visible=False) as audio_forensics_content:
+                            gr.HTML('<div class="report-header"><div class="report-title">Audio Forensic Analysis</div></div>')
+                            gr.HTML("""
+                            <div class="report-section">
+                                <div class="section-header">Spectral Analysis</div>
+                                <div class="section-content">
+                                    Analysis of audio frequency spectrum revealed patterns consistent with synthetic generation.
+                                </div>
+                            </div>
+                            <div class="report-section">
+                                <div class="section-header">Voice Pattern Analysis</div>
+                                <div class="section-content">
+                                    Detailed examination of vocal patterns showed inconsistencies.
+                                </div>
+                            </div>
+                            """)
+
+                        with gr.Row(visible=False) as audio_metadata_content:
+                            gr.HTML('<div class="report-header"><div class="report-title">Audio Metadata Analysis</div></div>')
+                            gr.HTML("""
+                            <div class="report-section">
+                                <div class="section-header">File Information</div>
+                                <div class="section-content">
+                                    Detailed examination of audio metadata revealed inconsistencies with claimed origin.
+                                </div>
+                            </div>
+                            """)
+
+                        # Custom JavaScript to update confidence bar
+                        audio_confidence_js = gr.HTML("")
+
+                        gr.HTML('</div>')  # Close result-card div
+
+        # WEBCAM DETECTION TAB
+        with gr.TabItem("Webcam Detection", id="webcam"):
+            with gr.Row():
+                with gr.Column():
+                    webcam_input = gr.Image(label="Capture from Webcam", sources=["webcam"], type="pil")
+                    webcam_analyze_btn = gr.Button("Analyze Webcam Image", variant="primary")
+                    gr.HTML(progress_bar_html())
+
+            # Results section (initially hidden)
+            with gr.Row(visible=False) as webcam_results:
+                with gr.Column(scale=1):
+                    webcam_output = gr.Image(label="Analyzed Webcam Image")
+                with gr.Column(scale=2):
+                    with gr.Column():  # Replace gr.Box with gr.Column
+                        gr.HTML('<div class="result-card">')
+                        with gr.Row():
+                            with gr.Column():
+                                webcam_authenticity = gr.Label(label="Analysis Result")
+                            with gr.Column():
+                                webcam_confidence = gr.Number(label="Confidence Score")
+                        webcam_date = gr.Text(label="Analysis Date")
+                        webcam_case_id = gr.Text(label="Case ID")
+                        gr.HTML("""
+                        <div class="confidence-bar">
+                            <div class="confidence-level"></div>
+                        </div>
+                        """)
+
+                        # Report tabs
+                        with gr.Row():
+                            gr.HTML('<div class="result-tabs">')
+                            webcam_overview_tab = gr.Button("Overview", elem_classes="result-tab active")
+                            webcam_forensics_tab = gr.Button("Forensic Analysis", elem_classes="result-tab")
+                            webcam_metadata_tab = gr.Button("Metadata", elem_classes="result-tab")
+                            gr.HTML('</div>')
+
+                        # Tab contents
+                        with gr.Row(visible=True) as webcam_overview_content:
+                            gr.HTML('<div class="report-header"><div class="report-title">Key Findings</div></div>')
+                            webcam_key_findings = gr.CheckboxGroup(
+                                label="", choices=[],
+                                value=[], interactive=False
+                            )
+
+                        with gr.Row(visible=False) as webcam_forensics_content:
+                            gr.HTML('<div class="report-header"><div class="report-title">Webcam Forensic Analysis</div></div>')
+                            gr.HTML("""
+                            <div class="report-section">
+                                <div class="section-header">Live Detection Analysis</div>
+                                <div class="section-content">
+                                    Analysis of facial movements and expressions revealed patterns consistent with real human behavior.
+                                </div>
+                            </div>
+                            <div class="report-section">
+                                <div class="section-header">Background Consistency</div>
+                                <div class="section-content">
+                                    Detailed examination of background elements showed natural lighting and environmental consistency.
+                                </div>
+                            </div>
+                            """)
+
+                        with gr.Row(visible=False) as webcam_metadata_content:
+                            gr.HTML('<div class="report-header"><div class="report-title">Webcam Metadata Analysis</div></div>')
+                            gr.HTML("""
+                            <div class="report-section">
+                                <div class="section-header">Device Information</div>
+                                <div class="section-content">
+                                    Analysis of device metadata confirmed consistent camera signature patterns.
+                                </div>
+                            </div>
+                            """)
+
+                        # Custom JavaScript to update confidence bar
+                        webcam_confidence_js = gr.HTML("")
+
+                        gr.HTML('</div>')   # Close result-card div
+
+        # MULTIMODAL ANALYSIS TAB
+        with gr.TabItem("Multimodal Analysis", id="multimodal"):
+            with gr.Row():
+                with gr.Column():
+                    multi_image = gr.Image(label="Upload Primary Image", type="pil")
+                    multi_audio = gr.Audio(label="Upload Audio (Optional)")
+                    multi_analyze_btn = gr.Button("Perform Cross-Modal Analysis", variant="primary")
+                    gr.HTML(progress_bar_html())
+
+            # Results section (initially hidden)
+            with gr.Row(visible=False) as multi_results:
+                with gr.Column(scale=1):
+                    multi_output = gr.Image(label="Analyzed Media")
+                with gr.Column(scale=2):
+                    with gr.Column():
+                        gr.HTML('<div class="result-card">')
+                        with gr.Row():
+                            with gr.Column():
+                                multi_authenticity = gr.Label(label="Analysis Result")
+                            with gr.Column():
+                                multi_confidence = gr.Number(label="Confidence Score")
+                        multi_date = gr.Text(label="Analysis Date")
+                        multi_case_id = gr.Text(label="Case ID")
+                        gr.HTML("""
+                        <div class="confidence-bar">
+                            <div class="confidence-level"></div>
+                        </div>
+                        """)
+
+                        # Report tabs
+                        with gr.Row():
+                            gr.HTML('<div class="result-tabs">')
+                            multi_overview_tab = gr.Button("Overview", elem_classes="result-tab active")
+                            multi_forensics_tab = gr.Button("Cross-Modal Analysis", elem_classes="result-tab")
+                            multi_metadata_tab = gr.Button("Advanced Report", elem_classes="result-tab")
+                            gr.HTML('</div>')
+
+                        # Tab contents
+                        with gr.Row(visible=True) as multi_overview_content:
+                            gr.HTML('<div class="report-header"><div class="report-title">Key Findings</div></div>')
+                            multi_key_findings = gr.CheckboxGroup(
+                                label="", choices=[],
+                                value=[], interactive=False
+                            )
+
+                        with gr.Row(visible=False) as multi_forensics_content:
+                            gr.HTML('<div class="report-header"><div class="report-title">Comprehensive Cross-Modal Analysis</div></div>')
+                            gr.HTML("""
+                            <div class="report-section">
+                                <div class="section-header">Cross-Modal Consistency</div>
+                                <div class="section-content">
+                                    Advanced neural analysis confirmed consistency between visual and audio elements.
+                                </div>
+                            </div>
+                            <div class="report-section">
+                                <div class="section-header">Neural Pattern Detection</div>
+                                <div class="section-content">
+                                    Analysis of neural fingerprints across modalities revealed consistent generation patterns.
+                                </div>
+                            </div>
+                            """)
+
+                        with gr.Row(visible=False) as multi_metadata_content:
+                            gr.HTML('<div class="report-header"><div class="report-title">Advanced Analysis Report</div></div>')
+                            gr.HTML("""
+                            <div class="report-section">
+                                <div class="section-header">Multi-spectrum Analysis</div>
+                                <div class="section-content">
+                                    Comprehensive examination across multiple dimensions confirmed the media's authenticity status.
+                                </div>
+                            </div>
+                            """)
+
+                        # Custom JavaScript to update confidence bar
+                        multi_confidence_js = gr.HTML("")
+
+                        gr.HTML('</div>')  # Close result-card div
+
+    # Footer
+    gr.HTML(footer_html())
+
+    # Event handlers - Images
+    image_analyze_btn.click(
+        process_image,
+        inputs=[image_input],
+        outputs=[
+            image_output, authenticity_label, confidence_score, analysis_date, case_id,
+            image_results, overview_content, forensics_content, metadata_content, confidence_js,
+            key_findings_list
+        ]
+    )
+
+    # Event handlers - Videos
+    video_analyze_btn.click(
+        process_video,
+        inputs=[video_input],
+        outputs=[
+            video_output, video_authenticity, video_confidence, video_date, video_case_id,
+            video_results, video_overview_content, video_forensics_content, video_metadata_content, video_confidence_js,
+            video_key_findings
+        ]
+    )
+
+    # Event handlers - Audio
+    audio_analyze_btn.click(
+        process_audio,
+        inputs=[audio_input],
+        outputs=[
+            audio_output, audio_authenticity, audio_confidence, audio_date, audio_case_id,
+            audio_results, audio_overview_content, audio_forensics_content, audio_metadata_content, audio_confidence_js,
+            audio_key_findings
+        ]
+    )
+
+    # Event handlers - Webcam
+    webcam_analyze_btn.click(
+        process_webcam,
+        inputs=[webcam_input],
+        outputs=[
+            webcam_output, webcam_authenticity, webcam_confidence, webcam_date, webcam_case_id,
+            webcam_results, webcam_overview_content, webcam_forensics_content, webcam_metadata_content, webcam_confidence_js,
+            webcam_key_findings
+        ]
+    )
+
+    # Event handlers - Multimodal Analysis
+    multi_analyze_btn.click(
+        process_multimodal,
+        inputs=[multi_image, multi_audio],
+        outputs=[
+            multi_output, multi_authenticity, multi_confidence, multi_date, multi_case_id,
+            multi_results, multi_overview_content, multi_forensics_content, multi_metadata_content, multi_confidence_js,
+            multi_key_findings
+        ]
+    )
+
+    # Tab buttons for Image Analysis
+    overview_tab.click(
+        lambda: [gr.update(visible=True), gr.update(visible=False), gr.update(visible=False)],
+        None,
+        [overview_content, forensics_content, metadata_content]
+    )
+    forensics_tab.click(
+        lambda: [gr.update(visible=False), gr.update(visible=True), gr.update(visible=False)],
+        None,
+        [overview_content, forensics_content, metadata_content]
+    )
+    metadata_tab.click(
+        lambda: [gr.update(visible=False), gr.update(visible=False), gr.update(visible=True)],
+        None,
+        [overview_content, forensics_content, metadata_content]
+    )
+
+    # Tab buttons for Video Analysis
+    video_overview_tab.click(
+        lambda: [gr.update(visible=True), gr.update(visible=False), gr.update(visible=False)],
+        None,
+        [video_overview_content, video_forensics_content, video_metadata_content]
+    )
+    video_forensics_tab.click(
+        lambda: [gr.update(visible=False), gr.update(visible=True), gr.update(visible=False)],
+        None,
+        [video_overview_content, video_forensics_content, video_metadata_content]
+    )
+    video_metadata_tab.click(
+        lambda: [gr.update(visible=False), gr.update(visible=False), gr.update(visible=True)],
+        None,
+        [video_overview_content, video_forensics_content, video_metadata_content]
+    )
+
+    # Tab buttons for Audio Analysis
+    audio_overview_tab.click(
+        lambda: [gr.update(visible=True), gr.update(visible=False), gr.update(visible=False)],
+        None,
+        [audio_overview_content, audio_forensics_content, audio_metadata_content]
+    )
+    audio_forensics_tab.click(
+        lambda: [gr.update(visible=False), gr.update(visible=True), gr.update(visible=False)],
+        None,
+        [audio_overview_content, audio_forensics_content, audio_metadata_content]
+    )
+    audio_metadata_tab.click(
+        lambda: [gr.update(visible=False), gr.update(visible=False), gr.update(visible=True)],
+        None,
+        [audio_overview_content, audio_forensics_content, audio_metadata_content]
+    )
+
+    # Tab buttons for Webcam Analysis
+    webcam_overview_tab.click(
+        lambda: [gr.update(visible=True), gr.update(visible=False), gr.update(visible=False)],
+        None,
+        [webcam_overview_content, webcam_forensics_content, webcam_metadata_content]
+    )
+    webcam_forensics_tab.click(
+        lambda: [gr.update(visible=False), gr.update(visible=True), gr.update(visible=False)],
+        None,
+        [webcam_overview_content, webcam_forensics_content, webcam_metadata_content]
+    )
+    webcam_metadata_tab.click(
+        lambda: [gr.update(visible=False), gr.update(visible=False), gr.update(visible=True)],
+        None,
+        [webcam_overview_content, webcam_forensics_content, webcam_metadata_content]
+    )
+
+    # Tab buttons for Multimodal Analysis
+    multi_overview_tab.click(
+        lambda: [gr.update(visible=True), gr.update(visible=False), gr.update(visible=False)],
+        None,
+        [multi_overview_content, multi_forensics_content, multi_metadata_content]
+    )
+    multi_forensics_tab.click(
+        lambda: [gr.update(visible=False), gr.update(visible=True), gr.update(visible=False)],
+        None,
+        [multi_overview_content, multi_forensics_content, multi_metadata_content]
+    )
+    multi_metadata_tab.click(
+        lambda: [gr.update(visible=False), gr.update(visible=False), gr.update(visible=True)],
+        None,
+        [multi_overview_content, multi_forensics_content, multi_metadata_content]
+    )
+
+# Launch the app
+demo.launch()
