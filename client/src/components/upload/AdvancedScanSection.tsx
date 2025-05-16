@@ -1,640 +1,770 @@
-import { useState, useEffect, useRef } from "react";
-import { 
-  UploadCloud, 
-  Image as ImageIcon, 
-  Video,
-  Mic, 
-  Camera, 
-  Info, 
-  ScanLine, 
-  Zap,
-  Activity,
-  FileCheck
-} from "lucide-react";
-import { cn } from "@/lib/utils";
+import React, { useState, useCallback } from 'react';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { useMutation } from "@tanstack/react-query";
-import { queryClient } from "@/lib/queryClient";
-import { apiRequest } from "@/lib/queryClient";
-import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { useLocation } from "wouter";
-import { useNavigation } from "@/hooks/useNavigation";
-import { Badge } from "@/components/ui/badge";
+import { Camera, FileVideo, FileAudio, Upload, Shield, Zap, Layers, Info, AlertTriangle } from "lucide-react";
+import { useDropzone } from 'react-dropzone';
+import AdvancedAnalysisResult from '@/components/analysis/AdvancedAnalysisResult';
 
-export default function AdvancedScanSection() {
-  const [location] = useLocation();
-  const { navigate } = useNavigation();
+interface AdvancedScanSectionProps {
+  onScan?: (result: any) => void;
+}
+
+const AdvancedScanSection: React.FC<AdvancedScanSectionProps> = ({ onScan }) => {
   const { toast } = useToast();
-  
-  // Get the active tab from URL query parameter
-  const searchParams = new URLSearchParams(location.split("?")[1] || "");
-  const defaultType = searchParams.get("type") || "image";
-  
-  const [activeTab, setActiveTab] = useState(defaultType);
-  const [dragActive, setDragActive] = useState(false);
-  const [files, setFiles] = useState<File[]>([]);
-  const [isWebcamActive, setIsWebcamActive] = useState(false);
-  const [scanProgress, setScanProgress] = useState(0);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const webcamRef = useRef<HTMLVideoElement>(null);
-
-  // Update URL when tab changes
-  const handleTabChange = (value: string) => {
-    setActiveTab(value);
-    navigate(`/scan?type=${value}&advanced=true`);
-  };
-
-  // Handle file upload via browse button
-  const handleBrowseFiles = () => {
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
-  };
-
-  // Handle file selection
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const selectedFiles = Array.from(e.target.files);
-      setFiles(selectedFiles);
-    }
-  };
-
-  // Handle drag events
-  const handleDrag = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    if (e.type === 'dragenter' || e.type === 'dragover') {
-      setDragActive(true);
-    } else if (e.type === 'dragleave') {
-      setDragActive(false);
-    }
-  };
-
-  // Handle drop event
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const droppedFiles = Array.from(e.dataTransfer.files);
-      setFiles(droppedFiles);
-    }
-  };
-
-  // Get accepted file types based on active tab
-  const getAcceptedFileTypes = () => {
-    switch (activeTab) {
-      case 'image':
-        return 'image/jpeg, image/png, image/gif';
-      case 'video':
-        return 'video/mp4, video/webm, video/quicktime';
-      case 'audio':
-        return 'audio/mpeg, audio/wav, audio/mp3';
-      default:
-        return 'image/jpeg, image/png, image/gif';
-    }
-  };
-
-  // Get file type description for UI
-  const getFileTypeDescription = () => {
-    switch (activeTab) {
-      case 'image':
-        return 'JPEG, PNG or GIF files for analysis. Max file size: 10MB';
-      case 'video':
-        return 'MP4, WEBM or MOV video files. Max file size: 50MB';
-      case 'audio':
-        return 'MP3, WAV or OGG audio files. Max file size: 10MB';
-      case 'webcam':
-        return 'Webcam will be used for real-time analysis';
-      case 'multimodal':
-        return 'Upload multiple file types for enhanced analysis';
-      default:
-        return 'Upload files for analysis';
-    }
-  };
-
-  // Toggle webcam
-  const toggleWebcam = () => {
-    if (!isWebcamActive) {
-      // Start webcam
-      if (navigator.mediaDevices?.getUserMedia) {
-        navigator.mediaDevices.getUserMedia({ video: true })
-          .then(stream => {
-            if (webcamRef.current) {
-              webcamRef.current.srcObject = stream;
-            }
-            setIsWebcamActive(true);
-          })
-          .catch(error => {
-            console.error('Error accessing webcam:', error);
-            toast({
-              title: "Webcam Error",
-              description: "Unable to access webcam. Please check permissions.",
-              variant: "destructive"
-            });
-          });
-      }
-    } else {
-      // Stop webcam
-      if (webcamRef.current && webcamRef.current.srcObject) {
-        const stream = webcamRef.current.srcObject as MediaStream;
-        const tracks = stream.getTracks();
-        tracks.forEach(track => track.stop());
-        webcamRef.current.srcObject = null;
-        setIsWebcamActive(false);
-      }
-    }
-  };
-
-  // Clean up webcam on unmount
-  useEffect(() => {
-    return () => {
-      if (webcamRef.current && webcamRef.current.srcObject) {
-        const stream = webcamRef.current.srcObject as MediaStream;
-        const tracks = stream.getTracks();
-        tracks.forEach(track => track.stop());
-      }
-    };
-  }, []);
-
-  // Upload and analyze media
-  const { mutate: uploadAndAnalyze, isPending } = useMutation({
-    mutationFn: async () => {
-      if (activeTab === 'webcam') {
-        // Handle webcam analysis 
-        if (!webcamRef.current || !isWebcamActive) {
-          throw new Error('Please start the webcam first');
-        }
-        
-        // Capture current webcam frame
-        const canvas = document.createElement('canvas');
-        canvas.width = webcamRef.current.videoWidth;
-        canvas.height = webcamRef.current.videoHeight;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(webcamRef.current, 0, 0, canvas.width, canvas.height);
-        
-        // Convert to base64
-        const imageData = canvas.toDataURL('image/jpeg');
-        
-        // Send to Python AI server
-        const response = await fetch('/api/ai/analyze/image', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ imageData }),
-          credentials: 'include'
-        });
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(errorText || response.statusText);
-        }
-        
-        return await response.json();
-      } else if (activeTab === 'multimodal') {
-        // Handle multimodal analysis with potentially multiple file types
-        if (!files.length) {
-          throw new Error('Please select files to analyze');
-        }
-        
-        const formData = new FormData();
-        files.forEach(file => {
-          // Categorize file based on type
-          if (file.type.startsWith('image/')) {
-            formData.append('image', file);
-          } else if (file.type.startsWith('video/')) {
-            formData.append('video', file);
-          } else if (file.type.startsWith('audio/')) {
-            formData.append('audio', file);
-          }
-        });
-        
-        // Use advanced Python AI endpoint for multimodal analysis
-        const response = await fetch('/api/ai/analyze/multimodal', {
-          method: 'POST',
-          body: formData,
-          credentials: 'include'
-        });
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(errorText || response.statusText);
-        }
-        
-        return await response.json();
-      } else {
-        // Standard single media type analysis
-        if (!files.length) {
-          throw new Error('Please select a file to analyze');
-        }
-        
-        const formData = new FormData();
-        
-        // Use Python AI endpoints for advanced analysis
-        let endpoint = '/api/ai/analyze/image';
-        
-        if (activeTab === 'video') {
-          endpoint = '/api/ai/analyze/video';
-          formData.append('video', files[0]);
-        } else if (activeTab === 'audio') {
-          endpoint = '/api/ai/analyze/audio';
-          formData.append('audio', files[0]);
-        } else {
-          formData.append('image', files[0]);
-        }
-        
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          body: formData,
-          credentials: 'include'
-        });
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(errorText || response.statusText);
-        }
-        
-        return await response.json();
-      }
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['/api/scans/recent'] });
-      navigate(`/history/${data.id}`);
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Analysis failed",
-        description: error.message,
-        variant: "destructive"
-      });
-      setScanProgress(0);
-    }
+  const [scanMode, setScanMode] = useState<'standard' | 'advanced'>('standard');
+  const [activeTab, setActiveTab] = useState('image');
+  const [isLoading, setIsLoading] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<any>(null);
+  const [selectedFiles, setSelectedFiles] = useState<{ [key: string]: File | null }>({
+    image: null,
+    video: null,
+    audio: null
+  });
+  const [advancedOptions, setAdvancedOptions] = useState({
+    deepAnalysis: false,
+    crossCheck: true,
+    preserveMetadata: true,
+    sensitivity: 'medium',
   });
   
-  // Update progress during analysis
-  useEffect(() => {
-    if (isPending) {
-      const interval = setInterval(() => {
-        setScanProgress(prev => {
-          if (prev >= 95) {
-            clearInterval(interval);
-            return prev;
-          }
-          return prev + Math.random() * 10;
-        });
-      }, 500);
-      
-      return () => clearInterval(interval);
+  // For webcam
+  const [isWebcamActive, setIsWebcamActive] = useState(false);
+  const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+  const canvasRef = React.useRef<HTMLCanvasElement>(null);
+  
+  // Handle webcam activation
+  const toggleWebcam = useCallback(async () => {
+    if (isWebcamActive) {
+      // Stop webcam
+      if (webcamStream) {
+        webcamStream.getTracks().forEach(track => track.stop());
+        setWebcamStream(null);
+      }
+      setIsWebcamActive(false);
     } else {
-      setScanProgress(0);
+      try {
+        // Start webcam
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false 
+        });
+        setWebcamStream(stream);
+        
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+        
+        setIsWebcamActive(true);
+        
+        toast({
+          title: "Webcam activated",
+          description: "Please position your face in the frame for analysis"
+        });
+      } catch (error) {
+        console.error("Error accessing webcam:", error);
+        toast({
+          variant: "destructive",
+          title: "Webcam Error",
+          description: "Failed to access your webcam. Please check permissions."
+        });
+      }
     }
-  }, [isPending]);
-
+  }, [isWebcamActive, webcamStream, toast]);
+  
+  // Handle file drop for image, video or audio
+  const onDrop = useCallback((acceptedFiles: File[], fileType: string) => {
+    if (acceptedFiles.length > 0) {
+      const file = acceptedFiles[0];
+      
+      // File size validation
+      const maxSize = 50 * 1024 * 1024; // 50MB
+      if (file.size > maxSize) {
+        toast({
+          variant: "destructive",
+          title: "File too large",
+          description: "Maximum file size is 50MB"
+        });
+        return;
+      }
+      
+      // Update selected file
+      setSelectedFiles(prev => ({
+        ...prev,
+        [fileType]: file
+      }));
+      
+      toast({
+        title: "File selected",
+        description: `${file.name} ready for analysis`
+      });
+    }
+  }, [toast]);
+  
+  // Create dropzones for different file types
+  const imageDropzone = useDropzone({
+    accept: {
+      'image/*': ['.jpeg', '.jpg', '.png', '.gif', '.webp']
+    },
+    maxFiles: 1,
+    onDrop: (files) => onDrop(files, 'image')
+  });
+  
+  const videoDropzone = useDropzone({
+    accept: {
+      'video/*': ['.mp4', '.webm', '.mov', '.avi']
+    },
+    maxFiles: 1,
+    onDrop: (files) => onDrop(files, 'video')
+  });
+  
+  const audioDropzone = useDropzone({
+    accept: {
+      'audio/*': ['.mp3', '.wav', '.ogg', '.m4a']
+    },
+    maxFiles: 1,
+    onDrop: (files) => onDrop(files, 'audio')
+  });
+  
+  // Take a snapshot from webcam
+  const captureWebcamImage = useCallback(() => {
+    if (!videoRef.current || !canvasRef.current) return;
+    
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const context = canvas.getContext('2d');
+    
+    if (!context) return;
+    
+    // Set canvas dimensions to match video
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    
+    // Draw video frame to canvas
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    // Convert to base64
+    const imageData = canvas.toDataURL('image/jpeg');
+    
+    return imageData;
+  }, []);
+  
+  // Handle scan button click
+  const handleScan = useCallback(async () => {
+    setIsLoading(true);
+    setAnalysisResult(null);
+    
+    try {
+      let endpoint = '';
+      const formData = new FormData();
+      
+      // Add advanced options to form data
+      Object.entries(advancedOptions).forEach(([key, value]) => {
+        formData.append(key, value.toString());
+      });
+      
+      if (activeTab === 'image') {
+        endpoint = '/api/ai/analyze/image';
+        
+        if (isWebcamActive) {
+          // Use webcam image
+          const imageData = captureWebcamImage();
+          if (!imageData) {
+            throw new Error('Failed to capture webcam image');
+          }
+          formData.append('imageData', imageData);
+        } else if (selectedFiles.image) {
+          // Use uploaded image
+          formData.append('image', selectedFiles.image);
+        } else {
+          throw new Error('No image selected for analysis');
+        }
+      } else if (activeTab === 'video') {
+        endpoint = '/api/ai/analyze/video';
+        
+        if (!selectedFiles.video) {
+          throw new Error('No video selected for analysis');
+        }
+        
+        formData.append('video', selectedFiles.video);
+      } else if (activeTab === 'audio') {
+        endpoint = '/api/ai/analyze/audio';
+        
+        if (!selectedFiles.audio) {
+          throw new Error('No audio selected for analysis');
+        }
+        
+        formData.append('audio', selectedFiles.audio);
+      } else if (activeTab === 'multimodal') {
+        endpoint = '/api/ai/analyze/multimodal';
+        let hasFiles = false;
+        
+        // Add all available files for multimodal analysis
+        if (selectedFiles.image) {
+          formData.append('image', selectedFiles.image);
+          hasFiles = true;
+        }
+        
+        if (selectedFiles.video) {
+          formData.append('video', selectedFiles.video);
+          hasFiles = true;
+        }
+        
+        if (selectedFiles.audio) {
+          formData.append('audio', selectedFiles.audio);
+          hasFiles = true;
+        }
+        
+        if (!hasFiles) {
+          throw new Error('At least one file is required for multimodal analysis');
+        }
+      }
+      
+      // Make API request
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Analysis failed with status: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      
+      // Set analysis result
+      setAnalysisResult(result);
+      
+      // Notify parent component
+      if (onScan) {
+        onScan(result);
+      }
+      
+      // Show success toast
+      toast({
+        title: "Analysis Complete",
+        description: `Completed ${scanMode} analysis on your ${activeTab} file`
+      });
+    } catch (error) {
+      console.error('Scan error:', error);
+      
+      toast({
+        variant: "destructive",
+        title: "Analysis Failed",
+        description: error instanceof Error ? error.message : "Something went wrong"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [
+    activeTab,
+    advancedOptions,
+    captureWebcamImage,
+    isWebcamActive,
+    onScan,
+    scanMode,
+    selectedFiles,
+    toast
+  ]);
+  
+  // Reset selected files and results
+  const handleReset = useCallback(() => {
+    setSelectedFiles({
+      image: null,
+      video: null,
+      audio: null
+    });
+    setAnalysisResult(null);
+    
+    // Stop webcam if active
+    if (isWebcamActive && webcamStream) {
+      webcamStream.getTracks().forEach(track => track.stop());
+      setWebcamStream(null);
+      setIsWebcamActive(false);
+    }
+    
+    toast({
+      title: "Reset Complete",
+      description: "You can now start a new analysis"
+    });
+  }, [isWebcamActive, webcamStream, toast]);
+  
+  // Toggle between standard and advanced mode
+  const toggleScanMode = () => {
+    setScanMode(scanMode === 'standard' ? 'advanced' : 'standard');
+  };
+  
+  // Handle advanced option changes
+  const updateAdvancedOption = (option: string, value: any) => {
+    setAdvancedOptions(prev => ({
+      ...prev,
+      [option]: value
+    }));
+  };
+  
   return (
-    <div className="bg-card rounded-xl p-6 border border-primary/30 relative overflow-hidden">
-      {/* Background visual effect */}
-      <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-primary/5 to-transparent rounded-full blur-3xl"></div>
-      <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-gradient-to-tr from-secondary/5 to-transparent rounded-full blur-3xl"></div>
-      
-      <h2 className="text-xl font-poppins font-semibold text-foreground mb-4 flex items-center relative z-10">
-        <Zap className="text-primary mr-2 animate-pulse-glow" size={20} />
-        Advanced Satya Analysis
-      </h2>
-      
-      <div className="relative z-10">
-        {/* Upload Tabs */}
-        <Tabs 
-          defaultValue={activeTab} 
-          value={activeTab} 
-          onValueChange={handleTabChange}
-          className="w-full"
-        >
-          <TabsList className="border-b border-muted mb-6 w-full justify-start rounded-none bg-transparent p-0 h-auto overflow-x-auto">
-            <TabsTrigger 
-              value="image" 
-              className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none"
-            >
-              <ImageIcon className="mr-2 h-4 w-4" />
-              Image
-            </TabsTrigger>
-            <TabsTrigger 
-              value="video" 
-              className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none"
-            >
-              <Video className="mr-2 h-4 w-4" />
-              Video
-            </TabsTrigger>
-            <TabsTrigger 
-              value="audio" 
-              className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none"
-            >
-              <Mic className="mr-2 h-4 w-4" />
-              Audio
-            </TabsTrigger>
-            <TabsTrigger 
-              value="webcam" 
-              className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none"
-            >
-              <Camera className="mr-2 h-4 w-4" />
-              Webcam
-            </TabsTrigger>
-            <TabsTrigger 
-              value="multimodal" 
-              className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-secondary data-[state=active]:bg-transparent data-[state=active]:text-secondary data-[state=active]:shadow-none"
-            >
-              <Activity className="mr-2 h-4 w-4" />
-              Multimodal
-              <Badge variant="outline" className="ml-2 bg-secondary/10 text-secondary text-xs">Advanced</Badge>
-            </TabsTrigger>
-          </TabsList>
-
-          {/* Tab Content */}
-          <TabsContent value="image" className="mt-0 relative min-h-[350px]">
-            {renderFileUploadArea()}
-          </TabsContent>
-          <TabsContent value="video" className="mt-0 relative min-h-[350px]">
-            {renderFileUploadArea()}
-          </TabsContent>
-          <TabsContent value="audio" className="mt-0 relative min-h-[350px]">
-            {renderFileUploadArea()}
-          </TabsContent>
-          <TabsContent value="webcam" className="mt-0 relative min-h-[350px]">
-            {renderWebcamArea()}
-          </TabsContent>
-          <TabsContent value="multimodal" className="mt-0 relative min-h-[350px]">
-            {renderMultimodalArea()}
-          </TabsContent>
-        </Tabs>
-      </div>
-      
-      {/* Progress indicator during upload/analysis */}
-      {isPending && (
-        <div className="mt-4 relative z-10">
-          <div className="flex justify-between text-sm mb-2">
-            <span className="text-foreground">{getAnalysisStatusMessage()}</span>
-            <span className="text-primary">{Math.min(Math.round(scanProgress), 99)}%</span>
-          </div>
-          <div className="h-1.5 w-full bg-muted/30 rounded-full overflow-hidden relative">
-            <div 
-              className="h-full bg-gradient-to-r from-primary to-secondary absolute top-0 left-0 rounded-full transition-all duration-300"
-              style={{ width: `${scanProgress}%` }}
-            ></div>
-            <div className="scanner-line"></div>
-          </div>
-        </div>
-      )}
-      
-      {/* Upload Control Buttons */}
-      <div className="mt-6 flex justify-between items-center relative z-10">
-        <div className="text-muted-foreground text-sm">
-          <Info className="inline mr-1 text-primary" size={16} />
-          {getFileTypeDescription()}
+    <div className="w-full space-y-6">
+      {/* Mode selector */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-2">
+          <Switch
+            id="scan-mode"
+            checked={scanMode === 'advanced'}
+            onCheckedChange={toggleScanMode}
+          />
+          <Label htmlFor="scan-mode" className="text-sm font-medium">
+            Advanced Mode {scanMode === 'advanced' && <Zap className="inline h-4 w-4 text-yellow-500" />}
+          </Label>
         </div>
         
         <Button
-          className="bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 shadow-[0_0_15px_rgba(0,200,255,0.5)] flex items-center gap-2 text-black font-semibold"
-          onClick={() => uploadAndAnalyze()}
-          disabled={isPending || 
-            (activeTab === 'webcam' && !isWebcamActive) || 
-            (activeTab !== 'webcam' && files.length === 0)}
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            toast({
+              title: "Advanced Detection",
+              description: "Advanced mode enables multimodal analysis and additional detection options for better accuracy."
+            });
+          }}
         >
-          <ScanLine size={18} />
-          <span>Start Advanced Analysis</span>
+          <Info className="h-4 w-4" />
         </Button>
       </div>
-    </div>
-  );
-
-  function renderFileUploadArea() {
-    return (
-      <div
-        className={cn(
-          "file-upload-area rounded-xl bg-muted/50 p-8 flex flex-col items-center justify-center text-center",
-          dragActive && "drag-active"
-        )}
-        onDragEnter={handleDrag}
-        onDragOver={handleDrag}
-        onDragLeave={handleDrag}
-        onDrop={handleDrop}
-      >
-        {files.length > 0 ? (
-          // Files selected
-          <div className="w-full">
-            <div className="flex items-center justify-center mb-4">
-              <div className="h-16 w-16 rounded-full bg-primary/20 flex items-center justify-center pulse-glow">
-                {activeTab === 'image' && <ImageIcon className="text-primary" size={32} />}
-                {activeTab === 'video' && <Video className="text-primary" size={32} />}
-                {activeTab === 'audio' && <Mic className="text-primary" size={32} />}
-              </div>
-            </div>
-            
-            <h3 className="font-poppins font-medium text-lg text-foreground mb-2">
-              {files.length} file{files.length > 1 ? 's' : ''} selected
-            </h3>
-            
-            <ul className="mb-4 max-w-md mx-auto text-left">
-              {files.map((file, index) => (
-                <li key={index} className="text-sm text-muted-foreground truncate">
-                  <FileCheck className="inline-block text-accent mr-2" size={14} />
-                  {file.name} ({(file.size / (1024 * 1024)).toFixed(2)} MB)
-                </li>
-              )).slice(0, 3)}
-              {files.length > 3 && (
-                <li className="text-sm text-muted-foreground">
-                  + {files.length - 3} more file(s)
-                </li>
+      
+      <Card className="border-primary/20">
+        <CardHeader>
+          <CardTitle className="text-xl">
+            {scanMode === 'advanced' ? 'Advanced AI Detection' : 'Standard Detection'}
+          </CardTitle>
+          <CardDescription>
+            {scanMode === 'advanced' 
+              ? 'Utilize our most advanced AI algorithms for deep analysis and cross-verification'
+              : 'Quick detection of synthetic media using standard algorithms'}
+          </CardDescription>
+        </CardHeader>
+        
+        <CardContent>
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="image" disabled={isLoading}>
+                <Camera className="h-4 w-4 mr-2" />
+                Image
+              </TabsTrigger>
+              <TabsTrigger value="video" disabled={isLoading}>
+                <FileVideo className="h-4 w-4 mr-2" />
+                Video
+              </TabsTrigger>
+              <TabsTrigger value="audio" disabled={isLoading}>
+                <FileAudio className="h-4 w-4 mr-2" />
+                Audio
+              </TabsTrigger>
+              {scanMode === 'advanced' && (
+                <TabsTrigger value="multimodal" disabled={isLoading}>
+                  <Layers className="h-4 w-4 mr-2" />
+                  Multimodal
+                </TabsTrigger>
               )}
-            </ul>
+            </TabsList>
             
-            <Button 
-              variant="outline" 
-              onClick={() => setFiles([])}
-              className="border-primary/30 text-primary hover:bg-primary/10"
-            >
-              Choose Different Files
-            </Button>
-          </div>
-        ) : (
-          // No files selected
-          <>
-            <UploadCloud className="text-5xl text-primary mb-4 animate-pulse-glow" size={64} />
-            <h3 className="font-poppins font-medium text-lg text-foreground mb-2">
-              Drag & Drop Files Here
-            </h3>
-            <p className="text-muted-foreground mb-6 max-w-md">
-              Upload {getFileTypeDescription()}
-            </p>
-            
-            <div>
-              <Button onClick={handleBrowseFiles}>
-                Browse Files
-              </Button>
-              <input
-                type="file"
-                className="hidden"
-                accept={getAcceptedFileTypes()}
-                onChange={handleFileChange}
-                ref={fileInputRef}
-                multiple={activeTab !== 'video'}
-              />
-            </div>
-          </>
-        )}
-      </div>
-    );
-  }
-
-  function renderWebcamArea() {
-    return (
-      <div className="rounded-xl bg-muted/50 border-2 border-primary/30 p-8 flex flex-col items-center justify-center text-center">
-        <div className="relative w-full max-w-md aspect-video bg-muted/80 rounded-lg overflow-hidden mb-6">
-          {isWebcamActive ? (
-            <div className="absolute inset-0">
-              <video 
-                ref={webcamRef} 
-                autoPlay 
-                playsInline 
-                className="h-full w-full object-cover"
-              />
-              <div className="absolute inset-0 border border-primary/30 pointer-events-none"></div>
-              <div className="absolute top-2 right-2 h-3 w-3 rounded-full bg-accent animate-ping"></div>
-              <div className="absolute top-2 right-2 h-3 w-3 rounded-full bg-accent"></div>
-              
-              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3">
-                <div className="text-xs text-white opacity-80 flex items-center">
-                  <Activity className="inline-block mr-1" size={12} />
-                  Satyalive™ Facial Analysis Active
+            {/* Image Tab */}
+            <TabsContent value="image" className="mt-4 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Webcam section */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-medium">Live Webcam</h3>
+                    <Button size="sm" variant="outline" onClick={toggleWebcam}>
+                      {isWebcamActive ? 'Stop Webcam' : 'Start Webcam'}
+                    </Button>
+                  </div>
+                  
+                  <div className="relative aspect-video bg-muted rounded-md overflow-hidden flex items-center justify-center">
+                    {isWebcamActive ? (
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="text-center p-4">
+                        <Camera className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                        <p className="text-sm text-muted-foreground">Click "Start Webcam" to enable live face analysis</p>
+                      </div>
+                    )}
+                    
+                    {/* Hidden canvas for capturing frames */}
+                    <canvas ref={canvasRef} className="hidden" />
+                  </div>
+                </div>
+                
+                {/* Upload section */}
+                <div className="space-y-2">
+                  <h3 className="text-sm font-medium">Upload Image</h3>
+                  
+                  <div 
+                    {...imageDropzone.getRootProps()}
+                    className={`border-2 border-dashed rounded-md p-4 text-center cursor-pointer transition-colors 
+                      ${imageDropzone.isDragActive ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'}
+                      ${selectedFiles.image ? 'bg-primary/5 border-primary' : ''}
+                    `}
+                  >
+                    <input {...imageDropzone.getInputProps()} />
+                    
+                    {selectedFiles.image ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-center">
+                          <div className="w-16 h-16 bg-muted rounded-md overflow-hidden mr-2">
+                            <img 
+                              src={URL.createObjectURL(selectedFiles.image)} 
+                              alt="Preview" 
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          <div className="text-left">
+                            <p className="text-sm font-medium truncate">{selectedFiles.image.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {(selectedFiles.image.size / (1024 * 1024)).toFixed(2)} MB
+                            </p>
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground">Click or drag to replace</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <Upload className="h-8 w-8 mx-auto text-muted-foreground" />
+                        <p className="text-sm">Drop your image here or click to browse</p>
+                        <p className="text-xs text-muted-foreground">Supports JPEG, PNG, WebP (max 50MB)</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Camera className="text-primary/40" size={64} />
-              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3">
-                <div className="text-xs text-white opacity-80">Click Start Camera to begin</div>
-              </div>
-            </div>
-          )}
-        </div>
-        
-        <Button 
-          variant={isWebcamActive ? "destructive" : "default"} 
-          onClick={toggleWebcam}
-          className="mb-2"
-        >
-          {isWebcamActive ? "Stop Camera" : "Start Camera"}
-        </Button>
-        
-        <p className="text-sm text-muted-foreground mt-2">
-          Your webcam feed will be analyzed in real-time for deepfake detection.
-          <br />No data is stored unless you explicitly save the results.
-        </p>
-      </div>
-    );
-  }
-
-  function renderMultimodalArea() {
-    return (
-      <div
-        className={cn(
-          "file-upload-area rounded-xl bg-gradient-to-br from-secondary/10 to-primary/10 p-8 flex flex-col items-center justify-center text-center",
-          dragActive && "drag-active"
-        )}
-        onDragEnter={handleDrag}
-        onDragOver={handleDrag}
-        onDragLeave={handleDrag}
-        onDrop={handleDrop}
-      >
-        {files.length > 0 ? (
-          // Files selected
-          <div className="w-full">
-            <div className="flex items-center justify-center mb-4 gap-2">
-              <div className="h-14 w-14 rounded-full bg-primary/20 flex items-center justify-center">
-                <Activity className="text-primary animate-pulse" size={28} />
-              </div>
-            </div>
+            </TabsContent>
             
-            <h3 className="font-poppins font-medium text-lg text-foreground mb-2">
-              {files.length} file{files.length > 1 ? 's' : ''} selected for multimodal analysis
-            </h3>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4 max-w-2xl mx-auto">
-              <div className="bg-muted/70 rounded-lg p-3">
-                <h4 className="font-medium text-sm text-foreground mb-1">Images</h4>
-                <p className="text-xs text-muted-foreground">
-                  {files.filter(f => f.type.startsWith('image/')).length} files
-                </p>
-              </div>
-              <div className="bg-muted/70 rounded-lg p-3">
-                <h4 className="font-medium text-sm text-foreground mb-1">Videos</h4>
-                <p className="text-xs text-muted-foreground">
-                  {files.filter(f => f.type.startsWith('video/')).length} files
-                </p>
-              </div>
-              <div className="bg-muted/70 rounded-lg p-3">
-                <h4 className="font-medium text-sm text-foreground mb-1">Audio</h4>
-                <p className="text-xs text-muted-foreground">
-                  {files.filter(f => f.type.startsWith('audio/')).length} files
-                </p>
-              </div>
-            </div>
-            
-            <Button 
-              variant="outline" 
-              onClick={() => setFiles([])}
-              className="border-secondary/30 text-secondary hover:bg-secondary/10"
-            >
-              Choose Different Files
-            </Button>
-          </div>
-        ) : (
-          // No files selected
-          <>
-            <Activity className="text-5xl text-secondary mb-4" size={64} />
-            <h3 className="font-poppins font-medium text-lg text-foreground mb-2">
-              Advanced Multimodal Analysis
-            </h3>
-            <p className="text-muted-foreground mb-6 max-w-md">
-              Upload multiple file types (images, videos, audio) for enhanced cross-modal detection capabilities.
-              Our advanced algorithm will perform correlation analysis across different modalities.
-            </p>
-            
-            <div>
-              <Button 
-                onClick={handleBrowseFiles}
-                className="bg-secondary hover:bg-secondary/90 text-black"
+            {/* Video Tab */}
+            <TabsContent value="video" className="mt-4 space-y-4">
+              <div 
+                {...videoDropzone.getRootProps()}
+                className={`border-2 border-dashed rounded-md p-8 text-center cursor-pointer transition-colors 
+                  ${videoDropzone.isDragActive ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'}
+                  ${selectedFiles.video ? 'bg-primary/5 border-primary' : ''}
+                `}
               >
-                Browse Multiple Files
-              </Button>
-              <input
-                type="file"
-                className="hidden"
-                accept="image/*, video/*, audio/*"
-                onChange={handleFileChange}
-                ref={fileInputRef}
-                multiple={true}
-              />
-            </div>
-          </>
-        )}
-      </div>
-    );
-  }
+                <input {...videoDropzone.getInputProps()} />
+                
+                {selectedFiles.video ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-center">
+                      <FileVideo className="h-10 w-10 text-primary mr-3" />
+                      <div className="text-left">
+                        <p className="text-sm font-medium">{selectedFiles.video.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {(selectedFiles.video.size / (1024 * 1024)).toFixed(2)} MB
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-sm text-muted-foreground">Click or drag to replace video</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <FileVideo className="h-12 w-12 mx-auto text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">Drop your video or click to browse</p>
+                      <p className="text-xs text-muted-foreground mt-1">Supports MP4, WebM, MOV (max 50MB)</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              {scanMode === 'advanced' && selectedFiles.video && (
+                <div className="mt-4 p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-md">
+                  <div className="flex items-start">
+                    <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 mt-0.5 mr-2 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-yellow-800 dark:text-yellow-300">Video Processing Time</p>
+                      <p className="text-xs text-yellow-700 dark:text-yellow-400 mt-1">
+                        Advanced video analysis may take 1-3 minutes to complete depending on the video length and complexity.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </TabsContent>
+            
+            {/* Audio Tab */}
+            <TabsContent value="audio" className="mt-4 space-y-4">
+              <div 
+                {...audioDropzone.getRootProps()}
+                className={`border-2 border-dashed rounded-md p-8 text-center cursor-pointer transition-colors 
+                  ${audioDropzone.isDragActive ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'}
+                  ${selectedFiles.audio ? 'bg-primary/5 border-primary' : ''}
+                `}
+              >
+                <input {...audioDropzone.getInputProps()} />
+                
+                {selectedFiles.audio ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-center">
+                      <FileAudio className="h-10 w-10 text-primary mr-3" />
+                      <div className="text-left">
+                        <p className="text-sm font-medium">{selectedFiles.audio.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {(selectedFiles.audio.size / (1024 * 1024)).toFixed(2)} MB
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-sm text-muted-foreground">Click or drag to replace audio</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <FileAudio className="h-12 w-12 mx-auto text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">Drop your audio or click to browse</p>
+                      <p className="text-xs text-muted-foreground mt-1">Supports MP3, WAV, OGG (max 50MB)</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              {scanMode === 'advanced' && (
+                <div className="bg-blue-100 dark:bg-blue-900/30 p-3 rounded-md">
+                  <div className="flex">
+                    <Info className="h-5 w-5 text-blue-600 dark:text-blue-400 mr-2 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-blue-800 dark:text-blue-300">Advanced Audio Analysis</p>
+                      <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
+                        Our AI can detect voice cloning, synthetic speech, and audio splicing with high accuracy.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </TabsContent>
+            
+            {/* Multimodal Tab */}
+            {scanMode === 'advanced' && (
+              <TabsContent value="multimodal" className="mt-4 space-y-4">
+                <div className="text-sm">
+                  <p className="mb-2">Multimodal analysis combines evidence from multiple media types for more accurate detection.</p>
+                  <p className="text-muted-foreground text-xs">Upload at least two media types (image, video, or audio) for multimodal analysis.</p>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-2">
+                  {/* Image Selection for Multimodal */}
+                  <div className="border rounded-md p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-sm font-medium">Image</h3>
+                      {selectedFiles.image ? (
+                        <span className="text-xs bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300 px-2 py-0.5 rounded-full">
+                          Selected
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Not selected</span>
+                      )}
+                    </div>
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="w-full"
+                      onClick={() => setActiveTab('image')}
+                    >
+                      <Camera className="h-4 w-4 mr-2" />
+                      {selectedFiles.image ? 'Change Image' : 'Add Image'}
+                    </Button>
+                  </div>
+                  
+                  {/* Video Selection for Multimodal */}
+                  <div className="border rounded-md p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-sm font-medium">Video</h3>
+                      {selectedFiles.video ? (
+                        <span className="text-xs bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300 px-2 py-0.5 rounded-full">
+                          Selected
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Not selected</span>
+                      )}
+                    </div>
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="w-full"
+                      onClick={() => setActiveTab('video')}
+                    >
+                      <FileVideo className="h-4 w-4 mr-2" />
+                      {selectedFiles.video ? 'Change Video' : 'Add Video'}
+                    </Button>
+                  </div>
+                  
+                  {/* Audio Selection for Multimodal */}
+                  <div className="border rounded-md p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-sm font-medium">Audio</h3>
+                      {selectedFiles.audio ? (
+                        <span className="text-xs bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300 px-2 py-0.5 rounded-full">
+                          Selected
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Not selected</span>
+                      )}
+                    </div>
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="w-full"
+                      onClick={() => setActiveTab('audio')}
+                    >
+                      <FileAudio className="h-4 w-4 mr-2" />
+                      {selectedFiles.audio ? 'Change Audio' : 'Add Audio'}
+                    </Button>
+                  </div>
+                </div>
+                
+                <div className="bg-indigo-100 dark:bg-indigo-900/30 p-3 mt-2 rounded-md">
+                  <div className="flex">
+                    <Shield className="h-5 w-5 text-indigo-600 dark:text-indigo-400 mr-2 flex-shrink-0" />
+                    <div className="text-indigo-800 dark:text-indigo-300">
+                      <p className="text-sm font-medium">Why use multimodal analysis?</p>
+                      <p className="text-xs mt-1">
+                        Multimodal fusion combines evidence across different media types, making it more 
+                        difficult for deepfakes to evade detection. Cross-modal inconsistencies are strong 
+                        indicators of manipulation.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+            )}
+          </Tabs>
+          
+          {/* Advanced options */}
+          {scanMode === 'advanced' && (
+            <>
+              <Separator className="my-4" />
+              
+              <div className="space-y-4">
+                <h3 className="text-sm font-medium">Advanced Options</h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="deep-analysis" className="text-sm">Deep Analysis</Label>
+                      <p className="text-xs text-muted-foreground">More thorough but slower analysis</p>
+                    </div>
+                    <Switch
+                      id="deep-analysis"
+                      checked={advancedOptions.deepAnalysis}
+                      onCheckedChange={(checked) => updateAdvancedOption('deepAnalysis', checked)}
+                    />
+                  </div>
+                  
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="cross-check" className="text-sm">Cross-Check Models</Label>
+                      <p className="text-xs text-muted-foreground">Compare results from multiple detection models</p>
+                    </div>
+                    <Switch
+                      id="cross-check"
+                      checked={advancedOptions.crossCheck}
+                      onCheckedChange={(checked) => updateAdvancedOption('crossCheck', checked)}
+                    />
+                  </div>
+                  
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="preserve-metadata" className="text-sm">Preserve Metadata</Label>
+                      <p className="text-xs text-muted-foreground">Analyze file metadata for tampering</p>
+                    </div>
+                    <Switch
+                      id="preserve-metadata"
+                      checked={advancedOptions.preserveMetadata}
+                      onCheckedChange={(checked) => updateAdvancedOption('preserveMetadata', checked)}
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="sensitivity" className="text-sm">Detection Sensitivity</Label>
+                    <Select
+                      value={advancedOptions.sensitivity}
+                      onValueChange={(value) => updateAdvancedOption('sensitivity', value)}
+                    >
+                      <SelectTrigger id="sensitivity">
+                        <SelectValue placeholder="Select sensitivity" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="low">Low (fewer false positives)</SelectItem>
+                        <SelectItem value="medium">Medium (balanced)</SelectItem>
+                        <SelectItem value="high">High (catch subtle manipulation)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </CardContent>
+        
+        <CardFooter className="flex justify-between pt-2">
+          <Button variant="outline" onClick={handleReset} disabled={isLoading}>
+            Reset
+          </Button>
+          
+          <Button onClick={handleScan} disabled={isLoading} className="space-x-2">
+            {isLoading ? (
+              <>
+                <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                <span>Analyzing...</span>
+              </>
+            ) : (
+              <>
+                {scanMode === 'advanced' ? <Zap className="h-4 w-4 mr-2" /> : <Shield className="h-4 w-4 mr-2" />}
+                <span>Start {scanMode === 'advanced' ? 'Advanced' : 'Standard'} Scan</span>
+              </>
+            )}
+          </Button>
+        </CardFooter>
+      </Card>
+      
+      {/* Analysis Results */}
+      {analysisResult && (
+        <div className="mt-8">
+          <h2 className="text-xl font-semibold mb-4">Analysis Results</h2>
+          <AdvancedAnalysisResult 
+            result={analysisResult}
+            onShare={() => {
+              toast({
+                title: "Sharing Results",
+                description: "This feature will be available in the final version"
+              });
+            }}
+            onExport={() => {
+              const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(analysisResult, null, 2));
+              const downloadAnchorNode = document.createElement('a');
+              downloadAnchorNode.setAttribute("href", dataStr);
+              downloadAnchorNode.setAttribute("download", `satya-analysis-${new Date().getTime()}.json`);
+              document.body.appendChild(downloadAnchorNode);
+              downloadAnchorNode.click();
+              downloadAnchorNode.remove();
+              
+              toast({
+                title: "Analysis Exported",
+                description: "Results saved as JSON file"
+              });
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
 
-  function getAnalysisStatusMessage() {
-    if (scanProgress < 25) {
-      return "Initializing analysis algorithms...";
-    } else if (scanProgress < 50) {
-      return "Extracting media features...";
-    } else if (scanProgress < 75) {
-      return "Running neural network detection...";
-    } else {
-      return "Finalizing analysis report...";
-    }
-  }
-}
+export default AdvancedScanSection;

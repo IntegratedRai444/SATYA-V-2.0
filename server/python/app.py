@@ -7,173 +7,44 @@ from datetime import datetime
 import base64
 import io
 from PIL import Image
+import logging
+import traceback
+from models import get_model, face_model, audio_model, video_model, multimodal_model
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger('satyaai')
+
+# Initialize Flask app
 app = Flask(__name__)
 
-# Mock detection functions - in a real implementation, these would use actual ML models
-def analyze_image(image_data):
-    """Analyze image for deepfake detection"""
-    # Simulate processing time
-    time.sleep(1.5)
-    
-    # Generate a unique case ID
-    case_id = str(uuid.uuid4())
-    
-    # Random result with 70% chance of being authentic
-    result = "AUTHENTIC MEDIA" if np.random.random() > 0.3 else "MANIPULATED MEDIA"
-    confidence = np.random.uniform(75, 98) if result == "AUTHENTIC MEDIA" else np.random.uniform(60, 95)
-    
-    key_findings = []
-    if result == "AUTHENTIC MEDIA":
-        key_findings = [
-            "No manipulation artifacts detected",
-            "Image metadata is consistent",
-            "Natural facial features detected",
-            "Lighting is physically consistent"
-        ]
-    else:
-        key_findings = [
-            "Unnatural facial warping detected",
-            "Inconsistent lighting patterns",
-            "Metadata shows signs of editing",
-            "Unusual color distribution in key areas"
-        ]
-    
-    return {
-        "authenticity": result,
-        "confidence": confidence,
-        "analysis_date": datetime.now().isoformat(),
-        "case_id": case_id,
-        "key_findings": key_findings
-    }
-
-def analyze_video(video_data):
-    """Analyze video for deepfake detection"""
-    # Simulate longer processing for video
-    time.sleep(2.5)
-    
-    case_id = str(uuid.uuid4())
-    result = "AUTHENTIC MEDIA" if np.random.random() > 0.4 else "MANIPULATED MEDIA"
-    confidence = np.random.uniform(70, 95) if result == "AUTHENTIC MEDIA" else np.random.uniform(65, 92)
-    
-    key_findings = []
-    if result == "AUTHENTIC MEDIA":
-        key_findings = [
-            "Frame consistency verified",
-            "Audio-visual sync is natural",
-            "No temporal artifacts detected",
-            "Facial movements are physiologically consistent"
-        ]
-    else:
-        key_findings = [
-            "Inconsistent facial movements between frames",
-            "Audio-visual synchronization issues",
-            "Unnatural eye blinking patterns",
-            "Face warping detected in transition frames"
-        ]
-    
-    return {
-        "authenticity": result,
-        "confidence": confidence,
-        "analysis_date": datetime.now().isoformat(),
-        "case_id": case_id,
-        "key_findings": key_findings
-    }
-
-def analyze_audio(audio_data):
-    """Analyze audio for deepfake detection"""
-    # Simulate processing
-    time.sleep(1.8)
-    
-    case_id = str(uuid.uuid4())
-    result = "AUTHENTIC MEDIA" if np.random.random() > 0.35 else "MANIPULATED MEDIA"
-    confidence = np.random.uniform(72, 96) if result == "AUTHENTIC MEDIA" else np.random.uniform(62, 94)
-    
-    key_findings = []
-    if result == "AUTHENTIC MEDIA":
-        key_findings = [
-            "Natural voice cadence detected",
-            "Breathing patterns are physiologically sound",
-            "No splicing artifacts found",
-            "Background noise is consistent"
-        ]
-    else:
-        key_findings = [
-            "Unnatural voice transitions detected",
-            "Inconsistent background noise",
-            "Artificial formant structure identified",
-            "Irregular breathing patterns detected"
-        ]
-    
-    return {
-        "authenticity": result,
-        "confidence": confidence,
-        "analysis_date": datetime.now().isoformat(),
-        "case_id": case_id,
-        "key_findings": key_findings
-    }
-
-def analyze_multimodal(image_data=None, audio_data=None, video_data=None):
-    """Perform advanced multimodal analysis"""
-    # Simulate complex processing
-    time.sleep(3)
-    
-    case_id = str(uuid.uuid4())
-    
-    # Weight results from different modalities
-    image_authentic = np.random.random() > 0.3 if image_data else None
-    audio_authentic = np.random.random() > 0.35 if audio_data else None
-    video_authentic = np.random.random() > 0.4 if video_data else None
-    
-    # Count available modalities for weighting
-    modality_count = sum(1 for x in [image_authentic, audio_authentic, video_authentic] if x is not None)
-    
-    if modality_count == 0:
-        return {"error": "No valid data provided for analysis"}
-    
-    # Calculate combined result
-    authentic_count = sum(1 for x in [image_authentic, audio_authentic, video_authentic] if x == True)
-    result = "AUTHENTIC MEDIA" if authentic_count / modality_count >= 0.5 else "MANIPULATED MEDIA"
-    
-    # Higher confidence with more modalities
-    base_confidence = 75 if result == "AUTHENTIC MEDIA" else 70
-    modality_bonus = min(modality_count * 5, 15)  # Up to 15% bonus for using all modalities
-    confidence = base_confidence + modality_bonus + np.random.uniform(0, 10)
-    
-    # Generate findings based on combined analysis
-    key_findings = []
-    if result == "AUTHENTIC MEDIA":
-        key_findings = [
-            "Cross-modal consistency verified",
-            "Multimodal analysis confirms authenticity",
-            "No manipulation artifacts detected across modalities",
-            "Content integrity verified through multiple channels"
-        ]
-    else:
-        key_findings = [
-            "Cross-modal inconsistencies detected",
-            "Manipulation artifacts found in correlation analysis",
-            "Temporal misalignment between modalities",
-            "Content integrity compromised based on multimodal evidence"
-        ]
-    
-    return {
-        "authenticity": result,
-        "confidence": confidence,
-        "analysis_date": datetime.now().isoformat(),
-        "case_id": case_id,
-        "key_findings": key_findings,
-        "modalities_used": modality_count
-    }
+# Enable CORS for local development
+@app.after_request
+def add_cors_headers(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
 
 @app.route('/api/python/analyze/image', methods=['POST'])
 def analyze_image_endpoint():
     try:
+        logger.info("Received image analysis request")
+        
         if 'image' not in request.files and 'imageData' not in request.json:
+            logger.warning("No image data provided")
             return jsonify({"error": "No image provided"}), 400
+        
+        # Process image data
+        image_data = None
         
         # Handle base64 image data
         if 'imageData' in request.json:
+            logger.info("Processing base64 image data")
             image_data = request.json['imageData']
             if image_data.startswith('data:image'):
                 # Strip the data URL prefix if present
@@ -182,80 +53,126 @@ def analyze_image_endpoint():
             # Decode base64 to binary
             binary_data = base64.b64decode(image_data)
             image = Image.open(io.BytesIO(binary_data))
-            # Process the image...
         else:
             # Handle file upload
+            logger.info("Processing uploaded image file")
             file = request.files['image']
             image = Image.open(file.stream)
-            # Process the image...
         
-        # In a real implementation, we would pass the image to a model
-        # For now, we'll use our mock function
-        result = analyze_image(image)
+        # Use our advanced face analysis model
+        logger.info("Running advanced face analysis model")
+        result = face_model.analyze(image)
+        
+        logger.info(f"Analysis complete with result: {result['authenticity']}")
         return jsonify(result)
     
     except Exception as e:
+        logger.error(f"Error in image analysis: {str(e)}\n{traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/python/analyze/video', methods=['POST'])
 def analyze_video_endpoint():
     try:
+        logger.info("Received video analysis request")
+        
         if 'video' not in request.files:
+            logger.warning("No video file provided")
             return jsonify({"error": "No video provided"}), 400
         
+        # Handle video file
         file = request.files['video']
-        # In a real implementation, we would process the video
-        # For now, we'll use our mock function
-        result = analyze_video(file.read())
+        video_data = file.read()
+        
+        # Use our advanced video analysis model
+        logger.info("Running advanced video analysis model")
+        result = video_model.analyze(video_data)
+        
+        logger.info(f"Analysis complete with result: {result['authenticity']}")
         return jsonify(result)
     
     except Exception as e:
+        logger.error(f"Error in video analysis: {str(e)}\n{traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/python/analyze/audio', methods=['POST'])
 def analyze_audio_endpoint():
     try:
+        logger.info("Received audio analysis request")
+        
         if 'audio' not in request.files:
+            logger.warning("No audio file provided")
             return jsonify({"error": "No audio provided"}), 400
         
+        # Handle audio file
         file = request.files['audio']
-        # In a real implementation, we would process the audio
-        # For now, we'll use our mock function
-        result = analyze_audio(file.read())
+        audio_data = file.read()
+        
+        # Use our advanced audio analysis model
+        logger.info("Running advanced audio analysis model")
+        result = audio_model.analyze(audio_data)
+        
+        logger.info(f"Analysis complete with result: {result['authenticity']}")
         return jsonify(result)
     
     except Exception as e:
+        logger.error(f"Error in audio analysis: {str(e)}\n{traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/python/analyze/multimodal', methods=['POST'])
 def analyze_multimodal_endpoint():
     try:
+        logger.info("Received multimodal analysis request")
+        
         # Check if any files were provided
         files = request.files
         if not files:
+            logger.warning("No files provided for multimodal analysis")
             return jsonify({"error": "No files provided"}), 400
         
-        # Get each type of data if available
-        image_data = files.get('image').read() if 'image' in files else None
-        audio_data = files.get('audio').read() if 'audio' in files else None
-        video_data = files.get('video').read() if 'video' in files else None
+        # Get data for each modality
+        data_dict = {}
         
-        if not any([image_data, audio_data, video_data]):
+        if 'image' in files:
+            logger.info("Processing image component")
+            image_file = files['image']
+            image = Image.open(image_file.stream)
+            data_dict['image'] = image
+        
+        if 'audio' in files:
+            logger.info("Processing audio component")
+            audio_file = files['audio']
+            data_dict['audio'] = audio_file.read()
+        
+        if 'video' in files:
+            logger.info("Processing video component")
+            video_file = files['video']
+            data_dict['video'] = video_file.read()
+        
+        if not data_dict:
+            logger.warning("No valid files provided")
             return jsonify({"error": "No valid files provided"}), 400
         
-        # Perform multimodal analysis
-        result = analyze_multimodal(image_data, audio_data, video_data)
+        # Use our advanced multimodal fusion model
+        logger.info("Running advanced multimodal fusion model")
+        result = multimodal_model.analyze(data_dict)
+        
+        logger.info(f"Analysis complete with result: {result['authenticity']}")
         return jsonify(result)
     
     except Exception as e:
+        logger.error(f"Error in multimodal analysis: {str(e)}\n{traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/python/analyze/webcam', methods=['POST'])
 def analyze_webcam_endpoint():
     try:
+        logger.info("Received webcam analysis request")
+        
         if 'imageData' not in request.json:
+            logger.warning("No webcam image data provided")
             return jsonify({"error": "No webcam image data provided"}), 400
         
+        # Process base64 image data
         image_data = request.json['imageData']
         if image_data.startswith('data:image'):
             # Strip the data URL prefix
@@ -263,23 +180,78 @@ def analyze_webcam_endpoint():
         
         # Decode base64 to binary
         binary_data = base64.b64decode(image_data)
+        image = Image.open(io.BytesIO(binary_data))
         
-        # In a real implementation, we would process the image
-        # For now, we'll use our mock function
-        result = analyze_image(binary_data)
+        # Use our advanced face analysis model for webcam
+        logger.info("Running advanced face analysis model on webcam frame")
+        result = face_model.analyze(image)
+        
+        # Add real-time analysis flag
+        result['realtime_analysis'] = True
+        
+        logger.info(f"Analysis complete with result: {result['authenticity']}")
         return jsonify(result)
     
     except Exception as e:
+        logger.error(f"Error in webcam analysis: {str(e)}\n{traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
+
+@app.route('/api/python/models/info', methods=['GET'])
+def models_info_endpoint():
+    """Return information about available models"""
+    models_info = {
+        'face': face_model.get_model_info(),
+        'audio': audio_model.get_model_info(),
+        'video': video_model.get_model_info(),
+        'multimodal': multimodal_model.get_model_info()
+    }
+    
+    return jsonify({
+        'models': models_info,
+        'total_models': len(models_info)
+    })
 
 @app.route('/api/python/status', methods=['GET'])
 def status():
+    """Return system status information"""
     return jsonify({
         "status": "operational",
-        "version": "1.0.0",
-        "timestamp": datetime.now().isoformat()
+        "version": "2.0.0",
+        "timestamp": datetime.now().isoformat(),
+        "models_loaded": [
+            face_model.name,
+            audio_model.name,
+            video_model.name,
+            multimodal_model.name
+        ],
+        "system_info": {
+            "platform": os.name,
+            "python_version": os.sys.version
+        }
     })
+
+# Health check endpoint
+@app.route('/health', methods=['GET'])
+def health_check():
+    return jsonify({"status": "healthy"}), 200
+
+# Error handlers
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({"error": "Endpoint not found"}), 404
+
+@app.errorhandler(500)
+def server_error(error):
+    return jsonify({"error": "Internal server error"}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PYTHON_API_PORT', 5001))
+    
+    logger.info(f"Starting SatyaAI Advanced Detection API on port {port}")
+    logger.info("Loaded models:")
+    logger.info(f"  - Face Analysis: {face_model.name} v{face_model.version}")
+    logger.info(f"  - Audio Analysis: {audio_model.name} v{audio_model.version}")
+    logger.info(f"  - Video Analysis: {video_model.name} v{video_model.version}")
+    logger.info(f"  - Multimodal Analysis: {multimodal_model.name} v{multimodal_model.version}")
+    
     app.run(host='0.0.0.0', port=port, debug=True)

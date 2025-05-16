@@ -1,19 +1,13 @@
+// Python-NodeJS Bridge for SatyaAI
 const { spawn } = require('child_process');
 const axios = require('axios');
-const path = require('path');
 const fs = require('fs');
+const path = require('path');
+const FormData = require('form-data');
 
-// Configuration for the Python server
-const PYTHON_PORT = process.env.PYTHON_API_PORT || 5001;
-const PYTHON_HOST = process.env.PYTHON_API_HOST || 'localhost';
-const PYTHON_API_URL = `http://${PYTHON_HOST}:${PYTHON_PORT}`;
-
-// Path to Python executable and script
-const PYTHON_PATH = 'python3'; // or 'python' depending on your system
-const SCRIPT_PATH = path.join(__dirname, 'python', 'app.py');
-
-// Variable to track if the Python server is running
 let pythonProcess = null;
+const PYTHON_SERVER_PORT = 5000;
+const BASE_URL = `http://localhost:${PYTHON_SERVER_PORT}`;
 
 /**
  * Start the Python server as a child process
@@ -21,94 +15,110 @@ let pythonProcess = null;
 async function startPythonServer() {
   if (pythonProcess) {
     console.log('Python server is already running');
-    return;
+    return true;
   }
 
-  console.log('Starting Python server...');
-  
-  // Make sure the script exists
-  if (!fs.existsSync(SCRIPT_PATH)) {
-    throw new Error(`Python script not found at ${SCRIPT_PATH}`);
+  try {
+    const pythonPath = 'python3';
+    const scriptPath = path.join(__dirname, 'python', 'app.py');
+    
+    // Check if the script exists
+    if (!fs.existsSync(scriptPath)) {
+      console.error(`Python script not found at: ${scriptPath}`);
+      return false;
+    }
+    
+    // Spawn the Python process
+    pythonProcess = spawn(pythonPath, [scriptPath]);
+    
+    // Handle process output and errors
+    pythonProcess.stdout.on('data', (data) => {
+      console.log(`Python server: ${data.toString()}`);
+    });
+    
+    pythonProcess.stderr.on('data', (data) => {
+      console.error(`Python server error: ${data.toString()}`);
+    });
+    
+    pythonProcess.on('close', (code) => {
+      console.log(`Python server exited with code ${code}`);
+      pythonProcess = null;
+    });
+    
+    // Wait for the server to be ready
+    return await waitForServerReady();
+  } catch (error) {
+    console.error('Failed to start Python server:', error);
+    return false;
   }
-
-  // Set environment variables for the Python process
-  const env = {
-    ...process.env,
-    PYTHON_API_PORT: PYTHON_PORT,
-  };
-
-  // Spawn Python process
-  pythonProcess = spawn(PYTHON_PATH, [SCRIPT_PATH], { env });
-
-  // Handle process output
-  pythonProcess.stdout.on('data', (data) => {
-    console.log(`Python server: ${data}`);
-  });
-
-  pythonProcess.stderr.on('data', (data) => {
-    console.error(`Python server error: ${data}`);
-  });
-
-  pythonProcess.on('close', (code) => {
-    console.log(`Python server exited with code ${code}`);
-    pythonProcess = null;
-  });
-
-  // Wait for the server to start
-  await waitForServerReady();
 }
 
 /**
  * Stop the Python server
  */
 function stopPythonServer() {
-  if (pythonProcess) {
-    console.log('Stopping Python server...');
-    pythonProcess.kill();
-    pythonProcess = null;
+  if (!pythonProcess) {
+    console.log('Python server is not running');
+    return;
   }
+  
+  pythonProcess.kill();
+  pythonProcess = null;
+  console.log('Python server stopped');
 }
 
 /**
  * Wait for the Python server to be ready
  */
 async function waitForServerReady(maxAttempts = 30, interval = 1000) {
-  console.log(`Waiting for Python server at ${PYTHON_API_URL}/api/python/status...`);
+  console.log('Waiting for Python server to be ready...');
   
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      const response = await axios.get(`${PYTHON_API_URL}/api/python/status`);
-      if (response.status === 200) {
+      const response = await axios.get(`${BASE_URL}/health`);
+      if (response.status === 200 && response.data.status === 'ready') {
         console.log('Python server is ready');
         return true;
       }
     } catch (error) {
-      console.log(`Attempt ${attempt + 1}/${maxAttempts}: Python server not ready yet...`);
+      // Server not ready yet, retry after interval
     }
     
-    // Wait before next attempt
+    // Wait for the specified interval
     await new Promise(resolve => setTimeout(resolve, interval));
   }
   
-  throw new Error('Failed to start Python server after maximum attempts');
+  console.error(`Python server not ready after ${maxAttempts} attempts`);
+  return false;
 }
 
 /**
  * Send an image to the Python server for analysis
  */
 async function analyzeImage(imageData) {
-  if (!pythonProcess) {
-    await startPythonServer();
-  }
-  
   try {
-    const response = await axios.post(`${PYTHON_API_URL}/api/python/analyze/image`, {
-      imageData
+    // Check if the server is running
+    if (!pythonProcess) {
+      console.log('Python server not running, starting...');
+      const serverStarted = await startPythonServer();
+      if (!serverStarted) {
+        throw new Error('Failed to start Python server');
+      }
+    }
+    
+    // Send request to the Python server
+    const response = await axios.post(`${BASE_URL}/analyze/image`, {
+      image_data: imageData
     });
+    
     return response.data;
   } catch (error) {
-    console.error('Error analyzing image:', error.message);
-    throw error;
+    console.error('Error analyzing image:', error);
+    return {
+      error: true,
+      message: 'Failed to analyze image',
+      details: error.message
+    };
   }
 }
 
@@ -116,26 +126,38 @@ async function analyzeImage(imageData) {
  * Send a video to the Python server for analysis
  */
 async function analyzeVideo(videoBuffer, filename) {
-  if (!pythonProcess) {
-    await startPythonServer();
-  }
-  
   try {
-    // Create form data for file upload
-    const FormData = require('form-data');
-    const form = new FormData();
-    form.append('video', videoBuffer, {
-      filename,
-      contentType: 'video/mp4', // Adjust content type as needed
+    // Check if the server is running
+    if (!pythonProcess) {
+      console.log('Python server not running, starting...');
+      const serverStarted = await startPythonServer();
+      if (!serverStarted) {
+        throw new Error('Failed to start Python server');
+      }
+    }
+    
+    // Create a form data object for the file upload
+    const formData = new FormData();
+    formData.append('video', videoBuffer, {
+      filename: filename || 'video.mp4',
+      contentType: 'video/mp4'
     });
     
-    const response = await axios.post(`${PYTHON_API_URL}/api/python/analyze/video`, form, {
-      headers: form.getHeaders(),
+    // Send request to the Python server
+    const response = await axios.post(`${BASE_URL}/analyze/video`, formData, {
+      headers: {
+        ...formData.getHeaders()
+      }
     });
+    
     return response.data;
   } catch (error) {
-    console.error('Error analyzing video:', error.message);
-    throw error;
+    console.error('Error analyzing video:', error);
+    return {
+      error: true,
+      message: 'Failed to analyze video',
+      details: error.message
+    };
   }
 }
 
@@ -143,26 +165,38 @@ async function analyzeVideo(videoBuffer, filename) {
  * Send audio to the Python server for analysis
  */
 async function analyzeAudio(audioBuffer, filename) {
-  if (!pythonProcess) {
-    await startPythonServer();
-  }
-  
   try {
-    // Create form data for file upload
-    const FormData = require('form-data');
-    const form = new FormData();
-    form.append('audio', audioBuffer, {
-      filename,
-      contentType: 'audio/mpeg', // Adjust content type as needed
+    // Check if the server is running
+    if (!pythonProcess) {
+      console.log('Python server not running, starting...');
+      const serverStarted = await startPythonServer();
+      if (!serverStarted) {
+        throw new Error('Failed to start Python server');
+      }
+    }
+    
+    // Create a form data object for the file upload
+    const formData = new FormData();
+    formData.append('audio', audioBuffer, {
+      filename: filename || 'audio.wav',
+      contentType: 'audio/wav'
     });
     
-    const response = await axios.post(`${PYTHON_API_URL}/api/python/analyze/audio`, form, {
-      headers: form.getHeaders(),
+    // Send request to the Python server
+    const response = await axios.post(`${BASE_URL}/analyze/audio`, formData, {
+      headers: {
+        ...formData.getHeaders()
+      }
     });
+    
     return response.data;
   } catch (error) {
-    console.error('Error analyzing audio:', error.message);
-    throw error;
+    console.error('Error analyzing audio:', error);
+    return {
+      error: true,
+      message: 'Failed to analyze audio',
+      details: error.message
+    };
   }
 }
 
@@ -170,44 +204,55 @@ async function analyzeAudio(audioBuffer, filename) {
  * Send multiple media types to the Python server for multimodal analysis
  */
 async function analyzeMultimodal(imageBuffer, audioBuffer, videoBuffer) {
-  if (!pythonProcess) {
-    await startPythonServer();
-  }
-  
   try {
-    // Create form data for file upload
-    const FormData = require('form-data');
-    const form = new FormData();
+    // Check if the server is running
+    if (!pythonProcess) {
+      console.log('Python server not running, starting...');
+      const serverStarted = await startPythonServer();
+      if (!serverStarted) {
+        throw new Error('Failed to start Python server');
+      }
+    }
     
-    // Add available media types
+    // Create a form data object for the file uploads
+    const formData = new FormData();
+    
     if (imageBuffer) {
-      form.append('image', imageBuffer, {
+      formData.append('image', imageBuffer, {
         filename: 'image.jpg',
-        contentType: 'image/jpeg',
+        contentType: 'image/jpeg'
       });
     }
     
     if (audioBuffer) {
-      form.append('audio', audioBuffer, {
-        filename: 'audio.mp3',
-        contentType: 'audio/mpeg',
+      formData.append('audio', audioBuffer, {
+        filename: 'audio.wav',
+        contentType: 'audio/wav'
       });
     }
     
     if (videoBuffer) {
-      form.append('video', videoBuffer, {
+      formData.append('video', videoBuffer, {
         filename: 'video.mp4',
-        contentType: 'video/mp4',
+        contentType: 'video/mp4'
       });
     }
     
-    const response = await axios.post(`${PYTHON_API_URL}/api/python/analyze/multimodal`, form, {
-      headers: form.getHeaders(),
+    // Send request to the Python server
+    const response = await axios.post(`${BASE_URL}/analyze/multimodal`, formData, {
+      headers: {
+        ...formData.getHeaders()
+      }
     });
+    
     return response.data;
   } catch (error) {
-    console.error('Error performing multimodal analysis:', error.message);
-    throw error;
+    console.error('Error analyzing multimodal data:', error);
+    return {
+      error: true,
+      message: 'Failed to analyze multimodal data',
+      details: error.message
+    };
   }
 }
 
@@ -215,22 +260,32 @@ async function analyzeMultimodal(imageBuffer, audioBuffer, videoBuffer) {
  * Send webcam image data to the Python server for analysis
  */
 async function analyzeWebcam(imageData) {
-  if (!pythonProcess) {
-    await startPythonServer();
-  }
-  
   try {
-    const response = await axios.post(`${PYTHON_API_URL}/api/python/analyze/webcam`, {
-      imageData
+    // Check if the server is running
+    if (!pythonProcess) {
+      console.log('Python server not running, starting...');
+      const serverStarted = await startPythonServer();
+      if (!serverStarted) {
+        throw new Error('Failed to start Python server');
+      }
+    }
+    
+    // Send request to the Python server
+    const response = await axios.post(`${BASE_URL}/analyze/webcam`, {
+      image_data: imageData
     });
+    
     return response.data;
   } catch (error) {
-    console.error('Error analyzing webcam image:', error.message);
-    throw error;
+    console.error('Error analyzing webcam data:', error);
+    return {
+      error: true,
+      message: 'Failed to analyze webcam data',
+      details: error.message
+    };
   }
 }
 
-// Export functions for use in Express routes
 module.exports = {
   startPythonServer,
   stopPythonServer,
@@ -238,5 +293,6 @@ module.exports = {
   analyzeVideo,
   analyzeAudio,
   analyzeMultimodal,
-  analyzeWebcam
+  analyzeWebcam,
+  waitForServerReady
 };
