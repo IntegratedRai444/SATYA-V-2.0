@@ -5,6 +5,7 @@ import { z } from "zod";
 import { insertScanSchema } from "@shared/schema";
 import multer from "multer";
 import { deepfakeDetector } from "./services/deepfake-detector";
+import { advancedDeepfakeDetector } from "./services/advanced-deepfake-detector";
 
 // Setup multer for file uploads
 const upload = multer({
@@ -67,17 +68,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Process file using the advanced deepfake detector service
       let detectionResult;
       if (type === 'image') {
-        detectionResult = await deepfakeDetector.analyzeImage(file.buffer);
+        detectionResult = await advancedDeepfakeDetector.analyzeImage(file.buffer);
       } else if (type === 'video') {
-        detectionResult = await deepfakeDetector.analyzeVideo(file.buffer);
+        detectionResult = await advancedDeepfakeDetector.analyzeVideo(file.buffer);
       } else if (type === 'audio') {
-        detectionResult = await deepfakeDetector.analyzeAudio(file.buffer);
+        detectionResult = await advancedDeepfakeDetector.analyzeAudio(file.buffer);
       } else {
         return res.status(400).json({ message: 'Unsupported media type' });
       }
       
       // Convert detection result to scan record format
-      const scanData = deepfakeDetector.convertToScanRecord(
+      const scanData = advancedDeepfakeDetector.convertToScanRecord(
         detectionResult, 
         file.originalname,
         type as 'image' | 'video' | 'audio'
@@ -109,11 +110,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         imageBuffer = Buffer.from(base64Data, 'base64');
       }
       
-      // Process the webcam image
-      const detectionResult = await deepfakeDetector.analyzeWebcam(imageBuffer);
+      // Process the webcam image with advanced detector
+      const detectionResult = await advancedDeepfakeDetector.analyzeWebcam(imageBuffer);
       
       // Convert to scan record format
-      const scanData = deepfakeDetector.convertToScanRecord(
+      const scanData = advancedDeepfakeDetector.convertToScanRecord(
         detectionResult, 
         'webcam_capture.jpg',
         'image'
@@ -151,7 +152,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Use the most advanced analysis method
-      const detectionResult = await deepfakeDetector.analyzeMultimodal(
+      const detectionResult = await advancedDeepfakeDetector.analyzeMultimodal(
         imageBuffer, 
         audioBuffer,
         videoBuffer
@@ -159,7 +160,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Determine primary file type for record
       let primaryType: 'image' | 'video' | 'audio' = 'image';
-      let filename = 'multimodal_analysis';
+      let filename = 'multimodal_analysis.json';
       
       if (files.video?.length) {
         primaryType = 'video';
@@ -173,7 +174,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Convert to scan record
-      const scanData = deepfakeDetector.convertToScanRecord(
+      const scanData = advancedDeepfakeDetector.convertToScanRecord(
         detectionResult,
         filename,
         primaryType
