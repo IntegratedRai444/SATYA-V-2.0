@@ -6,7 +6,7 @@ import { insertScanSchema } from "@shared/schema";
 import multer from "multer";
 import { deepfakeDetector } from "./services/deepfake-detector";
 import { advancedDeepfakeDetector } from "./services/advanced-deepfake-detector";
-import { authService } from "./services/auth-service";
+import { mockAuthService as authService } from "./services/mock-auth-service";
 import { generatePDFReport } from "./services/report-generator";
 import * as mockDetector from "./services/mock-detection-service";
 
@@ -211,16 +211,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       console.log(`Analyzing ${type} file: ${file.originalname}`);
       
-      // Process file using the advanced deepfake detector service
+      // Process file using the mock detector service
       let detectionResult;
       const mediaType = type as 'image' | 'video' | 'audio';
       
       if (mediaType === 'image') {
-        detectionResult = await advancedDeepfakeDetector.analyzeImage(file.buffer);
+        detectionResult = await mockDetector.analyzeImage(file.buffer);
       } else if (mediaType === 'video') {
-        detectionResult = await advancedDeepfakeDetector.analyzeVideo(file.buffer);
+        detectionResult = await mockDetector.analyzeVideo(file.buffer);
       } else if (mediaType === 'audio') {
-        detectionResult = await advancedDeepfakeDetector.analyzeAudio(file.buffer);
+        detectionResult = await mockDetector.analyzeAudio(file.buffer);
       } else {
         return res.status(400).json({ message: 'Unsupported media type' });
       }
@@ -260,8 +260,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         imageBuffer = Buffer.from(base64Data, 'base64');
       }
       
-      // Process the webcam image with advanced detector
-      const detectionResult = await advancedDeepfakeDetector.analyzeWebcam(imageBuffer);
+      // Process the webcam image with mock detector
+      const detectionResult = await mockDetector.analyzeWebcam(imageBuffer);
       
       // Save to database
       const result = await storage.createScan({
@@ -302,8 +302,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'No media files provided for multimodal analysis' });
       }
       
-      // Use the most advanced analysis method
-      const detectionResult = await advancedDeepfakeDetector.analyzeMultimodal(
+      // Use our mock multimodal analysis
+      const detectionResult = await mockDetector.analyzeMultimodal(
         imageBuffer, 
         audioBuffer,
         videoBuffer
@@ -413,10 +413,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'No image data provided' });
       }
       
-      // Use advanced detector for image analysis
+      // Use mock detector for image analysis
       const analysisResult = await (req.file 
-        ? advancedDeepfakeDetector.analyzeImage(req.file.buffer)
-        : advancedDeepfakeDetector.analyzeWebcam(Buffer.from(imageData.split(',')[1], 'base64')));
+        ? mockDetector.analyzeImage(req.file.buffer)
+        : mockDetector.analyzeWebcam(Buffer.from(imageData.split(',')[1], 'base64')));
       
       // Enhance result with additional metadata
       const enhancedResult = {
@@ -471,8 +471,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'No video file provided' });
       }
       
-      // Use advanced detector for video analysis
-      const analysisResult = await advancedDeepfakeDetector.analyzeVideo(req.file.buffer);
+      // Use mock detector for video analysis
+      const analysisResult = await mockDetector.analyzeVideo(req.file.buffer);
       
       // Generate suspicious frames data for a more sophisticated result
       const generateSuspiciousFrames = () => {
