@@ -50,6 +50,14 @@ function Router() {
           )}
         </Route>
         
+        <Route path="/history/:id">
+          {() => (
+            <AuthGuard>
+              <History />
+            </AuthGuard>
+          )}
+        </Route>
+        
         <Route path="/settings">
           {() => (
             <AuthGuard>
