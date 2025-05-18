@@ -690,6 +690,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Handle file upload and analysis
+  app.post('/api/analyze', upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file provided' });
+      }
+      
+      const result = await advancedDetector.analyzeMedia(req.file.buffer);
+      res.json(result);
+    } catch (error) {
+      console.error('Error analyzing file:', error);
+      res.status(500).json({ error: 'Error analyzing file' });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
