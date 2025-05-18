@@ -168,7 +168,7 @@ export default function Header({ toggleSidebar }: HeaderProps) {
           {navItems.map((item) => (
             <li key={item.path} className="relative">
               <Link href={item.path} className="flex items-center">
-                
+
                   <a
                     className={cn(
                       "font-poppins transition-all duration-300 py-1 px-2 rounded-md flex items-center gap-1.5 relative overflow-hidden",
@@ -204,7 +204,7 @@ export default function Header({ toggleSidebar }: HeaderProps) {
                       </div>
                     )}
                   </a>
-                
+
               </Link>
             </li>
           ))}

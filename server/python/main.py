@@ -350,7 +350,7 @@ def server_error(error):
 
 if __name__ == '__main__':
     # Get port from environment variable or use default
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', 5002))
 
     try:
         # Start server

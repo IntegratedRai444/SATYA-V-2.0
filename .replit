@@ -34,4 +34,8 @@ mode = "sequential"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
+args = "pkill -f \"node|python\" || true"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
 args = "npm run dev & python server/python/main.py"
