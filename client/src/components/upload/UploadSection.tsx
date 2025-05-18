@@ -173,25 +173,24 @@ export default function UploadSection() {
 
       const formData = new FormData();
       files.forEach(file => {
-          formData.append('media', file);
-        });
-        formData.append('type', activeTab);
+        formData.append('media', file);
+      });
+      formData.append('type', activeTab);
 
-        const response = await fetch('/api/analyze', {
-          method: 'POST',
-          body: formData,
-          credentials: 'include'
-        });
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include'
+      });
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(errorText || response.statusText);
-        }
-
-        return await response.json();
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || response.statusText);
       }
+
+      return await response.json();
     },
-    onSuccess: (data) => {
+    onSuccess(data) {
       queryClient.invalidateQueries({ queryKey: ['/api/scans/recent'] });
       navigate(`/history/${data.id}`);
     },
