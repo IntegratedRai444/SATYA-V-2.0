@@ -349,8 +349,8 @@ def server_error(error):
     return jsonify({'error': 'Server error', 'message': str(error)}), 500
 
 if __name__ == '__main__':
-    # Get port from environment variable or use default
-    port = int(os.environ.get('PORT', 5002))
+    # Get port from environment variable or use different default
+    port = int(os.environ.get('PYTHON_PORT', 5001))
     
     # Start server
     app.run(host='0.0.0.0', port=port, debug=False)

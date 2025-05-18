@@ -14,7 +14,7 @@ export default function Header({ toggleSidebar }: HeaderProps) {
   const [ripple, setRipple] = useState({ active: false, x: 0, y: 0 });
   const [logoHovered, setLogoHovered] = useState(false);
   const headerRef = useRef<HTMLDivElement>(null);
-  
+
   // Generate random floating particles for the logo
   const [particles] = useState(
     Array.from({ length: 15 }, () => ({
@@ -27,18 +27,18 @@ export default function Header({ toggleSidebar }: HeaderProps) {
       delay: Math.random() * 5
     }))
   );
-  
+
   // Create ripple effect when clicking on header
   const handleHeaderClick = (e: React.MouseEvent) => {
     if (!headerRef.current) return;
-    
+
     const rect = headerRef.current.getBoundingClientRect();
     setRipple({
       active: true,
       x: e.clientX - rect.left,
       y: e.clientY - rect.top
     });
-    
+
     // Reset ripple after animation
     setTimeout(() => {
       setRipple({ active: false, x: 0, y: 0 });
@@ -66,7 +66,7 @@ export default function Header({ toggleSidebar }: HeaderProps) {
           backgroundSize: '20px 20px'
         }}/>
       </div>
-      
+
       {/* Ripple animation */}
       {ripple.active && (
         <div 
@@ -81,7 +81,7 @@ export default function Header({ toggleSidebar }: HeaderProps) {
           }}
         />
       )}
-      
+
       <div className="flex items-center space-x-4">
         {/* Logo and Brand with 3D hover effect */}
         <div 
@@ -120,20 +120,20 @@ export default function Header({ toggleSidebar }: HeaderProps) {
                 }}
               />
             ))}
-            
+
             {/* Shine effect */}
             {logoHovered && (
               <div className="absolute inset-0 opacity-100 pointer-events-none overflow-hidden">
                 <div className="absolute -inset-[100%] animate-shine bg-gradient-to-r from-transparent via-white/30 to-transparent" />
               </div>
             )}
-            
+
             <span className={cn(
               "text-primary text-2xl font-bold transition-all duration-300",
               logoHovered ? "text-white" : ""
             )}>S</span>
           </div>
-          
+
           <h1 
             className="text-2xl font-bold text-foreground font-poppins relative"
             style={{
@@ -156,7 +156,7 @@ export default function Header({ toggleSidebar }: HeaderProps) {
             </span>
           </h1>
         </div>
-        
+
         <p className="text-muted-foreground text-sm hidden md:block">
           Synthetic Authentication Technology for Your Analysis
         </p>
@@ -167,42 +167,44 @@ export default function Header({ toggleSidebar }: HeaderProps) {
         <ul className="flex space-x-6">
           {navItems.map((item) => (
             <li key={item.path} className="relative">
-              <Link href={item.path}>
-                <a
-                  className={cn(
-                    "font-poppins transition-all duration-300 py-1 px-2 rounded-md flex items-center gap-1.5 relative overflow-hidden",
-                    location === item.path
-                      ? "text-primary font-medium bg-primary/10" 
-                      : "text-muted-foreground hover:text-foreground",
-                    hoverItem === item.path && location !== item.path ? "bg-card-foreground/5" : ""
-                  )}
-                  onMouseEnter={() => setHoverItem(item.path)}
-                  onMouseLeave={() => setHoverItem(null)}
-                >
-                  <item.icon 
-                    size={14} 
+              <Link href={item.path} className="flex items-center">
+                
+                  <a
                     className={cn(
-                      "transition-transform duration-300",
-                      hoverItem === item.path || location === item.path ? "scale-125" : "scale-100"
-                    )} 
-                  />
-                  <span>{item.name}</span>
-                  
-                  {/* Active indicator line with animation */}
-                  {location === item.path && (
-                    <span className="absolute bottom-0 left-0 h-0.5 bg-primary rounded-full w-full transform-gpu" style={{
-                      background: 'linear-gradient(to right, transparent, rgba(0,200,255,0.8), transparent)',
-                      animation: 'glow 1.5s infinite'
-                    }}></span>
-                  )}
-                  
-                  {/* Hover indicator with shine effect */}
-                  {hoverItem === item.path && location !== item.path && (
-                    <div className="absolute inset-0 opacity-100 pointer-events-none overflow-hidden">
-                      <div className="absolute -inset-[100%] animate-shine-slow bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-                    </div>
-                  )}
-                </a>
+                      "font-poppins transition-all duration-300 py-1 px-2 rounded-md flex items-center gap-1.5 relative overflow-hidden",
+                      location === item.path
+                        ? "text-primary font-medium bg-primary/10" 
+                        : "text-muted-foreground hover:text-foreground",
+                      hoverItem === item.path && location !== item.path ? "bg-card-foreground/5" : ""
+                    )}
+                    onMouseEnter={() => setHoverItem(item.path)}
+                    onMouseLeave={() => setHoverItem(null)}
+                  >
+                    <item.icon 
+                      size={14} 
+                      className={cn(
+                        "transition-transform duration-300",
+                        hoverItem === item.path || location === item.path ? "scale-125" : "scale-100"
+                      )} 
+                    />
+                    <span>{item.name}</span>
+
+                    {/* Active indicator line with animation */}
+                    {location === item.path && (
+                      <span className="absolute bottom-0 left-0 h-0.5 bg-primary rounded-full w-full transform-gpu" style={{
+                        background: 'linear-gradient(to right, transparent, rgba(0,200,255,0.8), transparent)',
+                        animation: 'glow 1.5s infinite'
+                      }}></span>
+                    )}
+
+                    {/* Hover indicator with shine effect */}
+                    {hoverItem === item.path && location !== item.path && (
+                      <div className="absolute inset-0 opacity-100 pointer-events-none overflow-hidden">
+                        <div className="absolute -inset-[100%] animate-shine-slow bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+                      </div>
+                    )}
+                  </a>
+                
               </Link>
             </li>
           ))}
@@ -218,15 +220,15 @@ export default function Header({ toggleSidebar }: HeaderProps) {
         >
           {/* Notification indicator */}
           <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-primary animate-pulse"></div>
-          
+
           {/* Shine effect on hover */}
           <div className="absolute inset-0 opacity-0 group-hover:opacity-100 pointer-events-none">
             <div className="absolute -inset-[100%] animate-shine-slow bg-gradient-to-r from-transparent via-white/10 to-transparent" />
           </div>
-          
+
           <Bell className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
         </Button>
-        
+
         <div 
           className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center cursor-pointer group relative overflow-hidden hover:bg-primary/30 transition-colors"
         >
@@ -237,15 +239,15 @@ export default function Header({ toggleSidebar }: HeaderProps) {
               background: 'radial-gradient(circle at center, rgba(0, 200, 255, 0.3) 0%, transparent 70%)'
             }}
           />
-          
+
           {/* Shine effect */}
           <div className="absolute inset-0 opacity-0 group-hover:opacity-100 pointer-events-none">
             <div className="absolute -inset-[100%] animate-shine bg-gradient-to-r from-transparent via-white/30 to-transparent" />
           </div>
-          
+
           <span className="text-primary font-bold group-hover:text-white transition-colors">U</span>
         </div>
-        
+
         <Button
           variant="ghost"
           size="icon"
@@ -256,11 +258,11 @@ export default function Header({ toggleSidebar }: HeaderProps) {
           <div className="absolute inset-0 opacity-0 group-hover:opacity-100 pointer-events-none rounded-md" style={{
             background: 'radial-gradient(circle at center, rgba(0, 200, 255, 0.2) 0%, transparent 70%)'
           }}></div>
-          
+
           <Menu className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
         </Button>
       </div>
-      
+
       {/* Add CSS for custom animations */}
       <style jsx>{`
         @keyframes ripple-expand {
@@ -269,7 +271,7 @@ export default function Header({ toggleSidebar }: HeaderProps) {
             opacity: 0;
           }
         }
-        
+
         @keyframes glow {
           0%, 100% { opacity: 0.5; filter: blur(1px); }
           50% { opacity: 1; filter: blur(0px); }
