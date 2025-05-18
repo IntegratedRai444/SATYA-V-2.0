@@ -41,9 +41,32 @@ export default function UploadSection() {
 
   // Handle file selection
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const selectedFiles = Array.from(e.target.files);
-      setFiles(selectedFiles);
+    try {
+      if (e.target.files && e.target.files.length > 0) {
+        const selectedFiles = Array.from(e.target.files);
+        
+        // Validate file sizes
+        const maxSize = activeTab === 'video' ? 50 * 1024 * 1024 : 10 * 1024 * 1024; // 50MB for video, 10MB for others
+        
+        const invalidFiles = selectedFiles.filter(file => file.size > maxSize);
+        if (invalidFiles.length > 0) {
+          toast({
+            title: "File too large",
+            description: `Maximum file size is ${maxSize / (1024 * 1024)}MB for ${activeTab} files`,
+            variant: "destructive"
+          });
+          return;
+        }
+
+        setFiles(selectedFiles);
+      }
+    } catch (error) {
+      console.error('File selection error:', error);
+      toast({
+        title: "Error",
+        description: "Failed to process selected files",
+        variant: "destructive"
+      });
     }
   };
 
@@ -125,13 +148,24 @@ export default function UploadSection() {
   // Upload and analyze media
   const { mutate: uploadAndAnalyze, isPending } = useMutation({
     mutationFn: async () => {
-      if (activeTab === 'webcam') {
-        // Handle webcam analysis separately
-        return await apiRequest('POST', '/api/analyze/webcam', {});
-      } else {
-        if (!files.length) {
-          throw new Error('Please select a file to analyze');
-        }
+      try {
+        if (activeTab === 'webcam') {
+          // Handle webcam analysis separately
+          return await apiRequest('POST', '/api/analyze/webcam', {});
+        } else {
+          if (!files.length) {
+            throw new Error('Please select a file to analyze');
+          }
+
+          // Validate file types again before upload
+          const acceptedTypes = getAcceptedFileTypes().split(',').map(type => type.trim());
+          const invalidFile = files.find(file => 
+            !acceptedTypes.some(type => file.type.match(new RegExp(type.replace('*', '.*'))))
+          );
+
+          if (invalidFile) {
+            throw new Error(`Invalid file type: ${invalidFile.type}`);
+          }
 
         const formData = new FormData();
         files.forEach(file => {
