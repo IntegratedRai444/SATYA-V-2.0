@@ -101,7 +101,7 @@ def main():
     print(f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 50)
     
-    port = int(os.environ.get("PYTHON_PORT", 5001))
+    port = int(os.environ.get("PYTHON_PORT", 5002))
     debug_mode = "--debug" in sys.argv
     
     if "--check" in sys.argv:
