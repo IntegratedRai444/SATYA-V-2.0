@@ -22,7 +22,7 @@ function Router() {
   return (
     <Layout>
       <Switch>
-        <Route path="/" component={Dashboard} />
+        <Route path="/" component={Dashboard} exact />
         <Route path="/login">
           {() => (
             <div className="container mx-auto py-8 px-4">

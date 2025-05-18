@@ -34,4 +34,4 @@ mode = "sequential"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "npm run dev & sleep 5 && python server/python/main.py"
+args = "npm run dev & python server/python/main.py"

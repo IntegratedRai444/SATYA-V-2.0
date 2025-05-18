@@ -51,14 +51,14 @@ def analyze_image(image_data):
     time.sleep(2)
     confidence = random.uniform(0.7, 1.0)
     authenticity = "AUTHENTIC MEDIA" if confidence > 0.85 else "MANIPULATED MEDIA"
-    
+
     key_findings = [
         "Facial feature consistency analyzed",
         "Pixel-level manipulation detection performed",
         "Metadata validation complete",
         "Neural pattern analysis finished"
     ]
-    
+
     return {
         "authenticity": authenticity,
         "confidence": confidence,
@@ -73,14 +73,14 @@ def analyze_video(video_data):
     time.sleep(3)
     confidence = random.uniform(0.6, 0.98)
     authenticity = "AUTHENTIC MEDIA" if confidence > 0.85 else "MANIPULATED MEDIA"
-    
+
     key_findings = [
         "Frame-by-frame analysis complete",
         "Temporal consistency check performed",
         "Facial movement analysis finished",
         "Audio-visual sync detection complete"
     ]
-    
+
     return {
         "authenticity": authenticity,
         "confidence": confidence,
@@ -95,14 +95,14 @@ def analyze_audio(audio_data):
     time.sleep(2.5)
     confidence = random.uniform(0.65, 0.99)
     authenticity = "AUTHENTIC MEDIA" if confidence > 0.85 else "MANIPULATED MEDIA"
-    
+
     key_findings = [
         "Voice pattern analysis complete",
         "Frequency spectrum check performed",
         "Audio artifacts detection finished",
         "Neural voice pattern validation complete"
     ]
-    
+
     return {
         "authenticity": authenticity,
         "confidence": confidence,
@@ -115,7 +115,7 @@ def analyze_webcam(image_data):
     """Analyze webcam capture for potential manipulation"""
     # Process image data
     result = analyze_image(image_data)
-    
+
     # Add some webcam-specific findings
     webcam_findings = [
         "Facial liveness detection complete",
@@ -123,7 +123,7 @@ def analyze_webcam(image_data):
         "Reflection and lighting consistency verified",
         "Behavioral biometric validation complete"
     ]
-    
+
     result["key_findings"] = webcam_findings
     return result
 
@@ -133,14 +133,14 @@ def analyze_multimodal(image_data=None, audio_data=None, video_data=None):
     time.sleep(4)
     confidence = random.uniform(0.75, 0.99)
     authenticity = "AUTHENTIC MEDIA" if confidence > 0.85 else "MANIPULATED MEDIA"
-    
+
     key_findings = [
         "Cross-modal consistency analysis complete",
         "Audio-visual synchronization verified",
         "Multi-layer neural network analysis performed",
         "Metadata consistency verified across modalities"
     ]
-    
+
     return {
         "authenticity": authenticity,
         "confidence": confidence,
@@ -160,13 +160,13 @@ def login():
     data = request.json
     username = data.get('username')
     password = data.get('password')
-    
+
     if not username or not password:
         return jsonify({
             'success': False,
             'message': 'Username and password are required'
         }), 400
-    
+
     # Mock authentication logic (accepts any valid input)
     if username and password:
         # Create a new session
@@ -180,14 +180,14 @@ def login():
             'created': datetime.now().isoformat(),
             'expires': None  # No expiration for demo
         }
-        
+
         return jsonify({
             'success': True,
             'message': 'Authentication successful',
             'token': token,
             'user': sessions[token]['user']
         })
-    
+
     return jsonify({
         'success': False,
         'message': 'Invalid credentials'
@@ -198,11 +198,11 @@ def logout():
     """Handle logout requests"""
     data = request.json
     token = data.get('token')
-    
+
     if token and token in sessions:
         # Remove session
         del sessions[token]
-    
+
     return jsonify({
         'success': True,
         'message': 'Logged out successfully'
@@ -213,20 +213,20 @@ def validate_session():
     """Validate a session token"""
     data = request.json
     token = data.get('token')
-    
+
     if not token:
         return jsonify({
             'valid': False,
             'message': 'No token provided'
         }), 400
-    
+
     if token in sessions:
         return jsonify({
             'valid': True,
             'message': 'Session is valid',
             'user': sessions[token]['user']
         })
-    
+
     return jsonify({
         'valid': False,
         'message': 'Invalid or expired session'
@@ -246,13 +246,13 @@ def analyze_image_endpoint():
             return jsonify(result)
         except Exception as e:
             return jsonify({'error': str(e)}), 500
-    
+
     # Check for base64 encoded image in JSON body
     elif request.json and 'imageData' in request.json:
         image_data = request.json['imageData']
         result = analyze_image(image_data)
         return jsonify(result)
-    
+
     return jsonify({'error': 'No image data provided'}), 400
 
 @app.route('/api/analyze/video', methods=['POST'])
@@ -266,7 +266,7 @@ def analyze_video_endpoint():
             return jsonify(result)
         except Exception as e:
             return jsonify({'error': str(e)}), 500
-    
+
     return jsonify({'error': 'No video data provided'}), 400
 
 @app.route('/api/analyze/audio', methods=['POST'])
@@ -280,7 +280,7 @@ def analyze_audio_endpoint():
             return jsonify(result)
         except Exception as e:
             return jsonify({'error': str(e)}), 500
-    
+
     return jsonify({'error': 'No audio data provided'}), 400
 
 @app.route('/api/analyze/webcam', methods=['POST'])
@@ -290,7 +290,7 @@ def analyze_webcam_endpoint():
         image_data = request.json['imageData']
         result = analyze_webcam(image_data)
         return jsonify(result)
-    
+
     return jsonify({'error': 'No webcam image data provided'}), 400
 
 @app.route('/api/analyze/multimodal', methods=['POST'])
@@ -299,22 +299,22 @@ def analyze_multimodal_endpoint():
     image_data = None
     audio_data = None
     video_data = None
-    
+
     # Process files if available
     if request.files:
         if 'image' in request.files:
             image_data = request.files['image'].read()
-        
+
         if 'audio' in request.files:
             audio_data = request.files['audio'].read()
-        
+
         if 'video' in request.files:
             video_data = request.files['video'].read()
-    
+
     # Check if any data was provided
     if not any([image_data, audio_data, video_data]):
         return jsonify({'error': 'No media data provided'}), 400
-    
+
     result = analyze_multimodal(image_data, audio_data, video_data)
     return jsonify(result)
 
@@ -349,8 +349,15 @@ def server_error(error):
     return jsonify({'error': 'Server error', 'message': str(error)}), 500
 
 if __name__ == '__main__':
-    # Get port from environment variable or use different default
-    port = int(os.environ.get('PYTHON_PORT', 5001))
-    
-    # Start server
-    app.run(host='0.0.0.0', port=port, debug=False)
+    # Get port from environment variable or use default
+    port = int(os.environ.get('PORT', 5000))
+
+    try:
+        # Start server
+        app.run(host='0.0.0.0', port=port, debug=False)
+    except OSError as e:
+        if "Address already in use" in str(e):
+            port = 5002  # Try alternative port
+            app.run(host='0.0.0.0', port=port, debug=False)
+        else:
+            raise e
