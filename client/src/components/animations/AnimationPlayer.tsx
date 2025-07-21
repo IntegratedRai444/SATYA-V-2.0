@@ -5,10 +5,17 @@ import {
   CardHeader,
   CardTitle,
   CardDescription
+<<<<<<< HEAD
 } from "../ui/card";
 import { Skeleton } from "../ui/skeleton";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+=======
+} from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
 import { Play, Pause, RefreshCw } from "lucide-react";
 
 // Types of animations supported

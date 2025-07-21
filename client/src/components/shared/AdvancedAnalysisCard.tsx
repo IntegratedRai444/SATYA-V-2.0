@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import React from 'react';
 import { useState, useEffect } from 'react';
 import { AlertCircle, FileBarChart, CheckCircle, AlertTriangle } from 'lucide-react';
@@ -5,6 +6,14 @@ import { Card } from '../ui/card';
 import { Progress } from '../ui/progress';
 import { cn } from '../../lib/utils';
 import { ScanResult, DetectionDetail } from '../../lib/types';
+=======
+import { useState, useEffect } from 'react';
+import { AlertCircle, FileBarChart, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Card } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
+import { cn } from '@/lib/utils';
+import { ScanResult, DetectionDetail } from '@/lib/types';
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
 
 // Props interface
 interface AdvancedAnalysisCardProps {

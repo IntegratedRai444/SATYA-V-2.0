@@ -1,8 +1,15 @@
+<<<<<<< HEAD
 import React from 'react';
 import { Link, useLocation } from "wouter";
 import { Menu, Bell, Shield, Sparkles, Scan, Clock, Settings, HelpCircle, User } from "lucide-react";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
+=======
+import { Link, useLocation } from "wouter";
+import { Menu, Bell, Shield, Sparkles, Scan, Clock, Settings, HelpCircle, User } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
 import { useState, useEffect, useRef } from "react";
 
 interface HeaderProps {
@@ -265,7 +272,11 @@ export default function Header({ toggleSidebar }: HeaderProps) {
       </div>
 
       {/* Add CSS for custom animations */}
+<<<<<<< HEAD
       <style>{`
+=======
+      <style jsx>{`
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
         @keyframes ripple-expand {
           to {
             transform: translate(-50%, -50%) scale(100);

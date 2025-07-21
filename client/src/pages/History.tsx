@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import React from 'react';
 import { useState } from "react";
 import { Helmet } from 'react-helmet';
@@ -7,6 +8,16 @@ import { useQuery } from "@tanstack/react-query";
 import { ScanResult } from "../lib/types";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
+=======
+import { useState } from "react";
+import { Helmet } from 'react-helmet';
+import { useLocation } from "wouter";
+import { useNavigation } from "@/hooks/useNavigation";
+import { useQuery } from "@tanstack/react-query";
+import { ScanResult } from "@/lib/types";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
 import {
   Card,
   CardContent,
@@ -14,7 +25,11 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
+<<<<<<< HEAD
 } from "../components/ui/card";
+=======
+} from "@/components/ui/card";
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
 import {
   Table,
   TableBody,
@@ -22,17 +37,28 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+<<<<<<< HEAD
 } from "../components/ui/table";
+=======
+} from "@/components/ui/table";
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
+<<<<<<< HEAD
 } from "../components/ui/select";
 import { Skeleton } from "../components/ui/skeleton";
 import { Search, Filter, Trash2, FileDown } from "lucide-react";
 import AnalysisResults from "../components/results/AnalysisResults";
+=======
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Search, Filter, Trash2, FileDown } from "lucide-react";
+import AnalysisResults from "@/components/results/AnalysisResults";
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
 
 export default function History() {
   const [location] = useLocation();

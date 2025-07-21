@@ -1,6 +1,11 @@
+<<<<<<< HEAD
 import React from 'react';
 import { Bot } from "lucide-react";
 import { Button } from "../ui/button";
+=======
+import { Bot } from "lucide-react";
+import { Button } from "@/components/ui/button";
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
 
 export default function AIAssistant() {
   return (

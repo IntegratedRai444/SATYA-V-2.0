@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import React from 'react';
 import { useEffect, useState } from "react";
 import { Helmet } from 'react-helmet';
@@ -8,6 +9,17 @@ import AnalysisResults from "../components/results/AnalysisResults";
 import { Card, CardContent } from "../components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { Button } from "../components/ui/button";
+=======
+import { useEffect, useState } from "react";
+import { Helmet } from 'react-helmet';
+import { useLocation } from "wouter";
+import UploadSection from "@/components/upload/UploadSection";
+import AdvancedScanSection from "@/components/upload/AdvancedScanSection";
+import AnalysisResults from "@/components/results/AnalysisResults";
+import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
 import { Zap } from "lucide-react";
 
 export default function Scan() {

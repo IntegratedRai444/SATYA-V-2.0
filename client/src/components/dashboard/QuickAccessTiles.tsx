@@ -1,7 +1,13 @@
+<<<<<<< HEAD
 import React from 'react';
 import { cn } from "../../lib/utils";
 import { Image as ImageIcon, Video, Mic, Camera, ArrowRight, Check, CircleAlert, FileWarning, Sparkles, Lock } from "lucide-react";
 import { useNavigation } from "../../hooks/useNavigation";
+=======
+import { cn } from "@/lib/utils";
+import { Image as ImageIcon, Video, Mic, Camera, ArrowRight, Check, CircleAlert, FileWarning, Sparkles, Lock } from "lucide-react";
+import { useNavigation } from "@/hooks/useNavigation";
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
 import { useState, useRef } from "react";
 
 export default function QuickAccessTiles() {

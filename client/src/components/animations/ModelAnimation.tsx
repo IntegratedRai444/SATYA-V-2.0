@@ -1,6 +1,10 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
+<<<<<<< HEAD
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+=======
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
 
 interface ModelAnimationProps {
   isAnalyzing?: boolean;

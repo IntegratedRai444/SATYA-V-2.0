@@ -1,9 +1,17 @@
 import React from 'react';
+<<<<<<< HEAD
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../ui/card";
 import { Progress } from "../ui/progress";
 import { Separator } from "../ui/separator";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+=======
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
 import { BrainCircuit, Info, Shield, Zap, BarChart3, Activity, FileSearch } from "lucide-react";
 
 interface ModelInsightsPanelProps {

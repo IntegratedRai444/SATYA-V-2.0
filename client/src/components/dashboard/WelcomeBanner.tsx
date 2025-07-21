@@ -1,9 +1,17 @@
+<<<<<<< HEAD
 import React from 'react';
 import { UploadCloud, Info, Shield, ArrowRight, FileVideo, Camera, Headphones, Sparkles, Lock, Eye } from "lucide-react";
 import { Button } from "../ui/button";
 import { useNavigation } from "../../hooks/useNavigation";
 import { useState, useEffect, useRef } from "react";
 import { cn } from "../../lib/utils";
+=======
+import { UploadCloud, Info, Shield, ArrowRight, FileVideo, Camera, Headphones, Sparkles, Lock, Eye } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useNavigation } from "@/hooks/useNavigation";
+import { useState, useEffect, useRef } from "react";
+import { cn } from "@/lib/utils";
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
 
 export default function WelcomeBanner() {
   const { navigate } = useNavigation();

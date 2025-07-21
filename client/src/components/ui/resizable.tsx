@@ -1,10 +1,17 @@
 "use client"
 
+<<<<<<< HEAD
 import React from 'react';
 import { GripVertical } from "lucide-react"
 import * as ResizablePrimitive from "react-resizable-panels"
 
 import { cn } from "../../lib/utils"
+=======
+import { GripVertical } from "lucide-react"
+import * as ResizablePrimitive from "react-resizable-panels"
+
+import { cn } from "@/lib/utils"
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
 
 const ResizablePanelGroup = ({
   className,

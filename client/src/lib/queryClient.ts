@@ -12,11 +12,15 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
+<<<<<<< HEAD
   // Point to the Python server running on port 5002
   const baseUrl = 'http://localhost:5002';
   const fullUrl = url.startsWith('http') ? url : `${baseUrl}${url}`;
   
   const res = await fetch(fullUrl, {
+=======
+  const res = await fetch(url, {
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
     method,
     headers: data ? { "Content-Type": "application/json" } : {},
     body: data ? JSON.stringify(data) : undefined,
@@ -33,12 +37,16 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
+<<<<<<< HEAD
     // Point to the Python server running on port 5002
     const baseUrl = 'http://localhost:5002';
     const url = queryKey[0] as string;
     const fullUrl = url.startsWith('http') ? url : `${baseUrl}${url}`;
     
     const res = await fetch(fullUrl, {
+=======
+    const res = await fetch(queryKey[0] as string, {
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
       credentials: "include",
     });
 

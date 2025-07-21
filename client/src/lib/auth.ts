@@ -1,18 +1,26 @@
 import axios from 'axios';
+<<<<<<< HEAD
 import { createApiUrl } from './config';
+=======
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
 
 // Authentication functions
 export async function login(username: string, password: string) {
   try {
     // Call login API endpoint
+<<<<<<< HEAD
     const loginUrl = await createApiUrl('/api/auth/login');
     const response = await fetch(loginUrl, {
+=======
+    const response = await fetch('/api/auth/login', {
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ username, password }),
     });
+<<<<<<< HEAD
 
     let result;
     try {
@@ -27,12 +35,18 @@ export async function login(username: string, password: string) {
 
     console.log('Login response:', result);
 
+=======
+    
+    const result = await response.json();
+    
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
     if (result.success && result.token) {
       // Store token and user info in local storage
       localStorage.setItem('satyaai_token', result.token);
       if (result.user) {
         localStorage.setItem('satyaai_user', JSON.stringify(result.user));
       }
+<<<<<<< HEAD
       return result;
     } else {
       // Show backend error message if available
@@ -41,11 +55,20 @@ export async function login(username: string, password: string) {
         message: result.message || 'Invalid username or password.'
       };
     }
+=======
+    }
+    
+    return result;
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
   } catch (error) {
     console.error('Login error:', error);
     return {
       success: false,
+<<<<<<< HEAD
       message: 'Authentication system error. Please check your network or try again.'
+=======
+      message: 'Authentication system error'
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
     };
   }
 }
@@ -57,8 +80,12 @@ export async function logout() {
     
     if (token) {
       // Call logout API endpoint
+<<<<<<< HEAD
       const logoutUrl = await createApiUrl('/api/auth/logout');
       const response = await fetch(logoutUrl, {
+=======
+      const response = await fetch('/api/auth/logout', {
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -108,8 +135,12 @@ export async function checkAuth() {
     }
     
     // Validate token with server
+<<<<<<< HEAD
     const validateUrl = await createApiUrl('/api/auth/validate');
     const response = await fetch(validateUrl, {
+=======
+    const response = await fetch('/api/auth/validate', {
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

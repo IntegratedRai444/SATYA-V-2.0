@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import React from 'react';
 import { useState, useRef } from "react";
 import { FileDown, FileText, Share2, Download, FileCheck, AlertCircle } from "lucide-react";
@@ -7,6 +8,15 @@ import { ScanResult } from "../../lib/types";
 import AdvancedAnalysisCard from "../shared/AdvancedAnalysisCard";
 import { useToast } from "../../hooks/use-toast";
 import { createApiUrl } from "../../lib/config";
+=======
+import { useState, useRef } from "react";
+import { FileDown, FileText, Share2, Download, FileCheck, AlertCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useQuery } from "@tanstack/react-query";
+import { ScanResult } from "@/lib/types";
+import AdvancedAnalysisCard from "@/components/shared/AdvancedAnalysisCard";
+import { useToast } from "@/hooks/use-toast";
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
 
 interface AnalysisResultsProps {
   scanId?: string;
@@ -23,13 +33,21 @@ export default function AnalysisResults({ scanId }: AnalysisResultsProps) {
   const { toast } = useToast();
   const pdfLinkRef = useRef<HTMLAnchorElement>(null);
 
+<<<<<<< HEAD
   const handleExportPdf = async () => {
+=======
+  const handleExportPdf = () => {
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
     if (!result || !scanId) return;
     
     setIsPdfDownloading(true);
     
     // Create a direct link to the PDF report route
+<<<<<<< HEAD
     const reportUrl = await createApiUrl(`/api/scans/${scanId}/report`);
+=======
+    const reportUrl = `/api/scans/${scanId}/report`;
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
     
     // Option 1: Show download progress with iframe
     try {
@@ -44,7 +62,11 @@ export default function AnalysisResults({ scanId }: AnalysisResultsProps) {
           title: "Report generated successfully!",
           description: "Your PDF report is downloading...",
           variant: "default",
+<<<<<<< HEAD
 
+=======
+          icon: <FileCheck className="h-5 w-5 text-green-400" />,
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
         });
         
         // Clean up the iframe after a delay
@@ -64,6 +86,10 @@ export default function AnalysisResults({ scanId }: AnalysisResultsProps) {
         title: "Download failed",
         description: "There was an issue generating your PDF report. Please try again.",
         variant: "destructive",
+<<<<<<< HEAD
+=======
+        icon: <AlertCircle className="h-5 w-5" />,
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
       });
     }
   };
@@ -77,7 +103,11 @@ export default function AnalysisResults({ scanId }: AnalysisResultsProps) {
       // Generate CSV content
       const csvContent = `
 "Filename","Type","Result","Confidence Score","Timestamp"
+<<<<<<< HEAD
 "${result.filename}","${result.type}","${result.result}","${result.confidenceScore}%","${result.timestamp}"
+=======
+"${result.filename}","${result.type}","${result.result}","${result.confidenceScore}%","${result.createdAt}"
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
       `;
       
       // Create download link
@@ -98,6 +128,10 @@ export default function AnalysisResults({ scanId }: AnalysisResultsProps) {
       toast({
         title: "CSV exported successfully",
         description: "Your data has been exported to CSV format",
+<<<<<<< HEAD
+=======
+        icon: <FileCheck className="h-5 w-5 text-green-400" />,
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
       });
     } catch (error) {
       console.error('CSV export error:', error);
@@ -106,6 +140,10 @@ export default function AnalysisResults({ scanId }: AnalysisResultsProps) {
         title: "Export failed",
         description: "There was an issue exporting your data. Please try again.",
         variant: "destructive",
+<<<<<<< HEAD
+=======
+        icon: <AlertCircle className="h-5 w-5" />,
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
       });
     } finally {
       setIsCsvDownloading(false);
@@ -141,6 +179,10 @@ export default function AnalysisResults({ scanId }: AnalysisResultsProps) {
         title: "Share failed",
         description: "There was an issue sharing this analysis. Please try again.",
         variant: "destructive",
+<<<<<<< HEAD
+=======
+        icon: <AlertCircle className="h-5 w-5" />,
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
       });
     }
   };

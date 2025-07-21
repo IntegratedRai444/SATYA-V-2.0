@@ -16,6 +16,7 @@ const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
       try {
         const { isAuthenticated } = await checkAuth();
         setIsAuthenticated(isAuthenticated);
+<<<<<<< HEAD
         if (!isAuthenticated) {
           setLocation('/login');
         } else if (window.location.pathname === '/login') {
@@ -30,6 +31,18 @@ const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
     verifyAuth();
   }, [setLocation]);
 
+=======
+      } catch (error) {
+        console.error('Auth verification failed:', error);
+        setIsAuthenticated(false);
+      }
+    };
+
+    verifyAuth();
+  }, []);
+
+  // Show loading while checking authentication
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
   if (isAuthenticated === null) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -41,9 +54,21 @@ const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
     );
   }
 
+<<<<<<< HEAD
   // If not authenticated, block rendering children (redirect handled above)
   if (!isAuthenticated) {
     return null;
+=======
+  // If not authenticated, show login form
+  if (!isAuthenticated) {
+    return (
+      <div className="container mx-auto py-8 px-4">
+        <div className="max-w-md mx-auto">
+          <LoginForm onLoginSuccess={() => setIsAuthenticated(true)} />
+        </div>
+      </div>
+    );
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
   }
 
   // If authenticated, show children

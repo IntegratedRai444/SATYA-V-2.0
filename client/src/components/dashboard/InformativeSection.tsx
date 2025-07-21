@@ -1,5 +1,9 @@
 import { ArrowUp, ArrowDown, CheckCircle, Info, BookOpen, AlertTriangle, Clock, PieChart, Layers, Shield, Activity, Zap, Sparkles, ExternalLink, LucideIcon, Lock, Eye, Lightbulb } from "lucide-react";
+<<<<<<< HEAD
 import { cn } from "../../lib/utils";
+=======
+import { cn } from "@/lib/utils";
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
 import { useState, useRef, useEffect } from "react";
 
 export default function InformativeSection() {
@@ -726,7 +730,11 @@ export default function InformativeSection() {
       </div>
       
       {/* Add CSS for custom animations */}
+<<<<<<< HEAD
       <style>{`
+=======
+      <style jsx>{`
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
         @keyframes fadeUpAndOut {
           0% { opacity: 0; transform: translateY(0px); }
           40% { opacity: 0.8; transform: translateY(-40px) rotate(${Math.random() * 180 - 90}deg); }

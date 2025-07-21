@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+<<<<<<< HEAD
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Progress } from "../ui/progress";
@@ -8,6 +9,17 @@ import { Button } from "../ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../ui/collapsible";
 import { AlertTriangle, CheckCircle, ChevronDown, Download, ExternalLink, Eye, FileCheck, Info, Share2, ShieldAlert, Zap } from "lucide-react";
 import { useToast } from "../../hooks/use-toast";
+=======
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { AlertTriangle, CheckCircle, ChevronDown, Download, ExternalLink, Eye, FileCheck, Info, Share2, ShieldAlert, Zap } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
 
 interface AdvancedAnalysisResultProps {
   result: any; // The detailed analysis result

@@ -1,6 +1,13 @@
 import * as React from "react"
 
+<<<<<<< HEAD
 import type { ToastActionElement, ToastProps } from "../components/ui/toast";
+=======
+import type {
+  ToastActionElement,
+  ToastProps,
+} from "@/components/ui/toast"
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
 
 const TOAST_LIMIT = 1
 const TOAST_REMOVE_DELAY = 1000000

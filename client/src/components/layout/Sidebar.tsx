@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
+<<<<<<< HEAD
 import { cn } from "../../lib/utils";
 import AIAssistant from "../shared/AIAssistant";
+=======
+import { cn } from "@/lib/utils";
+import AIAssistant from "@/components/shared/AIAssistant";
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
 import {
   LayoutDashboard,
   Image,

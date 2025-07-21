@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+<<<<<<< HEAD
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
@@ -11,6 +12,20 @@ import { useToast } from '../../hooks/use-toast';
 import { Camera, FileVideo, FileAudio, Upload, Shield, Zap, Layers, Info, AlertTriangle } from "lucide-react";
 import { useDropzone } from 'react-dropzone';
 import AdvancedAnalysisResult from '../analysis/AdvancedAnalysisResult';
+=======
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { useToast } from "@/hooks/use-toast";
+import { Camera, FileVideo, FileAudio, Upload, Shield, Zap, Layers, Info, AlertTriangle } from "lucide-react";
+import { useDropzone } from 'react-dropzone';
+import AdvancedAnalysisResult from '@/components/analysis/AdvancedAnalysisResult';
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
 
 interface AdvancedScanSectionProps {
   onScan?: (result: any) => void;
@@ -33,7 +48,10 @@ const AdvancedScanSection: React.FC<AdvancedScanSectionProps> = ({ onScan }) => 
     preserveMetadata: true,
     sensitivity: 'medium',
   });
+<<<<<<< HEAD
   const [scanError, setScanError] = useState<string | null>(null);
+=======
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
   
   // For webcam
   const [isWebcamActive, setIsWebcamActive] = useState(false);
@@ -161,7 +179,11 @@ const AdvancedScanSection: React.FC<AdvancedScanSectionProps> = ({ onScan }) => 
   const handleScan = useCallback(async () => {
     setIsLoading(true);
     setAnalysisResult(null);
+<<<<<<< HEAD
     setScanError(null);
+=======
+    
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
     try {
       let endpoint = '';
       const formData = new FormData();
@@ -229,6 +251,7 @@ const AdvancedScanSection: React.FC<AdvancedScanSectionProps> = ({ onScan }) => 
       }
       
       // Make API request
+<<<<<<< HEAD
       const response = await fetch(`http://localhost:5002${endpoint}`, {
         method: 'POST',
         body: formData,
@@ -279,6 +302,53 @@ const AdvancedScanSection: React.FC<AdvancedScanSectionProps> = ({ onScan }) => 
       setIsLoading(false);
     }
   }, [activeTab, selectedFiles, advancedOptions, isWebcamActive, captureWebcamImage, onScan, toast, scanError]);
+=======
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Analysis failed with status: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      
+      // Set analysis result
+      setAnalysisResult(result);
+      
+      // Notify parent component
+      if (onScan) {
+        onScan(result);
+      }
+      
+      // Show success toast
+      toast({
+        title: "Analysis Complete",
+        description: `Completed ${scanMode} analysis on your ${activeTab} file`
+      });
+    } catch (error) {
+      console.error('Scan error:', error);
+      
+      toast({
+        variant: "destructive",
+        title: "Analysis Failed",
+        description: error instanceof Error ? error.message : "Something went wrong"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [
+    activeTab,
+    advancedOptions,
+    captureWebcamImage,
+    isWebcamActive,
+    onScan,
+    scanMode,
+    selectedFiles,
+    toast
+  ]);
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
   
   // Reset selected files and results
   const handleReset = useCallback(() => {
@@ -769,9 +839,12 @@ const AdvancedScanSection: React.FC<AdvancedScanSectionProps> = ({ onScan }) => 
           />
         </div>
       )}
+<<<<<<< HEAD
       {scanError && (
         <div className="px-6 pb-2 text-red-600 text-center font-medium">{scanError}</div>
       )}
+=======
+>>>>>>> a152be44fa5a0782cc9b4e4235229eb36a2aaa8f
     </div>
   );
 };

@@ -1,0 +1,41 @@
+modules = ["nodejs-20", "python-3.11", "web"]
+run = "npm run dev"
+
+[nix]
+channel = "stable-24_05"
+packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "gobject-introspection", "gtk3", "lcms2", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "openjpeg", "pkg-config", "qhull", "tcl", "tk", "zlib"]
+
+[deployment]
+run = ["sh", "-c", "npm run dev"]
+
+[[ports]]
+localPort = 3000
+externalPort = 3001
+
+[[ports]]
+localPort = 5000
+externalPort = 5000
+
+[[ports]]
+localPort = 5001
+externalPort = 80
+
+[[ports]]
+localPort = 5002
+externalPort = 3000
+
+[workflows]
+runButton = "Run"
+
+[[workflows.workflow]]
+name = "Run"
+author = 42857188
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pkill -f \"node|python\" || true"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev & python server/python/main.py"
