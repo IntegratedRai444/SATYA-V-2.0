@@ -1,0 +1,16 @@
+{
+  "dependencies": {
+    "@radix-ui/react-toast": "^1.2.14",
+    "@radix-ui/react-tooltip": "^1.2.7",
+    "axios": "^1.10.0",
+    "cors": "^2.8.5",
+    "react-helmet": "^6.1.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "eslint": "^9.31.0",
+    "prettier": "^3.6.2",
+    "vite-bundle-visualizer": "^1.2.1",
+    "vitest": "^3.2.4"
+  }
+}

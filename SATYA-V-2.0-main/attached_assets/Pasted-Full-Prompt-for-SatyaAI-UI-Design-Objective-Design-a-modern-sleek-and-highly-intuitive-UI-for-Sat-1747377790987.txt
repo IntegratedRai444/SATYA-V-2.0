@@ -1,0 +1,84 @@
+Full Prompt for SatyaAI UI Design
+Objective:
+Design a modern, sleek, and highly intuitive UI for SatyaAI, an advanced deepfake detection system. The interface should enable users to easily upload media (images, videos, audio), perform real-time webcam analysis, view detailed results with confidence scores, and access logs/history. It must be visually appealing, professional, and optimized for usability by both casual and expert users.
+
+Core Features to include:
+
+Landing/Dashboard Page
+
+Welcome banner with SatyaAI logo and tagline (e.g., “Synthetic Authentication Technology for Your Analysis”)
+
+Quick access buttons for each media type: Image, Video, Audio, Webcam
+
+Recent scan history or log overview
+
+Navigation bar with links to Home, Scan, History, Settings, Help
+
+Media Upload & Scan Interface
+
+Drag and drop or browse file upload for Image, Video, Audio
+
+Webcam live feed with Start/Stop capture button
+
+Scan button to initiate deepfake detection
+
+Progress bar or loading animation during analysis
+
+Results Display Panel
+
+Clear, color-coded confidence score (e.g., green = authentic, red = fake)
+
+Detailed breakdown of detection methods (e.g., facial landmarks, audio spectral analysis, frame anomalies)
+
+Visual aids like heatmaps, graphs, or waveforms showing suspicious regions
+
+Option to save/export reports as PDF or CSV
+
+History & Logs Page
+
+List of all previous scans with date/time, media type, and result summary
+
+Ability to filter/search past scans
+
+Click to expand detailed report for each scan
+
+Settings & Customization
+
+User preferences for alert thresholds, scan sensitivity
+
+Option to toggle between light/dark mode
+
+Language selection
+
+Help & Support Section
+
+FAQ about deepfake detection and SatyaAI technology
+
+Contact/support form or chatbot for assistance
+
+Design Guidelines:
+
+Use a dark theme with neon accent colors (electric blue, cyan, lime green, red for warnings) to convey a futuristic and tech-savvy vibe.
+
+Clean typography with easy-to-read fonts (e.g., Poppins, Roboto, or Open Sans).
+
+Intuitive layout with minimal clutter, clear call-to-action buttons, and responsive design for desktop and tablet.
+
+Subtle animations/transitions for buttons, loading states, and results.
+
+Use icons and graphical elements to visually represent media types and detection stages.
+
+Ensure accessibility: good contrast ratios, keyboard navigability, and screen reader support.
+
+Example UI Sections (for inspiration):
+
+Header: SatyaAI logo + navigation + user profile icon
+
+Sidebar (optional): Scan types, History, Settings
+
+Main Content: Dynamic based on selected media scan or history view
+
+Footer: Version info, links to GitHub/repo, privacy policy
+
+Bonus:
+If possible, add an AI assistant widget on the side that guides the user through uploading and scanning, explaining terms in layman’s language.

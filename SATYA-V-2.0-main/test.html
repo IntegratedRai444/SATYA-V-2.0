@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SatyaAI Test</title>
+</head>
+<body>
+    <h1>SatyaAI Server Test</h1>
+    <div id="results"></div>
+
+    <script>
+        const resultsDiv = document.getElementById('results');
+        
+        async function testEndpoint(endpoint, method = 'GET', data = null) {
+            try {
+                const options = {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                };
+                
+                if (data) {
+                    options.body = JSON.stringify(data);
+                }
+                
+                const response = await fetch(`http://localhost:5002${endpoint}`, options);
+                const result = await response.json();
+                
+                return { success: true, data: result };
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        }
+        
+        async function runTests() {
+            resultsDiv.innerHTML = '<p>Testing endpoints...</p>';
+            
+            // Test health endpoint
+            const health = await testEndpoint('/health');
+            resultsDiv.innerHTML += `<p>Health: ${health.success ? '✅' : '❌'} ${JSON.stringify(health)}</p>`;
+            
+            // Test login endpoint
+            const login = await testEndpoint('/api/auth/login', 'POST', {
+                username: 'test',
+                password: 'test'
+            });
+            resultsDiv.innerHTML += `<p>Login: ${login.success ? '✅' : '❌'} ${JSON.stringify(login)}</p>`;
+            
+            // Test scans endpoint
+            const scans = await testEndpoint('/api/scans/recent');
+            resultsDiv.innerHTML += `<p>Scans: ${scans.success ? '✅' : '❌'} ${JSON.stringify(scans)}</p>`;
+        }
+        
+        runTests();
+    </script>
+</body>
+</html> 

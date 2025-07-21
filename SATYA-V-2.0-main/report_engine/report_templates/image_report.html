@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SatyaAI Image Deepfake Report</title>
+  <style>
+    body { background: #181c23; color: #fff; font-family: 'Segoe UI', Arial, sans-serif; margin: 0; }
+    .container { max-width: 900px; margin: 2em auto; background: #232733; border-radius: 16px; box-shadow: 0 4px 32px #0008; padding: 2em; }
+    .header { display: flex; justify-content: space-between; align-items: center; }
+    .filename { font-size: 1.2em; color: #b0b8c1; }
+    .confidence-badge { background: #2a2230; color: #ff4b7d; border-radius: 50%; width: 90px; height: 90px; display: flex; align-items: center; justify-content: center; font-size: 2em; font-weight: bold; border: 4px solid #ff4b7d; box-shadow: 0 0 0 4px #232733; }
+    .deepfake-label { background: #ff4b7d; color: #fff; border-radius: 8px; padding: 0.4em 1.2em; font-weight: bold; font-size: 1.1em; margin-left: 1em; letter-spacing: 1px; }
+    .summary-card { background: #232733; border-radius: 12px; padding: 2em; margin-top: 2em; display: flex; align-items: center; }
+    .warning-icon { font-size: 3em; color: #ff4b7d; margin-right: 1.5em; }
+    .summary-text { font-size: 1.3em; font-weight: bold; color: #ff4b7d; }
+    .confidence-bar-bg { background: #2a2230; border-radius: 8px; height: 18px; width: 100%; margin-top: 1em; }
+    .confidence-bar { background: #ff4b7d; height: 100%; border-radius: 8px; }
+    .key-findings-card { background: #232733; border-radius: 12px; padding: 2em; margin-top: 2em; }
+    .key-findings-title { font-size: 1.1em; color: #b0b8c1; margin-bottom: 1em; }
+    .finding { color: #ff4b7d; font-weight: bold; margin-bottom: 0.7em; }
+    .footer { text-align: center; color: #b0b8c1; margin-top: 2em; font-size: 0.95em; }
+    .logo { height: 32px; vertical-align: middle; margin-right: 0.5em; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <img src="https://satyaai.com/logo.png" class="logo" alt="SatyaAI Logo"/>
+        <span class="filename">{{ filename }}</span>
+        <span class="deepfake-label">{{ result_label }}</span>
+      </div>
+      <div class="confidence-badge">{{ confidence }}%</div>
+    </div>
+    <div class="summary-card">
+      <span class="warning-icon">&#9888;</span>
+      <div>
+        <div class="summary-text">{{ summary_title }}</div>
+        <div style="color:#fff; margin-top:0.5em;">{{ summary_text }}</div>
+        <div class="confidence-bar-bg">
+          <div class="confidence-bar" style="width: {{ confidence }}%;"></div>
+        </div>
+        <div style="margin-top:0.5em; color:#ff4b7d; font-weight:bold;">Overall Confidence: {{ confidence }}%</div>
+      </div>
+    </div>
+    <div class="key-findings-card">
+      <div class="key-findings-title">Key Findings</div>
+      {% for finding in key_findings %}
+        <div class="finding">{{ loop.index }}. {{ finding }}</div>
+      {% endfor %}
+    </div>
+    <div class="footer">
+      &copy; 2025 SatyaAI &mdash; Synthetic Authentication Technology for Your Analysis
+    </div>
+  </div>
+</body>
+</html> 
