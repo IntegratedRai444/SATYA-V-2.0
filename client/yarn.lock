@@ -833,15 +833,15 @@
     "@jridgewell/resolve-uri" "^3.0.3"
     "@jridgewell/sourcemap-codec" "^1.4.10"
 
-"@next/env@16.0.0":
-  version "16.0.0"
-  resolved "https://registry.npmjs.org/@next/env/-/env-16.0.0.tgz"
-  integrity sha512-s5j2iFGp38QsG1LWRQaE2iUY3h1jc014/melHFfLdrsMJPqxqDQwWNwyQTcNoUSGZlCVZuM7t7JDMmSyRilsnA==
+"@next/env@15.5.6":
+  version "15.5.6"
+  resolved "https://registry.npmjs.org/@next/env/-/env-15.5.6.tgz"
+  integrity sha512-3qBGRW+sCGzgbpc5TS1a0p7eNxnOarGVQhZxfvTdnV0gFI61lX7QNtQ4V1TSREctXzYn5NetbUsLvyqwLFJM6Q==
 
-"@next/swc-win32-x64-msvc@16.0.0":
-  version "16.0.0"
-  resolved "https://registry.npmjs.org/@next/swc-win32-x64-msvc/-/swc-win32-x64-msvc-16.0.0.tgz"
-  integrity sha512-O1cJbT+lZp+cTjYyZGiDwsOjO3UHHzSqobkPNipdlnnuPb1swfcuY6r3p8dsKU4hAIEO4cO67ZCfVVH/M1ETXA==
+"@next/swc-win32-x64-msvc@15.5.6":
+  version "15.5.6"
+  resolved "https://registry.npmjs.org/@next/swc-win32-x64-msvc/-/swc-win32-x64-msvc-15.5.6.tgz"
+  integrity sha512-pxK4VIjFRx1MY92UycLOOw7dTdvccWsNETQ0kDHkBlcFH1GrTLUjSiHU1ohrznnux6TqRHgv5oflhfIWZwVROQ==
 
 "@nodelib/fs.scandir@2.1.5":
   version "2.1.5"
@@ -1310,10 +1310,10 @@
   dependencies:
     tslib "^2.8.0"
 
-"@tanstack/query-core@4.41.0":
-  version "4.41.0"
-  resolved "https://registry.npmjs.org/@tanstack/query-core/-/query-core-4.41.0.tgz"
-  integrity sha512-193R4Jp9hjvlij6LryxrB5Mpbffd2L9PeWh3KlIy/hJV4SkBOfiQZ+jc5qAZLDCrdbkA5FjGj+UoDYw6TcNnyA==
+"@tanstack/query-core@5.90.7":
+  version "5.90.7"
+  resolved "https://registry.npmjs.org/@tanstack/query-core/-/query-core-5.90.7.tgz"
+  integrity sha512-6PN65csiuTNfBMXqQUxQhCNdtm1rV+9kC9YwWAIKcaxAauq3Wu7p18j3gQY3YIBJU70jT/wzCCZ2uqto/vQgiQ==
 
 "@tanstack/query-devtools@5.90.1":
   version "5.90.1"
@@ -1327,13 +1327,12 @@
   dependencies:
     "@tanstack/query-devtools" "5.90.1"
 
-"@tanstack/react-query@^4.36.1":
-  version "4.42.0"
-  resolved "https://registry.npmjs.org/@tanstack/react-query/-/react-query-4.42.0.tgz"
-  integrity sha512-j0tiofkzE3CSrYKmVRaKuwGgvCE+P2OOEDlhmfjeZf5ufcuFHwYwwgw3j08n4WYPVZ+OpsHblcFYezhKA3jDwg==
+"@tanstack/react-query@^5.90.2":
+  version "5.90.7"
+  resolved "https://registry.npmjs.org/@tanstack/react-query/-/react-query-5.90.7.tgz"
+  integrity sha512-wAHc/cgKzW7LZNFloThyHnV/AX9gTg3w5yAv0gvQHPZoCnepwqCMtzbuPbb2UvfvO32XZ46e8bPOYbfZhzVnnQ==
   dependencies:
-    "@tanstack/query-core" "4.41.0"
-    use-sync-external-store "^1.2.0"
+    "@tanstack/query-core" "5.90.7"
 
 "@testing-library/dom@^9.0.0", "@testing-library/dom@^9.3.1":
   version "9.3.4"
@@ -4862,26 +4861,26 @@ next-auth@^5.0.0-beta.29:
   dependencies:
     "@auth/core" "0.40.0"
 
-next@^16.0.0:
-  version "16.0.0"
-  resolved "https://registry.npmjs.org/next/-/next-16.0.0.tgz"
-  integrity sha512-nYohiNdxGu4OmBzggxy9rczmjIGI+TpR5vbKTsE1HqYwNm1B+YSiugSrFguX6omMOKnDHAmBPY4+8TNJk0Idyg==
+next@^15.0.0:
+  version "15.5.6"
+  resolved "https://registry.npmjs.org/next/-/next-15.5.6.tgz"
+  integrity sha512-zTxsnI3LQo3c9HSdSf91O1jMNsEzIXDShXd4wVdg9y5shwLqBXi4ZtUUJyB86KGVSJLZx0PFONvO54aheGX8QQ==
   dependencies:
-    "@next/env" "16.0.0"
+    "@next/env" "15.5.6"
     "@swc/helpers" "0.5.15"
     caniuse-lite "^1.0.30001579"
     postcss "8.4.31"
     styled-jsx "5.1.6"
   optionalDependencies:
-    "@next/swc-darwin-arm64" "16.0.0"
-    "@next/swc-darwin-x64" "16.0.0"
-    "@next/swc-linux-arm64-gnu" "16.0.0"
-    "@next/swc-linux-arm64-musl" "16.0.0"
-    "@next/swc-linux-x64-gnu" "16.0.0"
-    "@next/swc-linux-x64-musl" "16.0.0"
-    "@next/swc-win32-arm64-msvc" "16.0.0"
-    "@next/swc-win32-x64-msvc" "16.0.0"
-    sharp "^0.34.4"
+    "@next/swc-darwin-arm64" "15.5.6"
+    "@next/swc-darwin-x64" "15.5.6"
+    "@next/swc-linux-arm64-gnu" "15.5.6"
+    "@next/swc-linux-arm64-musl" "15.5.6"
+    "@next/swc-linux-x64-gnu" "15.5.6"
+    "@next/swc-linux-x64-musl" "15.5.6"
+    "@next/swc-win32-arm64-msvc" "15.5.6"
+    "@next/swc-win32-x64-msvc" "15.5.6"
+    sharp "^0.34.3"
 
 node-int64@^0.4.0:
   version "0.4.0"
@@ -6079,7 +6078,7 @@ shallowequal@^1.1.0:
   resolved "https://registry.npmjs.org/shallowequal/-/shallowequal-1.1.0.tgz"
   integrity sha512-y0m1JoUZSlPAjXVtPPW70aZWfIL/dSP7AFkRnniLCrK/8MDKog3TySTBmckD+RObVxH0v4Tox67+F14PdED2oQ==
 
-sharp@^0.34.4:
+sharp@^0.34.3:
   version "0.34.4"
   resolved "https://registry.npmjs.org/sharp/-/sharp-0.34.4.tgz"
   integrity sha512-FUH39xp3SBPnxWvd5iib1X8XY7J0K0X7d93sie9CJg2PO8/7gmg89Nve6OjItK53/MlAushNNxteBYfM6DEuoA==
@@ -6752,7 +6751,7 @@ use-sidecar@^1.1.3:
     detect-node-es "^1.1.0"
     tslib "^2.0.0"
 
-use-sync-external-store@^1.0.0, use-sync-external-store@^1.2.0:
+use-sync-external-store@^1.0.0:
   version "1.6.0"
   resolved "https://registry.npmjs.org/use-sync-external-store/-/use-sync-external-store-1.6.0.tgz"
   integrity sha512-Pp6GSwGP/NrPIrxVFAIkOQeyw8lFenOHijQWkUTrDvrF4ALqylP2C/KCkeS9dpUM3KvYRQhna5vt7IL95+ZQ9w==
