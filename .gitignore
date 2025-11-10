@@ -1,0 +1,49 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Node
+node_modules/
+dist/
+
+# VSCode
+.vscode/
+
+# Mac
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+
+# Reports/Exports
+backend/report_engine/exports/
+
+# Large Model Files (download via setup scripts)
+*.bin
+*.pth
+*.h5
+*.onnx
+*.pb
+*.pkl
+*.safetensors
+models/
+server/python/models/*.bin
+server/python/models/*.pth
+server/python/models/models--*/
+
+# Database
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Build artifacts
+*.tar.gz
+server/public
+vite.config.ts.*

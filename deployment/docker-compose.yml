@@ -1,0 +1,173 @@
+version: '3.8'
+
+services:
+  # Main SatyaAI application
+  satyaai:
+    build:
+      context: .
+      target: production
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=sqlite:./data/satyaai.db
+      - PYTHON_SERVER_URL=http://localhost:5001
+      - LOG_LEVEL=info
+      - MAX_FILE_SIZE=100MB
+      - UPLOAD_DIR=/app/uploads
+      - LOG_DIR=/app/logs
+    volumes:
+      - satyaai_data:/app/data
+      - satyaai_uploads:/app/uploads
+      - satyaai_logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      - redis
+    networks:
+      - satyaai_network
+
+  # Redis for caching and session storage
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - satyaai_network
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+  # PostgreSQL database (alternative to SQLite for production)
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=satyaai
+      - POSTGRES_USER=satyaai
+      - POSTGRES_PASSWORD=satyaai_secure_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U satyaai"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - satyaai_network
+
+  # Nginx reverse proxy and load balancer
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - satyaai_logs:/var/log/nginx
+    restart: unless-stopped
+    depends_on:
+      - satyaai
+    networks:
+      - satyaai_network
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    networks:
+      - satyaai_network
+
+  # Grafana for metrics visualization
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    networks:
+      - satyaai_network
+
+  # Log aggregation with Loki
+  loki:
+    image: grafana/loki:latest
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./monitoring/loki.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+    networks:
+      - satyaai_network
+
+  # Log shipping with Promtail
+  promtail:
+    image: grafana/promtail:latest
+    volumes:
+      - ./monitoring/promtail.yml:/etc/promtail/config.yml:ro
+      - satyaai_logs:/var/log/satyaai:ro
+      - /var/log:/var/log:ro
+    command: -config.file=/etc/promtail/config.yml
+    restart: unless-stopped
+    depends_on:
+      - loki
+    networks:
+      - satyaai_network
+
+volumes:
+  satyaai_data:
+    driver: local
+  satyaai_uploads:
+    driver: local
+  satyaai_logs:
+    driver: local
+  redis_data:
+    driver: local
+  postgres_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  loki_data:
+    driver: local
+
+networks:
+  satyaai_network:
+    driver: bridge

@@ -1,0 +1,133 @@
+config:
+  target: 'http://localhost:3000'
+  phases:
+    - duration: 60
+      arrivalRate: 5
+      name: "Warm up"
+    - duration: 120
+      arrivalRate: 10
+      name: "Ramp up load"
+    - duration: 300
+      arrivalRate: 15
+      name: "Sustained load"
+  processor: "./api-test-processor.js"
+
+scenarios:
+  - name: "Health Check"
+    weight: 20
+    flow:
+      - get:
+          url: "/api/health"
+          expect:
+            - statusCode: 200
+            - hasProperty: "status"
+          capture:
+            - json: "$.timestamp"
+              as: "healthTimestamp"
+
+  - name: "Authentication Flow"
+    weight: 30
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            username: "demo"
+            password: "DemoPassword123!"
+          expect:
+            - statusCode: 200
+            - hasProperty: "token"
+          capture:
+            - json: "$.token"
+              as: "authToken"
+      
+      - get:
+          url: "/api/auth/session"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          expect:
+            - statusCode: 200
+            - hasProperty: "valid"
+      
+      - post:
+          url: "/api/auth/logout"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          expect:
+            - statusCode: 200
+
+  - name: "Dashboard Access"
+    weight: 25
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            username: "demo"
+            password: "DemoPassword123!"
+          capture:
+            - json: "$.token"
+              as: "authToken"
+      
+      - get:
+          url: "/api/dashboard/stats"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          expect:
+            - statusCode: 200
+            - hasProperty: "totalScans"
+      
+      - get:
+          url: "/api/dashboard/recent-activity"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          expect:
+            - statusCode: 200
+      
+      - get:
+          url: "/api/dashboard/scans"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          expect:
+            - statusCode: 200
+
+  - name: "Analysis Endpoints"
+    weight: 15
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            username: "demo"
+            password: "DemoPassword123!"
+          capture:
+            - json: "$.token"
+              as: "authToken"
+      
+      - post:
+          url: "/api/analysis/webcam"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          json:
+            imageData: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+          expect:
+            - statusCode: 200
+            - hasProperty: "success"
+
+  - name: "Error Handling"
+    weight: 10
+    flow:
+      - get:
+          url: "/api/nonexistent"
+          expect:
+            - statusCode: 404
+      
+      - post:
+          url: "/api/auth/login"
+          json:
+            username: "invalid"
+            password: "invalid"
+          expect:
+            - statusCode: 401
+      
+      - get:
+          url: "/api/dashboard/stats"
+          expect:
+            - statusCode: 401

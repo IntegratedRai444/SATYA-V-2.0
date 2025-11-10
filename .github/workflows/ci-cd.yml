@@ -1,0 +1,336 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+# Global environment variables
+env:
+  PYTHON_VERSION: '3.10'
+  NODE_VERSION: '18'
+  PLAYWRIGHT_BROWSERS_PATH: './ms-playwright'
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 'false'
+  PLAYWRIGHT_HEADLESS: 'true'
+  
+# Job dependencies and order of execution
+jobs:
+  # Unit and Integration Tests
+  test:
+    name: Run Unit & Integration Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      # Add any required services like databases here
+      redis:
+        image: redis:alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Set up Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+        pip install pytest-cov pytest-xdist
+    
+    - name: Install Node.js dependencies
+      working-directory: ./client
+      run: npm ci
+    
+    - name: Run Python unit tests
+      run: |
+        python -m pytest tests/unit/ -v --cov=./ --cov-report=xml:coverage.xml
+        
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false
+    
+    - name: Run API integration tests
+      run: |
+        python -m pytest tests/integration/ -v
+
+  # E2E and Browser Tests
+  e2e:
+    name: Run E2E & Browser Tests
+    needs: test
+    runs-on: ubuntu-latest
+    
+    services:
+      # Start the application server
+      app:
+        image: python:${{ env.PYTHON_VERSION }}-slim
+        ports:
+          - 8000:8000
+        env:
+          ENVIRONMENT: test
+        # Start the application (adjust this to match your app's start command)
+        options: >-
+          --health-cmd "curl -f http://localhost:8000/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Set up Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+        pip install pytest-playwright
+    
+    - name: Install Playwright Browsers
+      run: |
+        python -m playwright install --with-deps
+        python -m playwright install-deps
+    
+    - name: Run E2E tests
+      run: |
+        python -m pytest tests/e2e/ -v --html=reports/e2e-report.html --self-contained-html
+    
+    - name: Run browser tests
+      run: |
+        python -m pytest tests/browser/ -v --html=reports/browser-report.html --self-contained-html
+    
+    - name: Upload test reports
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-reports
+        path: |
+          reports/*.html
+          tests/screenshots/
+          tests/performance/
+          tests/accessibility/
+
+  # Performance Testing
+  performance:
+    name: Performance Testing
+    needs: test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+        pip install pytest-playwright
+        python -m playwright install --with-deps
+    
+    - name: Run performance tests
+      run: |
+        python -m pytest tests/performance/ -v --html=reports/performance-report.html --self-contained-html
+    
+    - name: Upload performance report
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-report
+        path: reports/performance-report.html
+
+  # Accessibility Testing
+  accessibility:
+    name: Accessibility Testing
+    needs: test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+        pip install pytest-playwright axe-playwright-python
+        python -m playwright install --with-deps
+    
+    - name: Run accessibility tests
+      run: |
+        python -m pytest tests/accessibility/ -v --html=reports/accessibility-report.html --self-contained-html
+    
+    - name: Upload accessibility report
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: accessibility-report
+        path: |
+          reports/accessibility-report.html
+          reports/accessibility/
+
+  # Deploy to Staging (on push to main/master)
+  deploy-staging:
+    name: Deploy to Staging
+    needs: [test, e2e, performance, accessibility]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Deploy to staging
+      run: |
+        echo "Deploying to staging environment..."
+        # Add your deployment commands here
+        # For example: ansible-playbook deploy-staging.yml
+    
+    - name: Run smoke tests
+      run: |
+        echo "Running smoke tests on staging..."
+        # Add smoke test commands here
+
+  # Deploy to Production (on release)
+  deploy-production:
+    name: Deploy to Production
+    needs: deploy-staging
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Deploy to production
+      run: |
+        echo "Deploying to production..."
+        # Add your production deployment commands here
+        # For example: ansible-playbook deploy-production.yml
+    
+    - name: Run smoke tests
+      run: |
+        echo "Running smoke tests on production..."
+        # Add smoke test commands here
+      run: |
+        python -m pytest tests/
+    
+    - name: Run frontend tests
+      working-directory: ./client
+      run: |
+        npm test -- --watchAll=false --passWithNoTests
+    
+    - name: Security scan with Bandit
+      run: |
+        pip install bandit
+        bandit -r . -x ./venv,./node_modules,./.git
+    
+    - name: Lint Python code
+      run: |
+        pip install black flake8
+        black --check .
+        flake8 .
+    
+    - name: Lint TypeScript code
+      working-directory: ./client
+      run: |
+        npm run lint
+
+  build:
+    name: Build
+    needs: test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    
+    - name: Build and push
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: ${{ secrets.DOCKERHUB_USERNAME }}/satya-ai:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy
+    needs: build
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Deploy to production
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.PRODUCTION_HOST }}
+        username: ${{ secrets.PRODUCTION_USERNAME }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          cd /path/to/your/app
+          git pull origin main
+          docker-compose down
+          docker-compose pull
+          docker-compose up -d
+          docker system prune -f
+
+  notify:
+    name: Notify
+    needs: [test, build, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Slack
+        if: failure()
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_COLOR: ${{ job.status == 'success' && '#36a64f' || 'danger' }}
+          SLACK_TITLE: 'CI/CD Pipeline ${{ job.status }}'
+          SLACK_MESSAGE: 'Pipeline ${{ github.workflow }} ${{ github.event_name }} ${{ job.status }}.'
+          SLACK_USERNAME: GitHub Actions
+          MSG_MINIMAL: true

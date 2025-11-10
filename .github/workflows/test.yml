@@ -1,0 +1,110 @@
+name: Run Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Run Test Suite
+    runs-on: ubuntu-latest
+    
+    services:
+      # Add any required services like databases here
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-test.txt
+        pip install locust playwright
+        playwright install --with-deps
+    
+    - name: Set up Playwright
+      run: |
+        npx playwright install --with-deps
+    
+    - name: Run Unit Tests
+      run: |
+        pytest tests/unit/ --cov=./ --cov-report=xml
+    
+    - name: Run Integration Tests
+      run: |
+        pytest tests/integration/ --cov=./ --cov-append --cov-report=xml
+    
+    - name: Run Visual Regression Tests
+      run: |
+        mkdir -p tests/browser/screenshots/baseline
+        # On first run, this will create baseline images
+        # On subsequent runs, it will compare against them
+        pytest tests/browser/test_ui_components_visual.py -v
+    
+    - name: Run Accessibility Tests
+      run: |
+        mkdir -p tests/accessibility/results
+        pytest tests/accessibility/ --accessibility -v
+    
+    - name: Run Performance Tests
+      run: |
+        # Start the server in the background
+        python -m uvicorn server.main:app --host 0.0.0.0 --port 8000 &
+        # Wait for server to start
+        sleep 5
+        # Run locust tests for 1 minute with 5 users
+        locust -f tests/performance/test_load.py --headless -u 5 -r 1 -t 1m --host=http://localhost:8000
+    
+    - name: Upload Test Results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-results
+        path: |
+          tests/browser/screenshots/diff/**
+          tests/accessibility/results/**
+          coverage.xml
+    
+    - name: Upload Coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+  deploy:
+    name: Deploy to Staging
+    needs: test
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Deploy to Staging
+      run: |
+        # Add your deployment commands here
+        echo "Deploying to staging environment..."
+        # Example: ansible-playbook deploy-staging.yml

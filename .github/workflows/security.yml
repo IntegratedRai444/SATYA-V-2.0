@@ -1,0 +1,271 @@
+name: Security Scanning
+
+on:
+  schedule:
+    # Run security scans daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # CodeQL Analysis
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'javascript', 'python' ]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
+        with:
+          languages: ${{ matrix.language }}
+
+      - name: Setup Node.js (for JavaScript analysis)
+        if: matrix.language == 'javascript'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install Node.js dependencies
+        if: matrix.language == 'javascript'
+        run: |
+          npm ci
+          cd client && npm ci
+
+      - name: Setup Python (for Python analysis)
+        if: matrix.language == 'python'
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        if: matrix.language == 'python'
+        run: pip install -r requirements.txt
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+
+  # Dependency Scanning
+  dependency-scan:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          cd client && npm ci
+
+      - name: Run npm audit
+        run: |
+          npm audit --audit-level=moderate --json > npm-audit.json || true
+          cd client && npm audit --audit-level=moderate --json > ../client-audit.json || true
+
+      - name: Upload audit results
+        uses: actions/upload-artifact@v3
+        with:
+          name: audit-results
+          path: |
+            npm-audit.json
+            client-audit.json
+
+      - name: Check for high/critical vulnerabilities
+        run: |
+          HIGH_VULNS=$(jq '.metadata.vulnerabilities.high // 0' npm-audit.json)
+          CRITICAL_VULNS=$(jq '.metadata.vulnerabilities.critical // 0' npm-audit.json)
+          CLIENT_HIGH_VULNS=$(jq '.metadata.vulnerabilities.high // 0' client-audit.json)
+          CLIENT_CRITICAL_VULNS=$(jq '.metadata.vulnerabilities.critical // 0' client-audit.json)
+          
+          TOTAL_HIGH=$((HIGH_VULNS + CLIENT_HIGH_VULNS))
+          TOTAL_CRITICAL=$((CRITICAL_VULNS + CLIENT_CRITICAL_VULNS))
+          
+          echo "High vulnerabilities: $TOTAL_HIGH"
+          echo "Critical vulnerabilities: $TOTAL_CRITICAL"
+          
+          if [ $TOTAL_CRITICAL -gt 0 ]; then
+            echo "❌ Critical vulnerabilities found!"
+            exit 1
+          elif [ $TOTAL_HIGH -gt 5 ]; then
+            echo "⚠️ Too many high vulnerabilities found!"
+            exit 1
+          fi
+
+  # Container Security Scanning
+  container-scan:
+    name: Container Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t satyaai:security-scan .
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'satyaai:security-scan'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Run Trivy for critical vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'satyaai:security-scan'
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
+  # Secret Scanning
+  secret-scan:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run TruffleHog
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: main
+          head: HEAD
+          extra_args: --debug --only-verified
+
+  # License Compliance
+  license-check:
+    name: License Compliance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          cd client && npm ci
+
+      - name: Check licenses
+        run: |
+          npx license-checker --summary --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;CC0-1.0;Unlicense' || true
+          cd client && npx license-checker --summary --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;CC0-1.0;Unlicense' || true
+
+  # OWASP ZAP Security Testing
+  security-test:
+    name: OWASP ZAP Security Test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Start application
+        run: |
+          docker-compose up -d
+          sleep 60  # Wait for application to start
+
+      - name: Run OWASP ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.7.0
+        with:
+          target: 'http://localhost:3000'
+          rules_file_name: '.zap/rules.tsv'
+          cmd_options: '-a'
+
+      - name: Stop application
+        if: always()
+        run: docker-compose down
+
+  # Security Report
+  security-report:
+    name: Generate Security Report
+    runs-on: ubuntu-latest
+    needs: [codeql, dependency-scan, container-scan, secret-scan]
+    if: always()
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: audit-results
+
+      - name: Generate security summary
+        run: |
+          echo "# Security Scan Summary" > security-report.md
+          echo "Date: $(date)" >> security-report.md
+          echo "" >> security-report.md
+          
+          echo "## Dependency Vulnerabilities" >> security-report.md
+          if [ -f npm-audit.json ]; then
+            HIGH_VULNS=$(jq '.metadata.vulnerabilities.high // 0' npm-audit.json)
+            CRITICAL_VULNS=$(jq '.metadata.vulnerabilities.critical // 0' npm-audit.json)
+            echo "- Server: $CRITICAL_VULNS critical, $HIGH_VULNS high" >> security-report.md
+          fi
+          
+          if [ -f client-audit.json ]; then
+            CLIENT_HIGH_VULNS=$(jq '.metadata.vulnerabilities.high // 0' client-audit.json)
+            CLIENT_CRITICAL_VULNS=$(jq '.metadata.vulnerabilities.critical // 0' client-audit.json)
+            echo "- Client: $CLIENT_CRITICAL_VULNS critical, $CLIENT_HIGH_VULNS high" >> security-report.md
+          fi
+          
+          echo "" >> security-report.md
+          echo "## Scan Status" >> security-report.md
+          echo "- CodeQL: ${{ needs.codeql.result }}" >> security-report.md
+          echo "- Container Scan: ${{ needs.container-scan.result }}" >> security-report.md
+          echo "- Secret Scan: ${{ needs.secret-scan.result }}" >> security-report.md
+
+      - name: Upload security report
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-report
+          path: security-report.md
+
+      - name: Comment PR with security summary
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('security-report.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🔒 Security Scan Results\n\n${report}`
+            });

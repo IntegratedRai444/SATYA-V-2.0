@@ -1,0 +1,53 @@
+# ZAP Scanning Rules Configuration
+# Format: ID	THRESHOLD	[DESCRIPTION]
+
+# Ignore false positives
+10021	OFF	X-Content-Type-Options Header Missing
+10020	OFF	X-Frame-Options Header Not Set
+10016	OFF	Web Browser XSS Protection Not Enabled
+10017	OFF	Cross-Domain JavaScript Source File Inclusion
+10015	OFF	Incomplete or No Cache-control and Pragma HTTP Header Set
+
+# Medium priority rules
+10054	MEDIUM	Cookie Without SameSite Attribute
+10055	MEDIUM	CSP Scanner
+10056	MEDIUM	X-Debug-Token Information Leak
+10057	MEDIUM	Username Hash Found
+10061	MEDIUM	X-AspNet-Version Response Header
+
+# High priority rules
+40018	HIGH	SQL Injection
+40019	HIGH	SQL Injection - MySQL
+40020	HIGH	SQL Injection - Hypersonic SQL
+40021	HIGH	SQL Injection - Oracle
+40022	HIGH	SQL Injection - PostgreSQL
+40023	HIGH	SQL Injection - SQLite
+90018	HIGH	SQL Injection - Authentication Bypass
+90019	HIGH	Code Injection
+90020	HIGH	Command Injection
+90021	HIGH	XPath Injection
+90022	HIGH	Application Error Disclosure
+90023	HIGH	XML External Entity Attack
+90024	HIGH	Generic Padding Oracle
+90025	HIGH	Expression Language Injection
+90026	HIGH	SOAP Action Spoofing
+90027	HIGH	Cookie Slack Detector
+90028	HIGH	Insecure JSF ViewState
+90029	HIGH	LDAP Injection
+90030	HIGH	SOAP XML Injection
+
+# Authentication and session management
+10040	HIGH	Secure Pages Include Mixed Content
+10041	HIGH	HTTP to HTTPS Insecure Transition in Form Post
+10042	HIGH	HTTPS to HTTP Insecure Transition in Form Post
+10043	HIGH	User Controllable JavaScript Event
+10044	HIGH	Big Redirect Detected
+10045	HIGH	Source Code Disclosure - /WEB-INF folder
+10046	HIGH	Shortcut Icon is Missing
+10047	HIGH	HTTPS Content Available via HTTP
+10048	HIGH	Remote Code Execution - Shell Shock
+10049	HIGH	Content Cacheability
+10050	HIGH	Retrieved from Cache
+10051	HIGH	Relative Path Confusion
+10052	HIGH	X-ChromeLogger-Data Header Information Leak
+10053	HIGH	Apache Range Header DoS

@@ -1,0 +1,31 @@
+[project]
+name = "satyaai-deepfake-detection"
+version = "2.0.0"
+description = "SatyaAI - Advanced Deepfake Detection System with Multi-modal AI Analysis"
+requires-python = ">=3.8"
+dependencies = [
+    "flask>=2.3.3",
+    "flask-cors>=4.0.0",
+    "werkzeug>=2.3.7",
+    "gunicorn>=21.2.0",
+    "pillow>=10.0.1",
+    "opencv-python-headless>=4.8.1.78",
+    "numpy>=1.24.3",
+    "scipy>=1.11.3",
+    "torch>=2.0.1",
+    "torchvision>=0.15.2",
+    "facenet-pytorch>=2.5.3",
+    "librosa>=0.10.1",
+    "soundfile>=0.12.1",
+    "transformers>=4.30.0",
+    "huggingface-hub>=0.16.4",
+    "gdown>=4.7.1",
+    "scikit-learn>=1.3.0",
+    "matplotlib>=3.7.2",
+    "cryptography>=41.0.4",
+    "pyjwt>=2.8.0",
+    "python-dotenv>=1.0.0",
+    "requests>=2.31.0",
+    "pytest>=7.4.2",
+    "pytest-flask>=1.2.0",
+]

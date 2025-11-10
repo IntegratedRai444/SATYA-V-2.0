@@ -1,0 +1,76 @@
+# Audio Deepfake Detection Model Configuration
+
+data:
+  # Audio processing
+  sample_rate: 16000  # Target sample rate in Hz
+  max_duration: 4.0   # Maximum duration of audio in seconds
+  
+  # Data augmentation
+  augment: True
+  noise_std: 0.001    # Standard deviation of noise to add
+  gain_range: [0.9, 1.1]  # Range for random gain
+  time_stretch_range: [0.9, 1.1]  # Range for time stretching
+  
+  # Dataset split
+  val_split: 0.15    # Fraction of data for validation
+  test_split: 0.15   # Fraction of data for testing
+
+model:
+  # Architecture
+  input_size: [64, 128]  # Height and width of input features
+  num_classes: 2         # Number of output classes (real/fake)
+  dropout_rate: 0.3      # Dropout rate for regularization
+  
+  # Feature extraction
+  n_mfcc: 64            # Number of MFCC coefficients
+  n_fft: 2048           # FFT window size
+  hop_length: 512       # Hop length between frames
+  n_mels: 128           # Number of Mel bands
+
+training:
+  # Training parameters
+  batch_size: 32
+  num_epochs: 50
+  learning_rate: 0.001
+  weight_decay: 1e-4
+  
+  # Learning rate scheduling
+  lr_scheduler: "ReduceLROnPlateau"
+  lr_patience: 5        # Epochs to wait before reducing LR
+  lr_factor: 0.5        # Factor to reduce LR by
+  min_lr: 1e-6          # Minimum learning rate
+  
+  # Early stopping
+  early_stopping_patience: 10  # Epochs to wait before early stopping
+  
+  # Checkpointing
+  checkpoint_dir: "checkpoints"
+  log_dir: "logs"
+  save_interval: 1      # Save checkpoint every N epochs
+  
+  # Mixed precision training
+  use_amp: True         # Use Automatic Mixed Precision
+  
+  # Gradient clipping
+  max_grad_norm: 1.0    # Clip gradients to this norm
+
+inference:
+  # Batch size for inference
+  batch_size: 32
+  
+  # Threshold for classification (0.5 for binary classification)
+  threshold: 0.5
+  
+  # Use ONNX for inference (faster)
+  use_onnx: True
+  
+  # Use TensorRT for inference (fastest, requires CUDA)
+  use_tensorrt: False
+
+# Paths
+directories:
+  real_audio: "data/real"
+  fake_audio: "data/fake"
+  checkpoints: "checkpoints"
+  logs: "logs"
+  results: "results"

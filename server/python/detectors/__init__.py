@@ -1,0 +1,1 @@
+# SatyaAI Detectors Package
