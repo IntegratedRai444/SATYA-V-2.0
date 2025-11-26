@@ -1,97 +1,113 @@
-from fastapi import APIRouter, File, UploadFile, HTTPException, Depends
-from fastapi.responses import JSONResponse
-from backend.utils.image_utils import (
-    preprocess_image, extract_exif, detect_faces, scan_gan_artifacts, generate_heatmap
-)
-from backend.utils.report_utils import generate_image_report, export_report_json, export_report_pdf
-from backend.models.image_model import predict_deepfake
-import os
-import base64
-from PIL import Image
-import io
-import numpy as np
+"""
+Image Upload and Analysis Route
+Dedicated route for image processing
+"""
+
+from fastapi import APIRouter, UploadFile, File, HTTPException, Request, Form
+from fastapi.responses import FileResponse
+from pathlib import Path
+import shutil
+import uuid
+from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Upload directory
+UPLOAD_DIR = Path("uploads/images")
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+# File size limit
+MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+# Allowed file types
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/jpg", "image/webp"}
+
+
 @router.post("/")
-async def detect_image(file: UploadFile = File(...)) -> JSONResponse:
+async def upload_image(
+    request: Request,
+    file: UploadFile = File(...),
+    analyze: bool = Form(True)
+):
     """
-    Endpoint for image deepfake analysis. Accepts an image upload, runs preprocessing, feature extraction,
-    placeholder model inference, and report generation. Returns analysis results and report paths.
+    Upload and analyze an image
+    
+    - **file**: Image file to upload
+    - **analyze**: Whether to run ML analysis (default: True)
     """
-    if file.content_type not in ["image/jpeg", "image/png", "image/webp"]:
-        raise HTTPException(status_code=400, detail="Unsupported image format.")
     try:
-        contents = await file.read()
-        arr = preprocess_image(contents)
-        exif = extract_exif(contents)
-        faces = detect_faces(arr)
-        gan_artifacts = scan_gan_artifacts(arr)
-        heatmap = generate_heatmap(arr)
-        # Save heatmap as an image file (if not a placeholder)
-        heatmap_path = None
-        if isinstance(heatmap, str) and heatmap != "heatmap_placeholder":
-            heatmap_data = base64.b64decode(heatmap)
-            image = Image.open(io.BytesIO(heatmap_data))
-            heatmap_path = f"reports/{file.filename}_heatmap.png"
-            image.save(heatmap_path)
-        elif isinstance(heatmap, (np.ndarray, list)):
-            arr_to_save = np.array(heatmap) if isinstance(heatmap, list) else heatmap
-            # Only save if arr_to_save is a numeric numpy array and not a string
-            if isinstance(arr_to_save, np.ndarray) and hasattr(arr_to_save, 'dtype') and arr_to_save.dtype.kind in ('f', 'i', 'u') and not isinstance(arr_to_save, str):
-                image = Image.fromarray((arr_to_save * 255).astype('uint8'))
-                heatmap_path = f"reports/{file.filename}_heatmap.png"
-                image.save(heatmap_path)
-            else:
-                heatmap_path = None
-        else:
-            heatmap_path = None
-        # Model inference
-        label, confidence, explanation = predict_deepfake(arr, faces, gan_artifacts)
-        red_flags = ["Blurred boundary around ears & neck", "GAN checkerboard residue around eyes"]
-        result = {
-            "preprocessed_shape": str(arr.shape),
-            "exif": exif,
-            "faces": faces,
-            "gan_artifacts": gan_artifacts,
-            "heatmap": heatmap,
-            "label": label,
-            "confidence": confidence,
-            "explanation": explanation,
-            "red_flags": red_flags
-        }
-        report = generate_image_report(file.filename, result, exif)
-        os.makedirs("reports", exist_ok=True)
-        json_path = f"reports/{file.filename}.json"
-        pdf_path = f"reports/{file.filename}.pdf"
-        export_report_json(report, json_path)
-        export_report_pdf(report, pdf_path)
-        files_exist = {
-            "json": os.path.exists(json_path),
-            "pdf": os.path.exists(pdf_path),
-            "heatmap": os.path.exists(heatmap_path) if heatmap_path else False
-        }
-        return JSONResponse(content={
+        # Validate file type
+        if file.content_type not in ALLOWED_IMAGE_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid file type. Allowed: {', '.join(ALLOWED_IMAGE_TYPES)}"
+            )
+        
+        # Read file content
+        content = await file.read()
+        file_size = len(content)
+        
+        # Validate file size
+        if file_size > MAX_IMAGE_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File too large. Max: {MAX_IMAGE_SIZE / (1024*1024):.1f} MB"
+            )
+        
+        # Generate unique filename
+        file_id = str(uuid.uuid4())
+        file_extension = Path(file.filename).suffix
+        filename = f"{file_id}{file_extension}"
+        file_path = UPLOAD_DIR / filename
+        
+        # Save file
+        with file_path.open("wb") as f:
+            f.write(content)
+        
+        logger.info(f"Image uploaded: {filename} ({file_size} bytes)")
+        
+        # Analyze if requested
+        analysis_result = None
+        if analyze and hasattr(request.app.state, 'image_detector'):
+            logger.info(f"Analyzing image: {filename}")
+            detector = request.app.state.image_detector
+            analysis_result = detector.detect(str(file_path))
+        
+        return {
             "success": True,
-            "result": result,
-            "report": report,
-            "report_json": json_path,
-            "report_pdf": pdf_path,
-            "heatmap_path": heatmap_path,
-            "files_exist": files_exist
-        })
+            "file_id": file_id,
+            "filename": file.filename,
+            "saved_as": filename,
+            "size": file_size,
+            "content_type": file.content_type,
+            "path": str(file_path),
+            "timestamp": datetime.utcnow().isoformat(),
+            "analysis": analysis_result
+        }
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Image processing failed: {e}")
-        return JSONResponse(content={"success": False, "message": f"Image processing failed: {str(e)}"}, status_code=500)
+        logger.error(f"Image upload failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
-@router.post("/api/ai/analyze/image")
-def analyze_image_alias(file: UploadFile = File(...), api_key: str = Depends(...)):
-    return detect_image(file, api_key)
 
-@router.post("/api/ai/analyze/batch")
-def analyze_batch_stub():
-    return {"success": False, "message": "Batch analysis not implemented yet."}
-
-@router.post("/api/ai/analyze/multimodal")
-def analyze_multimodal_stub():
-    return {"success": False, "message": "Multimodal analysis not implemented yet."} 
+@router.get("/{file_id}")
+async def get_image(file_id: str):
+    """Get image by ID"""
+    try:
+        # Resolve the file path (search for any file with the given UUID)
+        matches = list(UPLOAD_DIR.glob(f"{file_id}.*"))
+        if not matches:
+            raise HTTPException(status_code=404, detail="Image not found")
+        file_path = matches[0]
+        return FileResponse(
+            path=file_path,
+            media_type="image/jpeg",
+            filename=file_path.name,
+        )
+    except Exception:
+        raise HTTPException(status_code=404, detail="Image not found")

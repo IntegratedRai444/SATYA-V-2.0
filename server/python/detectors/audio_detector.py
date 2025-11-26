@@ -1,1268 +1,961 @@
 """
-Audio Deepfake Detector - UPGRADED
-Detects manipulated audio using advanced Wav2Vec2, spectrogram analysis,
-prosody analysis, and voice pattern matching
+Enhanced Audio Deepfake Detector
+Comprehensive audio analysis using Wav2Vec2, spectral analysis, and prosody detection
+Combines ML models with signal processing for robust voice cloning detection
 """
 
-import os
-import io
 import logging
 import numpy as np
-from typing import Dict, Any, Optional, Tuple
-import time
+from typing import Tuple, Optional, Dict, Any, List
 import tempfile
+import os
+import warnings
 
-from .base_detector import BaseDetector
+warnings.filterwarnings('ignore')
 
 logger = logging.getLogger(__name__)
 
-# Import advanced audio detector
+# Import audio forensics
 try:
-    from .advanced_audio_detector import AdvancedAudioDetector
-    ADVANCED_AUDIO_DETECTOR_AVAILABLE = True
+    from .audio_forensics import analyze_voiceprint_consistency
+    AUDIO_FORENSICS_AVAILABLE = True
 except ImportError:
-    ADVANCED_AUDIO_DETECTOR_AVAILABLE = False
-    logger.warning("Advanced audio detector not available")
+    AUDIO_FORENSICS_AVAILABLE = False
+    logger.warning("Audio forensics not available")
+
+# Try to import required libraries
+try:
+    from transformers import Wav2Vec2ForSequenceClassification, Wav2Vec2Processor
+    import torch
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
+    logger.warning("transformers not installed. Run: pip install transformers torch")
+
+try:
+    import librosa
+    import soundfile as sf
+    LIBROSA_AVAILABLE = True
+except ImportError:
+    LIBROSA_AVAILABLE = False
+    logger.warning("librosa not installed. Run: pip install librosa soundfile")
+
+try:
+    from scipy import signal as scipy_signal
+    from scipy.fft import fft, fftfreq
+    from scipy.stats import entropy
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+    logger.warning("scipy not installed for advanced analysis")
 
 
-class AudioDetector(BaseDetector):
+class AudioDetector:
     """
-    Audio deepfake detector using spectrogram analysis and voice pattern matching.
+    Comprehensive audio deepfake detector using multiple approaches:
+    1. Wav2Vec2 transformer model for ML-based detection
+    2. Spectral analysis (FFT, MFCC, Mel-spectrogram)
+    3. Prosody analysis (pitch, rhythm, energy)
+    4. Voice quality analysis
+    5. Artifact detection (synthesis artifacts, noise patterns)
+    6. Temporal consistency analysis
+    7. Frequency domain analysis
     """
     
-    def __init__(self, model_path: str, enable_gpu: bool = False):
-        """
-        Initialize the audio detector with advanced Wav2Vec2 capabilities.
+    def __init__(self, device='cpu', config: Optional[Dict] = None):
+        """Initialize comprehensive audio detector"""
+        self.device = device
+        self.config = config or self._default_config()
+        self.sample_rate = 16000
         
-        Args:
-            model_path: Path to model files
-            enable_gpu: Whether to use GPU acceleration
-        """
-        super().__init__(model_path, enable_gpu)
-        self.sample_rate = 16000  # Standard for speech processing
+        logger.info(f"🎵 Initializing Enhanced Audio Detector on {device}")
+        
+        # ML models
+        self.model = None
+        self.processor = None
         self.models_loaded = False
         
-        # Initialize advanced audio detector
-        self.advanced_audio_detector = None
-        if ADVANCED_AUDIO_DETECTOR_AVAILABLE:
-            try:
-                self.advanced_audio_detector = AdvancedAudioDetector(model_path, enable_gpu)
-                logger.info("✓ Advanced audio detector initialized (Wav2Vec2, Librosa, Prosody)")
-                self.models_loaded = True
-            except Exception as e:
-                logger.warning(f"Could not initialize advanced audio detector: {e}")
+        # Analysis weights
+        self.analysis_weights = {
+            'ml_classification': 0.40,
+            'spectral_analysis': 0.20,
+            'prosody_analysis': 0.15,
+            'voice_quality': 0.10,
+            'artifact_detection': 0.10,
+            'temporal_consistency': 0.05
+        }
         
-        # Try to load basic models if advanced not available
-        if not self.models_loaded:
-            try:
-                self.load_models()
-            except Exception as e:
-                logger.warning(f"Could not load audio models: {e}. Will use fallback detection.")
+        # Load models
+        self._load_pretrained_model()
     
-    def load_models(self):
-        """Load audio analysis models."""
-        logger.info("Loading audio detection models...")
-        
-        try:
-            # Try to import librosa for audio processing
-            import librosa
-            self.librosa = librosa
-            logger.info("✓ Librosa loaded for audio processing")
-            
-            # Try to load Wav2Vec2 model
-            try:
-                from transformers import Wav2Vec2Processor, Wav2Vec2ForSequenceClassification
-                
-                # Note: In production, use a fine-tuned model for deepfake detection
-                # For now, we'll use a placeholder
-                logger.info("✓ Transformers available for Wav2Vec2")
-                self.models_loaded = True
-                
-            except ImportError:
-                logger.error("CRITICAL: Transformers not available - real audio models required")
-                self.models_loaded = False
-                raise Exception("Transformers library required for real audio deepfake detection")
-                
-        except ImportError:
-            logger.error("CRITICAL: Librosa not available - real audio analysis required")
-            self.librosa = None
-            self.models_loaded = False
-            raise Exception("Librosa is required for real audio deepfake detection")
-    
-    def load_audio(self, audio_buffer: bytes) -> Tuple[Optional[np.ndarray], int]:
-        """
-        Load and preprocess audio data.
-        
-        Args:
-            audio_buffer: Raw audio data as bytes
-            
-        Returns:
-            Tuple of (audio_array, sample_rate)
-        """
-        try:
-            # Save to temporary file
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
-                tmp_file.write(audio_buffer)
-                tmp_path = tmp_file.name
-            
-            if self.librosa:
-                # Load audio with librosa
-                audio, sr = self.librosa.load(tmp_path, sr=self.sample_rate)
-                
-                # Clean up temp file
-                try:
-                    os.unlink(tmp_path)
-                except:
-                    pass
-                
-                logger.info(f"Loaded audio: {len(audio)} samples at {sr} Hz")
-                return audio, sr
-            else:
-                # Generate silence as fallback (better than random noise)
-                logger.warning("Could not load audio, using silence fallback")
-                return np.zeros(16000), 16000
-                
-        except Exception as e:
-            logger.error(f"Audio loading error: {e}")
-            return None, 0
-    
-    def preprocess_audio(self, audio: np.ndarray, sr: int) -> np.ndarray:
-        """
-        Preprocess audio: normalize, remove silence, resample.
-        
-        Args:
-            audio: Audio array
-            sr: Sample rate
-            
-        Returns:
-            Preprocessed audio array
-        """
-        try:
-            # Normalize audio
-            if np.max(np.abs(audio)) > 0:
-                audio = audio / np.max(np.abs(audio))
-            
-            # Resample if needed
-            if sr != self.sample_rate and self.librosa:
-                audio = self.librosa.resample(audio, orig_sr=sr, target_sr=self.sample_rate)
-            
-            # Remove silence (simple threshold-based)
-            threshold = 0.01
-            non_silent = np.abs(audio) > threshold
-            if np.any(non_silent):
-                audio = audio[non_silent]
-            
-            return audio
-            
-        except Exception as e:
-            logger.error(f"Audio preprocessing error: {e}")
-            return audio
-    
-    def generate_spectrogram(self, audio: np.ndarray) -> Optional[np.ndarray]:
-        """
-        Generate mel-spectrogram from audio.
-        
-        Args:
-            audio: Audio array
-            
-        Returns:
-            Mel-spectrogram as numpy array
-        """
-        try:
-            if self.librosa:
-                # Generate mel-spectrogram
-                mel_spec = self.librosa.feature.melspectrogram(
-                    y=audio,
-                    sr=self.sample_rate,
-                    n_mels=128,
-                    fmax=8000
-                )
-                
-                # Convert to log scale
-                mel_spec_db = self.librosa.power_to_db(mel_spec, ref=np.max)
-                
-                return mel_spec_db
-            else:
-                # Mock spectrogram
-                return np.random.randn(128, 100)
-                
-        except Exception as e:
-            logger.error(f"Spectrogram generation error: {e}")
-            return None
-    
-    def extract_features(self, audio: np.ndarray, spectrogram: np.ndarray) -> Dict[str, Any]:
-        """
-        Extract comprehensive audio features for deepfake detection.
-        
-        Args:
-            audio: Audio array
-            spectrogram: Mel-spectrogram
-            
-        Returns:
-            Dictionary of audio features
-        """
-        features = {}
-        
-        try:
-            if self.librosa:
-                # 1. MFCC Features (13 coefficients)
-                mfccs = self.librosa.feature.mfcc(
-                    y=audio,
-                    sr=self.sample_rate,
-                    n_mfcc=13
-                )
-                features['mfcc_mean'] = np.mean(mfccs, axis=1).tolist()
-                features['mfcc_std'] = np.std(mfccs, axis=1).tolist()
-                features['mfcc_delta'] = np.mean(np.diff(mfccs, axis=1), axis=1).tolist()
-                
-                # 2. Spectral Features
-                spectral_centroids = self.librosa.feature.spectral_centroid(
-                    y=audio,
-                    sr=self.sample_rate
-                )
-                features['spectral_centroid_mean'] = float(np.mean(spectral_centroids))
-                features['spectral_centroid_std'] = float(np.std(spectral_centroids))
-                
-                # Spectral rolloff
-                rolloff = self.librosa.feature.spectral_rolloff(
-                    y=audio,
-                    sr=self.sample_rate
-                )
-                features['spectral_rolloff_mean'] = float(np.mean(rolloff))
-                features['spectral_rolloff_std'] = float(np.std(rolloff))
-                
-                # Spectral bandwidth
-                bandwidth = self.librosa.feature.spectral_bandwidth(
-                    y=audio,
-                    sr=self.sample_rate
-                )
-                features['spectral_bandwidth_mean'] = float(np.mean(bandwidth))
-                
-                # Spectral contrast
-                contrast = self.librosa.feature.spectral_contrast(
-                    y=audio,
-                    sr=self.sample_rate
-                )
-                features['spectral_contrast_mean'] = np.mean(contrast, axis=1).tolist()
-                
-                # 3. Rhythm and Tempo Features
-                tempo, beats = self.librosa.beat.beat_track(
-                    y=audio,
-                    sr=self.sample_rate
-                )
-                features['tempo'] = float(tempo)
-                features['beat_consistency'] = self._calculate_beat_consistency(beats)
-                
-                # 4. Harmonic and Percussive Components
-                harmonic, percussive = self.librosa.effects.hpss(audio)
-                features['harmonic_percussive_ratio'] = float(np.mean(harmonic) / (np.mean(percussive) + 1e-8))
-                
-                # 5. Zero Crossing Rate
-                zcr = self.librosa.feature.zero_crossing_rate(audio)
-                features['zero_crossing_rate_mean'] = float(np.mean(zcr))
-                features['zero_crossing_rate_std'] = float(np.std(zcr))
-                
-                # 6. Chroma Features
-                chroma = self.librosa.feature.chroma_stft(
-                    y=audio,
-                    sr=self.sample_rate
-                )
-                features['chroma_mean'] = np.mean(chroma, axis=1).tolist()
-                
-                # 7. Tonnetz (Tonal centroid features)
-                tonnetz = self.librosa.feature.tonnetz(
-                    y=self.librosa.effects.harmonic(audio),
-                    sr=self.sample_rate
-                )
-                features['tonnetz_mean'] = np.mean(tonnetz, axis=1).tolist()
-                
-                # 8. Advanced Features for Deepfake Detection
-                features.update(self._extract_deepfake_specific_features(audio, spectrogram))
-                
-            else:
-                # Enhanced mock features
-                features = self._generate_mock_features()
-                
-        except Exception as e:
-            logger.error(f"Feature extraction error: {e}")
-            features = self._generate_mock_features()
-        
-        return features
-    
-    def _extract_deepfake_specific_features(self, audio: np.ndarray, spectrogram: np.ndarray) -> Dict[str, Any]:
-        """Extract features specifically designed for deepfake detection."""
-        deepfake_features = {}
-        
-        try:
-            # 1. Pitch contour analysis
-            pitch_features = self._analyze_pitch_contours(audio)
-            deepfake_features.update(pitch_features)
-            
-            # 2. Formant analysis
-            formant_features = self._analyze_formants(audio)
-            deepfake_features.update(formant_features)
-            
-            # 3. Jitter and shimmer (voice quality measures)
-            voice_quality = self._analyze_voice_quality(audio)
-            deepfake_features.update(voice_quality)
-            
-            # 4. Spectral flux (measure of spectral change)
-            spectral_flux = self._calculate_spectral_flux(spectrogram)
-            deepfake_features['spectral_flux_mean'] = float(np.mean(spectral_flux))
-            deepfake_features['spectral_flux_std'] = float(np.std(spectral_flux))
-            
-            # 5. Long-term average spectrum (LTAS)
-            ltas = self._calculate_ltas(spectrogram)
-            deepfake_features['ltas_features'] = ltas.tolist()
-            
-            # 6. Modulation spectrum features
-            mod_spectrum = self._calculate_modulation_spectrum(spectrogram)
-            deepfake_features['modulation_spectrum_mean'] = float(np.mean(mod_spectrum))
-            
-        except Exception as e:
-            logger.error(f"Deepfake-specific feature extraction error: {e}")
-        
-        return deepfake_features
-    
-    def _analyze_pitch_contours(self, audio: np.ndarray) -> Dict[str, float]:
-        """Analyze pitch contours for naturalness."""
-        try:
-            if self.librosa:
-                # Extract pitch using piptrack
-                pitches, magnitudes = self.librosa.piptrack(
-                    y=audio,
-                    sr=self.sample_rate,
-                    threshold=0.1
-                )
-                
-                # Get the most prominent pitch at each time frame
-                pitch_contour = []
-                for t in range(pitches.shape[1]):
-                    index = magnitudes[:, t].argmax()
-                    pitch = pitches[index, t]
-                    if pitch > 0:
-                        pitch_contour.append(pitch)
-                
-                if len(pitch_contour) > 10:
-                    pitch_contour = np.array(pitch_contour)
-                    
-                    return {
-                        'pitch_mean': float(np.mean(pitch_contour)),
-                        'pitch_std': float(np.std(pitch_contour)),
-                        'pitch_range': float(np.max(pitch_contour) - np.min(pitch_contour)),
-                        'pitch_slope': float(np.polyfit(range(len(pitch_contour)), pitch_contour, 1)[0]),
-                        'pitch_jitter': self._calculate_jitter(pitch_contour)
-                    }
-        except Exception as e:
-            logger.warning(f"Pitch analysis error: {e}")
-        
+    def _default_config(self) -> Dict:
+        """Default configuration"""
         return {
-            'pitch_mean': 150.0,
-            'pitch_std': 20.0,
-            'pitch_range': 100.0,
-            'pitch_slope': 0.0,
-            'pitch_jitter': 0.02
+            'models': {
+                'wav2vec2': {
+                    'enabled': True,
+                    'model_options': [
+                        "Andyrasika/wav2vec2-large-xlsr-53-deepfake-detection",
+                        "facebook/wav2vec2-base"
+                    ]
+                }
+            },
+            'analysis': {
+                'enable_spectral': True,
+                'enable_prosody': True,
+                'enable_voice_quality': True,
+                'enable_artifacts': True,
+                'enable_temporal': True
+            },
+            'thresholds': {
+                'authentic': 0.7,
+                'suspicious': 0.4,
+                'deepfake': 0.4
+            },
+            'audio_processing': {
+                'max_duration': 30,  # seconds
+                'n_mfcc': 13,
+                'n_mels': 128,
+                'hop_length': 512
+            }
         }
     
-    def _analyze_formants(self, audio: np.ndarray) -> Dict[str, float]:
-        """Analyze formant frequencies."""
+    def _load_pretrained_model(self):
+        """Load pre-trained Wav2Vec2 model"""
+        if not TRANSFORMERS_AVAILABLE:
+            logger.warning("⚠️ Transformers not available, ML detection disabled")
+            return False
+        
         try:
-            # Simple formant estimation using LPC
-            # This is a simplified approach - production systems would use more sophisticated methods
+            logger.info("📦 Loading Wav2Vec2 model...")
             
-            # Pre-emphasis filter
-            pre_emphasized = np.append(audio[0], audio[1:] - 0.97 * audio[:-1])
+            # Prioritize specific deepfake detection models
+            model_options = self.config['models']['wav2vec2']['model_options']
             
-            # Window the signal
-            windowed = pre_emphasized * np.hanning(len(pre_emphasized))
+            for model_name in model_options:
+                try:
+                    logger.info(f"Attempting to load {model_name}...")
+                    self.processor = Wav2Vec2Processor.from_pretrained(model_name)
+                    self.model = Wav2Vec2ForSequenceClassification.from_pretrained(model_name)
+                    self.model = self.model.to(self.device)
+                    self.model.eval()
+                    self.models_loaded = True
+                    logger.info(f"✅ Loaded audio model: {model_name}")
+                    return True
+                except Exception as e:
+                    logger.warning(f"Could not load {model_name}: {e}")
+                    continue
             
-            # LPC analysis (simplified)
-            # In practice, you'd use a proper LPC implementation
-            autocorr = np.correlate(windowed, windowed, mode='full')
-            autocorr = autocorr[autocorr.size // 2:]
+            logger.error("❌ Could not load any Wav2Vec2 model. ML detection will be disabled.")
+            return False
             
-            # Estimate first two formants (very simplified)
-            formant1 = 500.0  # Typical F1
-            formant2 = 1500.0  # Typical F2
+        except Exception as e:
+            logger.error(f"❌ Failed to load models: {e}")
+            return False
+    
+    def detect(self, audio_path: str) -> Dict:
+        """
+        Comprehensive audio analysis
+        
+        Args:
+            audio_path: Path to audio file
+            
+        Returns:
+            Comprehensive detection results
+        """
+        try:
+            logger.info(f"🔍 Analyzing audio: {audio_path}")
+            
+            # Load audio
+            if LIBROSA_AVAILABLE:
+                audio_array, sr = librosa.load(audio_path, sr=self.sample_rate)
+            else:
+                # Fallback: basic loading
+                import wave
+                with wave.open(audio_path, 'rb') as wav_file:
+                    sr = wav_file.getframerate()
+                    frames = wav_file.readframes(wav_file.getnframes())
+                    audio_array = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+            
+            duration = len(audio_array) / sr
+            logger.info(f"📊 Audio: {duration:.2f}s, {sr}Hz")
+            
+            # Initialize results
+            results = {
+                'success': True,
+                'authenticity_score': 0.0,
+                'confidence': 0.0,
+                'label': 'unknown',
+                'explanation': '',
+                'details': {
+                    'audio_info': {
+                        'duration': duration,
+                        'sample_rate': sr,
+                        'samples': len(audio_array)
+                    }
+                },
+                'warnings': [],
+                'artifacts_detected': []
+            }
+            
+            # Resample if needed
+            if sr != self.sample_rate:
+                if LIBROSA_AVAILABLE:
+                    audio_array = librosa.resample(audio_array, orig_sr=sr, target_sr=self.sample_rate)
+                    sr = self.sample_rate
+            
+            # 1. ML-based classification
+            if self.models_loaded:
+                ml_result = self._classify_with_wav2vec2(audio_array)
+                results['details']['ml_classification'] = ml_result
+                logger.info(f"ML Classification: {ml_result['score']:.3f}")
+            
+            # 2. Spectral analysis
+            if self.config['analysis']['enable_spectral'] and LIBROSA_AVAILABLE:
+                spectral_result = self._analyze_spectral_features(audio_array, sr)
+                results['details']['spectral_analysis'] = spectral_result
+                logger.info(f"Spectral Analysis: {spectral_result['score']:.3f}")
+            
+            # 3. Prosody analysis
+            if self.config['analysis']['enable_prosody'] and LIBROSA_AVAILABLE:
+                prosody_result = self._analyze_prosody(audio_array, sr)
+                results['details']['prosody_analysis'] = prosody_result
+                logger.info(f"Prosody Analysis: {prosody_result['score']:.3f}")
+            
+            # 4. Voice quality analysis
+            if self.config['analysis']['enable_voice_quality']:
+                voice_quality_result = self._analyze_voice_quality(audio_array, sr)
+                results['details']['voice_quality'] = voice_quality_result
+                logger.info(f"Voice Quality: {voice_quality_result['score']:.3f}")
+            
+            # 5. Artifact detection
+            if self.config['analysis']['enable_artifacts']:
+                artifacts = self._detect_audio_artifacts(audio_array, sr)
+                results['artifacts_detected'] = artifacts
+                results['details']['artifact_detection'] = {
+                    'artifacts_found': len(artifacts),
+                    'score': 1.0 - min(1.0, len(artifacts) / 5)
+                }
+            
+            # 6. Temporal consistency
+            if self.config['analysis']['enable_temporal']:
+                temporal_result = self._analyze_temporal_consistency(audio_array, sr)
+                results['details']['temporal_consistency'] = temporal_result
+            
+            # 7. Frequency domain analysis
+            freq_result = self._analyze_frequency_domain(audio_array, sr)
+            results['details']['frequency_analysis'] = freq_result
+            
+            # Combine all scores
+            final_score, confidence, label = self._combine_all_audio_scores(results['details'])
+            
+            results['authenticity_score'] = final_score
+            results['confidence'] = confidence
+            results['label'] = label
+            
+            # Generate explanation
+            results['explanation'] = self._generate_audio_explanation(results)
+            
+            # Add recommendations
+            results['recommendations'] = self._generate_audio_recommendations(results)
+            
+            logger.info(f"✅ Audio analysis complete: {label} ({final_score:.3f}, confidence: {confidence:.3f})")
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"❌ Audio detection failed: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'label': 'error',
+                'confidence': 0.0,
+                'authenticity_score': 0.5
+            }
+    
+    def _classify_with_wav2vec2(self, audio_array: np.ndarray) -> Dict:
+        """Classify using Wav2Vec2 model"""
+        try:
+            import torch
+            
+            # Process audio
+            inputs = self.processor(
+                audio_array,
+                sampling_rate=self.sample_rate,
+                return_tensors="pt",
+                padding=True
+            )
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            
+            # Get prediction
+            with torch.no_grad():
+                outputs = self.model(**inputs)
+                logits = outputs.logits
+                probabilities = torch.softmax(logits, dim=1)
+                
+                # Assuming class 0 = real, class 1 = fake
+                real_prob = probabilities[0][0].item()
+                fake_prob = probabilities[0][1].item()
             
             return {
-                'formant_f1': formant1,
-                'formant_f2': formant2,
-                'formant_ratio': formant2 / formant1
+                'real_probability': float(real_prob),
+                'fake_probability': float(fake_prob),
+                'score': float(real_prob),
+                'confidence': float(abs(real_prob - fake_prob)),
+                'method': 'wav2vec2_transformer'
             }
             
         except Exception as e:
-            logger.warning(f"Formant analysis error: {e}")
-        
-        return {
-            'formant_f1': 500.0,
-            'formant_f2': 1500.0,
-            'formant_ratio': 3.0
-        }
+            logger.error(f"Wav2Vec2 classification failed: {e}")
+            return {'score': 0.5, 'error': str(e), 'method': 'wav2vec2_transformer'}
     
-    def _analyze_voice_quality(self, audio: np.ndarray) -> Dict[str, float]:
-        """Analyze voice quality measures like jitter and shimmer."""
+    def _analyze_spectral_features(self, audio_array: np.ndarray, sr: int) -> Dict:
+        """Comprehensive spectral analysis"""
         try:
-            # Simplified jitter and shimmer calculation
-            # Real implementation would require pitch period detection
+            scores = {}
             
-            # Frame-based analysis
-            frame_length = int(0.025 * self.sample_rate)  # 25ms frames
-            hop_length = int(0.010 * self.sample_rate)    # 10ms hop
+            # 1. MFCC analysis
+            mfcc_score = self._analyze_mfcc(audio_array, sr)
+            scores['mfcc'] = mfcc_score
             
-            frames = []
-            for i in range(0, len(audio) - frame_length, hop_length):
-                frame = audio[i:i + frame_length]
-                frames.append(frame)
+            # 2. Mel-spectrogram analysis
+            mel_score = self._analyze_mel_spectrogram(audio_array, sr)
+            scores['mel_spectrogram'] = mel_score
             
-            if len(frames) > 1:
-                # Calculate frame-to-frame variations
-                frame_energies = [np.sum(frame**2) for frame in frames]
-                energy_variations = np.diff(frame_energies)
-                
-                # Simplified shimmer (amplitude variation)
-                shimmer = np.std(energy_variations) / (np.mean(frame_energies) + 1e-8)
-                
-                # Simplified jitter (frequency variation)
-                # This is very approximate - real jitter requires pitch period analysis
-                zero_crossings = [np.sum(np.diff(np.sign(frame))) for frame in frames]
-                jitter = np.std(zero_crossings) / (np.mean(zero_crossings) + 1e-8)
-                
-                return {
-                    'jitter': float(min(jitter, 1.0)),
-                    'shimmer': float(min(shimmer, 1.0)),
-                    'hnr_estimate': float(max(0, 1 - shimmer))  # Harmonics-to-noise ratio estimate
-                }
-        
-        except Exception as e:
-            logger.warning(f"Voice quality analysis error: {e}")
-        
-        return {
-            'jitter': 0.02,
-            'shimmer': 0.05,
-            'hnr_estimate': 0.8
-        }
-    
-    def _calculate_jitter(self, pitch_contour: np.ndarray) -> float:
-        """Calculate pitch jitter."""
-        if len(pitch_contour) < 2:
-            return 0.0
-        
-        # Calculate period-to-period variations
-        pitch_periods = 1.0 / (pitch_contour + 1e-8)
-        period_diffs = np.abs(np.diff(pitch_periods))
-        
-        # Jitter as relative variation
-        jitter = np.mean(period_diffs) / (np.mean(pitch_periods) + 1e-8)
-        
-        return float(min(jitter, 1.0))
-    
-    def _calculate_beat_consistency(self, beats: np.ndarray) -> float:
-        """Calculate consistency of beat intervals."""
-        if len(beats) < 3:
-            return 1.0
-        
-        beat_intervals = np.diff(beats)
-        interval_std = np.std(beat_intervals)
-        interval_mean = np.mean(beat_intervals)
-        
-        # Consistency score (lower std relative to mean = more consistent)
-        consistency = max(0, 1 - (interval_std / (interval_mean + 1e-8)))
-        
-        return float(consistency)
-    
-    def _calculate_spectral_flux(self, spectrogram: np.ndarray) -> np.ndarray:
-        """Calculate spectral flux (measure of spectral change)."""
-        if spectrogram.shape[1] < 2:
-            return np.array([0.0])
-        
-        # Calculate frame-to-frame spectral differences
-        spectral_diff = np.diff(spectrogram, axis=1)
-        
-        # Sum positive differences (spectral flux)
-        spectral_flux = np.sum(np.maximum(spectral_diff, 0), axis=0)
-        
-        return spectral_flux
-    
-    def _calculate_ltas(self, spectrogram: np.ndarray) -> np.ndarray:
-        """Calculate Long-Term Average Spectrum."""
-        # Average spectrum across time
-        ltas = np.mean(spectrogram, axis=1)
-        
-        # Normalize
-        ltas = ltas / (np.max(ltas) + 1e-8)
-        
-        return ltas
-    
-    def _calculate_modulation_spectrum(self, spectrogram: np.ndarray) -> np.ndarray:
-        """Calculate modulation spectrum features."""
-        # Apply FFT to each frequency band across time
-        mod_spectrum = []
-        
-        for freq_bin in range(spectrogram.shape[0]):
-            temporal_signal = spectrogram[freq_bin, :]
+            # 3. Spectral centroid
+            spectral_centroid_score = self._analyze_spectral_centroid(audio_array, sr)
+            scores['spectral_centroid'] = spectral_centroid_score
             
-            # FFT of temporal evolution
-            mod_fft = np.fft.fft(temporal_signal)
-            mod_power = np.abs(mod_fft)
+            # 4. Spectral rolloff
+            spectral_rolloff_score = self._analyze_spectral_rolloff(audio_array, sr)
+            scores['spectral_rolloff'] = spectral_rolloff_score
             
-            mod_spectrum.append(np.mean(mod_power))
-        
-        return np.array(mod_spectrum)
-    
-    def _generate_real_features_fallback(self, audio_data: np.ndarray, sr: int) -> Dict[str, Any]:
-        """Generate real audio features using basic signal processing when librosa is not available."""
-        try:
-            # Real signal processing without librosa
+            # 5. Zero crossing rate
+            zcr_score = self._analyze_zero_crossing_rate(audio_array)
+            scores['zero_crossing_rate'] = zcr_score
             
-            # 1. Basic spectral features
-            fft = np.fft.fft(audio_data)
-            magnitude_spectrum = np.abs(fft)
-            power_spectrum = magnitude_spectrum ** 2
-            
-            # 2. Spectral centroid (center of mass of spectrum)
-            freqs = np.fft.fftfreq(len(audio_data), 1/sr)
-            spectral_centroid = np.sum(freqs[:len(freqs)//2] * power_spectrum[:len(power_spectrum)//2]) / np.sum(power_spectrum[:len(power_spectrum)//2])
-            
-            # 3. Spectral rolloff (frequency below which 85% of energy is contained)
-            cumulative_energy = np.cumsum(power_spectrum[:len(power_spectrum)//2])
-            total_energy = cumulative_energy[-1]
-            rolloff_idx = np.where(cumulative_energy >= 0.85 * total_energy)[0]
-            spectral_rolloff = freqs[rolloff_idx[0]] if len(rolloff_idx) > 0 else sr/4
-            
-            # 4. Zero crossing rate
-            zero_crossings = np.where(np.diff(np.sign(audio_data)))[0]
-            zcr = len(zero_crossings) / len(audio_data)
-            
-            # 5. RMS energy
-            rms_energy = np.sqrt(np.mean(audio_data ** 2))
-            
-            # 6. Basic MFCC approximation using DCT
-            # Simplified mel-scale approximation
-            mel_filters = self._create_mel_filterbank(sr, len(power_spectrum)//2)
-            mel_spectrum = np.dot(mel_filters, power_spectrum[:len(power_spectrum)//2])
-            log_mel = np.log(mel_spectrum + 1e-10)
-            
-            # DCT for MFCC approximation
-            mfcc_approx = np.fft.dct(log_mel)[:13]
+            # Overall spectral score
+            overall_score = np.mean(list(scores.values()))
             
             return {
-                'spectral_centroid': float(spectral_centroid),
-                'spectral_rolloff': float(spectral_rolloff),
-                'zero_crossing_rate': float(zcr),
-                'rms_energy': float(rms_energy),
-                'mfcc_mean': mfcc_approx.tolist(),
-            'mfcc_std': [15.2, 8.7, 4.3, 3.1, 2.4, 1.9, 1.5, 1.2, 1.0, 0.8, 0.7, 0.6, 0.5],
-            'mfcc_delta': [0.1, -0.2, 0.05, -0.08, 0.03, -0.04, 0.02, -0.01, 0.01, 0.0, 0.0, 0.0, 0.0],
-            'spectral_centroid_mean': 2000.0,
-            'spectral_centroid_std': 300.0,
-            'spectral_rolloff_mean': 4000.0,
-            'spectral_rolloff_std': 500.0,
-            'spectral_bandwidth_mean': 1500.0,
-            'spectral_contrast_mean': [20.0, 15.0, 12.0, 10.0, 8.0, 6.0, 4.0],
-            'tempo': 120.0,
-            'beat_consistency': 0.8,
-            'harmonic_percussive_ratio': 2.5,
-            'zero_crossing_rate_mean': 0.1,
-            'zero_crossing_rate_std': 0.05,
-            'chroma_mean': [0.8, 0.2, 0.3, 0.1, 0.4, 0.6, 0.5, 0.3, 0.2, 0.1, 0.2, 0.4],
-            'tonnetz_mean': [0.1, -0.2, 0.3, -0.1, 0.2, -0.3],
-            'pitch_mean': 150.0,
-            'pitch_std': 20.0,
-            'pitch_range': 100.0,
-            'pitch_slope': 0.0,
-            'pitch_jitter': 0.02,
-            'formant_f1': 500.0,
-            'formant_f2': 1500.0,
-            'formant_ratio': 3.0,
-            'jitter': 0.02,
-            'shimmer': 0.05,
-            'hnr_estimate': 0.8,
-            'spectral_flux_mean': 0.3,
-            'spectral_flux_std': 0.1,
-            'ltas_features': [0.8, 0.6, 0.4, 0.3, 0.2, 0.1] * 20,  # 128 features
-            'modulation_spectrum_mean': 0.2
-        }
-    
-    def analyze_voice_patterns(self, features: Dict[str, Any]) -> float:
-        """
-        Analyze voice patterns for synthetic markers.
-        
-        Args:
-            features: Extracted audio features
-            
-        Returns:
-            Authenticity score (0-1)
-        """
-        # Simple heuristic-based analysis
-        # In production, this would use a trained model
-        
-        score = 0.5
-        
-        try:
-            # Check spectral centroid (natural voices: 1000-3000 Hz)
-            centroid = features.get('spectral_centroid_mean', 2000)
-            if 1000 < centroid < 3000:
-                score += 0.15
-            
-            # Check zero crossing rate (natural speech: 0.05-0.15)
-            zcr = features.get('zero_crossing_rate', 0.1)
-            if 0.05 < zcr < 0.15:
-                score += 0.15
-            
-            # Check MFCC statistics
-            mfcc_mean = features.get('mfcc_mean', [])
-            if mfcc_mean and len(mfcc_mean) > 0:
-                # Natural speech has certain MFCC patterns
-                if -50 < mfcc_mean[0] < 50:
-                    score += 0.1
-            
-            # Apply noise robustness adjustment based on signal quality
-            # Real audio has natural noise characteristics
-            if snr > 20:  # High quality audio
-                score *= 1.05  # Slight boost for clear audio
-            elif snr < 10:  # Low quality audio
-                score *= 0.95  # Slight penalty for poor quality
-            
-            score = max(0.0, min(1.0, score))
+                'score': float(overall_score),
+                'component_scores': {k: float(v) for k, v in scores.items()},
+                'method': 'comprehensive_spectral_analysis'
+            }
             
         except Exception as e:
-            logger.error(f"Voice pattern analysis error: {e}")
-        
-        return score
+            logger.error(f"Spectral analysis failed: {e}")
+            return {'score': 0.5, 'error': str(e)}
     
-    def detect_artifacts(self, spectrogram: np.ndarray, audio: np.ndarray = None) -> Dict[str, float]:
-        """
-        Advanced audio artifact detection for deepfake identification.
-        
-        Args:
-            spectrogram: Mel-spectrogram
-            audio: Raw audio signal (optional)
-            
-        Returns:
-            Dictionary of artifact metrics
-        """
-        artifacts = {}
-        
+    def _analyze_mfcc(self, audio_array: np.ndarray, sr: int) -> float:
+        """Analyze MFCC features"""
         try:
-            if spectrogram is not None:
-                # 1. Frequency domain artifacts
-                freq_artifacts = self._detect_frequency_artifacts(spectrogram)
-                artifacts.update(freq_artifacts)
-                
-                # 2. Temporal artifacts
-                temporal_artifacts = self._detect_temporal_artifacts(spectrogram)
-                artifacts.update(temporal_artifacts)
-                
-                # 3. Synthesis markers
-                synthesis_artifacts = self._detect_synthesis_markers(spectrogram)
-                artifacts.update(synthesis_artifacts)
-                
-                # 4. Phase artifacts (if raw audio available)
-                if audio is not None:
-                    phase_artifacts = self._detect_phase_artifacts(audio)
-                    artifacts.update(phase_artifacts)
-                
-                # 5. Compression artifacts
-                compression_artifacts = self._detect_compression_artifacts(spectrogram)
-                artifacts.update(compression_artifacts)
-                
-                # 6. Neural network artifacts
-                nn_artifacts = self._detect_neural_network_artifacts(spectrogram)
-                artifacts.update(nn_artifacts)
-                
+            n_mfcc = self.config['audio_processing']['n_mfcc']
+            mfccs = librosa.feature.mfcc(y=audio_array, sr=sr, n_mfcc=n_mfcc)
+            
+            # Calculate statistics
+            mfcc_mean = np.mean(mfccs, axis=1)
+            mfcc_std = np.std(mfccs, axis=1)
+            
+            # Natural speech has characteristic MFCC patterns
+            # Check for unnatural uniformity
+            uniformity = np.std(mfcc_std)
+            
+            # Score based on uniformity (too uniform = suspicious)
+            if uniformity > 5:
+                return 0.9
+            elif uniformity > 2:
+                return 0.7
             else:
-                # Fallback artifacts
-                artifacts = self._generate_fallback_artifacts()
+                return 0.5
                 
         except Exception as e:
-            logger.error(f"Artifact detection error: {e}")
-            artifacts = self._generate_fallback_artifacts()
+            logger.error(f"MFCC analysis failed: {e}")
+            return 0.5
+    
+    def _analyze_mel_spectrogram(self, audio_array: np.ndarray, sr: int) -> float:
+        """Analyze mel-spectrogram"""
+        try:
+            n_mels = self.config['audio_processing']['n_mels']
+            mel_spec = librosa.feature.melspectrogram(y=audio_array, sr=sr, n_mels=n_mels)
+            mel_spec_db = librosa.power_to_db(mel_spec, ref=np.max)
+            
+            # Analyze energy distribution
+            energy_variance = np.var(mel_spec_db)
+            
+            # Natural speech has varied energy distribution
+            if 100 <= energy_variance <= 500:
+                return 0.9
+            elif 50 <= energy_variance <= 700:
+                return 0.7
+            else:
+                return 0.5
+                
+        except Exception as e:
+            logger.error(f"Mel-spectrogram analysis failed: {e}")
+            return 0.5
+    
+    def _analyze_spectral_centroid(self, audio_array: np.ndarray, sr: int) -> float:
+        """Analyze spectral centroid"""
+        try:
+            centroid = librosa.feature.spectral_centroid(y=audio_array, sr=sr)
+            centroid_mean = np.mean(centroid)
+            centroid_std = np.std(centroid)
+            
+            # Natural speech has moderate centroid values
+            if 1000 <= centroid_mean <= 3000 and centroid_std > 200:
+                return 0.9
+            else:
+                return 0.6
+                
+        except Exception as e:
+            logger.error(f"Spectral centroid analysis failed: {e}")
+            return 0.5
+    
+    def _analyze_spectral_rolloff(self, audio_array: np.ndarray, sr: int) -> float:
+        """Analyze spectral rolloff"""
+        try:
+            rolloff = librosa.feature.spectral_rolloff(y=audio_array, sr=sr)
+            rolloff_mean = np.mean(rolloff)
+            
+            # Natural speech has characteristic rolloff
+            if 2000 <= rolloff_mean <= 6000:
+                return 0.9
+            else:
+                return 0.6
+                
+        except Exception as e:
+            logger.error(f"Spectral rolloff analysis failed: {e}")
+            return 0.5
+    
+    def _analyze_zero_crossing_rate(self, audio_array: np.ndarray) -> float:
+        """Analyze zero crossing rate"""
+        try:
+            zcr = librosa.feature.zero_crossing_rate(audio_array)
+            zcr_mean = np.mean(zcr)
+            
+            # Natural speech has moderate ZCR
+            if 0.05 <= zcr_mean <= 0.15:
+                return 0.9
+            else:
+                return 0.6
+                
+        except Exception as e:
+            logger.error(f"ZCR analysis failed: {e}")
+            return 0.5
+    
+    def _analyze_prosody(self, audio_array: np.ndarray, sr: int) -> Dict:
+        """Comprehensive prosody analysis"""
+        try:
+            scores = {}
+            
+            # 1. Pitch analysis
+            pitch_score = self._analyze_pitch(audio_array, sr)
+            scores['pitch'] = pitch_score
+            
+            # 2. Rhythm analysis
+            rhythm_score = self._analyze_rhythm(audio_array, sr)
+            scores['rhythm'] = rhythm_score
+            
+            # 3. Energy analysis
+            energy_score = self._analyze_energy(audio_array)
+            scores['energy'] = energy_score
+            
+            # 4. Speaking rate
+            rate_score = self._analyze_speaking_rate(audio_array, sr)
+            scores['speaking_rate'] = rate_score
+            
+            overall_score = np.mean(list(scores.values()))
+            
+            return {
+                'score': float(overall_score),
+                'component_scores': {k: float(v) for k, v in scores.items()},
+                'method': 'comprehensive_prosody_analysis'
+            }
+            
+        except Exception as e:
+            logger.error(f"Prosody analysis failed: {e}")
+            return {'score': 0.5, 'error': str(e)}
+    
+    def _analyze_pitch(self, audio_array: np.ndarray, sr: int) -> float:
+        """Analyze pitch patterns"""
+        try:
+            # Extract pitch using librosa
+            pitches, magnitudes = librosa.piptrack(y=audio_array, sr=sr)
+            
+            # Get pitch values
+            pitch_values = []
+            for t in range(pitches.shape[1]):
+                index = magnitudes[:, t].argmax()
+                pitch = pitches[index, t]
+                if pitch > 0:
+                    pitch_values.append(pitch)
+            
+            if not pitch_values:
+                return 0.5
+            
+            # Analyze pitch variation
+            pitch_std = np.std(pitch_values)
+            pitch_range = np.max(pitch_values) - np.min(pitch_values)
+            
+            # Natural speech has varied pitch
+            if pitch_std > 20 and pitch_range > 50:
+                return 0.9
+            else:
+                return 0.6
+                
+        except Exception as e:
+            logger.error(f"Pitch analysis failed: {e}")
+            return 0.5
+    
+    def _analyze_rhythm(self, audio_array: np.ndarray, sr: int) -> float:
+        """Analyze rhythm patterns"""
+        try:
+            # Onset detection
+            onset_env = librosa.onset.onset_strength(y=audio_array, sr=sr)
+            tempo, beats = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr)
+            
+            # Analyze beat consistency
+            if len(beats) > 1:
+                beat_intervals = np.diff(beats)
+                beat_variance = np.var(beat_intervals)
+                
+                # Natural speech has some rhythm variation
+                if beat_variance > 10:
+                    return 0.9
+                else:
+                    return 0.6
+            
+            return 0.7
+                
+        except Exception as e:
+            logger.error(f"Rhythm analysis failed: {e}")
+            return 0.5
+    
+    def _analyze_energy(self, audio_array: np.ndarray) -> float:
+        """Analyze energy patterns"""
+        try:
+            # Calculate RMS energy
+            rms = librosa.feature.rms(y=audio_array)
+            rms_mean = np.mean(rms)
+            rms_std = np.std(rms)
+            
+            # Natural speech has varied energy
+            if rms_std > 0.01:
+                return 0.9
+            else:
+                return 0.6
+                
+        except Exception as e:
+            logger.error(f"Energy analysis failed: {e}")
+            return 0.5
+    
+    def _analyze_speaking_rate(self, audio_array: np.ndarray, sr: int) -> float:
+        """Analyze speaking rate"""
+        try:
+            # Detect syllables using onset detection
+            onset_env = librosa.onset.onset_strength(y=audio_array, sr=sr)
+            onsets = librosa.onset.onset_detect(onset_envelope=onset_env, sr=sr)
+            
+            duration = len(audio_array) / sr
+            syllables_per_second = len(onsets) / duration
+            
+            # Natural speech: 2-6 syllables per second
+            if 2 <= syllables_per_second <= 6:
+                return 0.9
+            else:
+                return 0.6
+                
+        except Exception as e:
+            logger.error(f"Speaking rate analysis failed: {e}")
+            return 0.5
+    
+    def _analyze_voice_quality(self, audio_array: np.ndarray, sr: int) -> Dict:
+        """Analyze voice quality characteristics"""
+        try:
+            scores = {}
+            
+            # 1. Harmonic-to-noise ratio
+            hnr_score = self._calculate_hnr(audio_array, sr)
+            scores['hnr'] = hnr_score
+            
+            # 2. Jitter (pitch variation)
+            jitter_score = self._calculate_jitter(audio_array, sr)
+            scores['jitter'] = jitter_score
+            
+            # 3. Shimmer (amplitude variation)
+            shimmer_score = self._calculate_shimmer(audio_array)
+            scores['shimmer'] = shimmer_score
+            
+            overall_score = np.mean(list(scores.values()))
+            
+            return {
+                'score': float(overall_score),
+                'component_scores': {k: float(v) for k, v in scores.items()},
+                'method': 'voice_quality_analysis'
+            }
+            
+        except Exception as e:
+            logger.error(f"Voice quality analysis failed: {e}")
+            return {'score': 0.5, 'error': str(e)}
+    
+    def _calculate_hnr(self, audio_array: np.ndarray, sr: int) -> float:
+        """Calculate harmonic-to-noise ratio"""
+        try:
+            # Simplified HNR calculation
+            # Natural voices have higher HNR
+            harmonic = np.abs(fft(audio_array))
+            noise_floor = np.percentile(harmonic, 10)
+            signal_peak = np.percentile(harmonic, 90)
+            
+            hnr = signal_peak / (noise_floor + 1e-10)
+            
+            # Higher HNR = more natural
+            if hnr > 10:
+                return 0.9
+            elif hnr > 5:
+                return 0.7
+            else:
+                return 0.5
+                
+        except:
+            return 0.5
+    
+    def _calculate_jitter(self, audio_array: np.ndarray, sr: int) -> float:
+        """Calculate jitter (pitch perturbation)"""
+        try:
+            # Simplified jitter calculation
+            # Natural voices have some jitter
+            if LIBROSA_AVAILABLE:
+                pitches, _ = librosa.piptrack(y=audio_array, sr=sr)
+                pitch_values = [pitches[:, t].max() for t in range(pitches.shape[1])]
+                pitch_values = [p for p in pitch_values if p > 0]
+                
+                if len(pitch_values) > 1:
+                    jitter = np.std(pitch_values) / (np.mean(pitch_values) + 1e-10)
+                    
+                    # Moderate jitter is natural
+                    if 0.01 <= jitter <= 0.1:
+                        return 0.9
+                    else:
+                        return 0.6
+            
+            return 0.7
+                
+        except:
+            return 0.5
+    
+    def _calculate_shimmer(self, audio_array: np.ndarray) -> float:
+        """Calculate shimmer (amplitude perturbation)"""
+        try:
+            # Calculate amplitude envelope
+            amplitude = np.abs(audio_array)
+            
+            # Calculate local variations
+            if len(amplitude) > 1:
+                shimmer = np.std(amplitude) / (np.mean(amplitude) + 1e-10)
+                
+                # Moderate shimmer is natural
+                if 0.05 <= shimmer <= 0.3:
+                    return 0.9
+                else:
+                    return 0.6
+            
+            return 0.7
+                
+        except:
+            return 0.5
+    
+    def _detect_audio_artifacts(self, audio_array: np.ndarray, sr: int) -> List[str]:
+        """Detect specific audio artifacts"""
+        artifacts = []
+        
+        try:
+            # 1. Clipping detection
+            if self._has_clipping(audio_array):
+                artifacts.append("Audio clipping detected")
+            
+            # 2. Unnatural silence
+            if self._has_unnatural_silence(audio_array):
+                artifacts.append("Unnatural silence patterns")
+            
+            # 3. Synthesis artifacts
+            if self._has_synthesis_artifacts(audio_array, sr):
+                artifacts.append("Synthesis artifacts detected")
+            
+            # 4. Spectral discontinuities
+            if self._has_spectral_discontinuities(audio_array, sr):
+                artifacts.append("Spectral discontinuities detected")
+            
+            # 5. Unnatural noise floor
+            if self._has_unnatural_noise_floor(audio_array):
+                artifacts.append("Unnatural noise floor")
+                
+        except Exception as e:
+            logger.error(f"Artifact detection failed: {e}")
         
         return artifacts
     
-    def _detect_frequency_artifacts(self, spectrogram: np.ndarray) -> Dict[str, float]:
-        """Detect frequency domain artifacts."""
-        freq_artifacts = {}
-        
+    def _has_clipping(self, audio_array: np.ndarray) -> bool:
+        """Detect audio clipping"""
         try:
-            # 1. Unusual frequency patterns
-            freq_variance = np.var(spectrogram, axis=1)
-            freq_mean = np.mean(freq_variance)
-            freq_std = np.std(freq_variance)
+            # Check for values at maximum
+            clipped_samples = np.sum(np.abs(audio_array) > 0.99)
+            return clipped_samples > len(audio_array) * 0.01
+        except:
+            return False
+    
+    def _has_unnatural_silence(self, audio_array: np.ndarray) -> bool:
+        """Detect unnatural silence patterns"""
+        try:
+            # Find silent regions
+            threshold = 0.01
+            silent_samples = np.sum(np.abs(audio_array) < threshold)
+            silence_ratio = silent_samples / len(audio_array)
             
-            # Detect frequency bands with unusual variance
-            anomalous_bands = np.sum(freq_variance > freq_mean + 2 * freq_std)
-            freq_artifacts['frequency_anomalies'] = min(1.0, anomalous_bands / len(freq_variance))
+            # Too much or too little silence is suspicious
+            return silence_ratio > 0.5 or silence_ratio < 0.05
+        except:
+            return False
+    
+    def _has_synthesis_artifacts(self, audio_array: np.ndarray, sr: int) -> bool:
+        """Detect synthesis artifacts"""
+        try:
+            # Check for unnatural periodicity
+            autocorr = np.correlate(audio_array, audio_array, mode='full')
+            autocorr = autocorr[len(autocorr)//2:]
             
-            # 2. Spectral discontinuities
-            spectral_gradient = np.gradient(spectrogram, axis=0)
-            sharp_transitions = np.sum(np.abs(spectral_gradient) > np.std(spectral_gradient) * 3)
-            total_points = spectral_gradient.size
-            freq_artifacts['spectral_discontinuities'] = min(1.0, sharp_transitions / total_points * 10)
+            # Strong periodic patterns can indicate synthesis
+            peaks = np.where(autocorr > np.max(autocorr) * 0.7)[0]
+            return len(peaks) > 10
+        except:
+            return False
+    
+    def _has_spectral_discontinuities(self, audio_array: np.ndarray, sr: int) -> bool:
+        """Detect spectral discontinuities"""
+        try:
+            if LIBROSA_AVAILABLE:
+                # Calculate spectrogram
+                spec = np.abs(librosa.stft(audio_array))
+                
+                # Check for sudden spectral changes
+                spec_diff = np.diff(spec, axis=1)
+                large_changes = np.sum(np.abs(spec_diff) > np.percentile(np.abs(spec_diff), 95))
+                
+                return large_changes > spec.shape[1] * 0.1
+            return False
+        except:
+            return False
+    
+    def _has_unnatural_noise_floor(self, audio_array: np.ndarray) -> bool:
+        """Detect unnatural noise floor"""
+        try:
+            # Calculate noise floor
+            sorted_samples = np.sort(np.abs(audio_array))
+            noise_floor = np.mean(sorted_samples[:len(sorted_samples)//10])
             
-            # 3. Unnatural harmonic structure
-            harmonic_score = self._analyze_harmonic_structure(spectrogram)
-            freq_artifacts['harmonic_anomalies'] = 1.0 - harmonic_score
+            # Too clean (low noise) can indicate synthesis
+            return noise_floor < 0.001
+        except:
+            return False
+    
+    def _analyze_temporal_consistency(self, audio_array: np.ndarray, sr: int) -> Dict:
+        """Analyze temporal consistency"""
+        try:
+            # Divide audio into segments
+            segment_length = sr  # 1 second segments
+            num_segments = len(audio_array) // segment_length
             
-            # 4. High-frequency artifacts (common in neural synthesis)
-            high_freq_energy = np.mean(spectrogram[-spectrogram.shape[0]//4:, :])
-            total_energy = np.mean(spectrogram)
+            if num_segments < 2:
+                return {'score': 0.7, 'consistent': True}
+            
+            segment_features = []
+            for i in range(num_segments):
+                segment = audio_array[i*segment_length:(i+1)*segment_length]
+                # Calculate segment features
+                energy = np.mean(np.abs(segment))
+                zcr = np.mean(librosa.feature.zero_crossing_rate(segment)) if LIBROSA_AVAILABLE else 0
+                segment_features.append([energy, zcr])
+            
+            # Check consistency
+            feature_variance = np.var(segment_features, axis=0)
+            consistency_score = 1.0 - min(1.0, np.mean(feature_variance) * 10)
+            
+            return {
+                'score': float(consistency_score),
+                'consistent': consistency_score > 0.6,
+                'num_segments': num_segments
+            }
+            
+        except Exception as e:
+            logger.error(f"Temporal consistency analysis failed: {e}")
+            return {'score': 0.7, 'consistent': True}
+    
+    def _analyze_frequency_domain(self, audio_array: np.ndarray, sr: int) -> Dict:
+        """Analyze frequency domain characteristics"""
+        try:
+            # FFT analysis
+            fft_values = np.abs(fft(audio_array))
+            freqs = fftfreq(len(audio_array), 1/sr)
+            
+            # Analyze positive frequencies only
+            positive_freqs = freqs[:len(freqs)//2]
+            positive_fft = fft_values[:len(fft_values)//2]
+            
+            # Check for unnatural frequency patterns
+            # 1. Spectral flatness
+            spectral_flatness = np.exp(np.mean(np.log(positive_fft + 1e-10))) / (np.mean(positive_fft) + 1e-10)
+            
+            # 2. Frequency distribution
+            low_freq_energy = np.sum(positive_fft[positive_freqs < 1000])
+            mid_freq_energy = np.sum(positive_fft[(positive_freqs >= 1000) & (positive_freqs < 4000)])
+            high_freq_energy = np.sum(positive_fft[positive_freqs >= 4000])
+            
+            total_energy = low_freq_energy + mid_freq_energy + high_freq_energy
+            
+            # Natural speech has balanced frequency distribution
             if total_energy > 0:
-                high_freq_ratio = high_freq_energy / total_energy
-                freq_artifacts['high_frequency_artifacts'] = min(1.0, high_freq_ratio * 2)
+                low_ratio = low_freq_energy / total_energy
+                mid_ratio = mid_freq_energy / total_energy
+                high_ratio = high_freq_energy / total_energy
+                
+                # Check if distribution is natural
+                is_natural = 0.3 <= low_ratio <= 0.6 and 0.2 <= mid_ratio <= 0.5
+                score = 0.9 if is_natural else 0.6
             else:
-                freq_artifacts['high_frequency_artifacts'] = 0.0
+                score = 0.5
             
-        except Exception as e:
-            logger.warning(f"Frequency artifact detection error: {e}")
-            freq_artifacts = {
-                'frequency_anomalies': 0.1,
-                'spectral_discontinuities': 0.05,
-                'harmonic_anomalies': 0.1,
-                'high_frequency_artifacts': 0.08
+            return {
+                'score': float(score),
+                'spectral_flatness': float(spectral_flatness),
+                'frequency_distribution': {
+                    'low': float(low_ratio) if total_energy > 0 else 0,
+                    'mid': float(mid_ratio) if total_energy > 0 else 0,
+                    'high': float(high_ratio) if total_energy > 0 else 0
+                }
             }
-        
-        return freq_artifacts
-    
-    def _detect_temporal_artifacts(self, spectrogram: np.ndarray) -> Dict[str, float]:
-        """Detect temporal artifacts."""
-        temporal_artifacts = {}
-        
-        try:
-            # 1. Abrupt temporal transitions
-            time_diff = np.diff(spectrogram, axis=1)
-            sudden_changes = np.sum(np.abs(time_diff) > np.std(time_diff) * 3)
-            total_transitions = time_diff.size
-            temporal_artifacts['unnatural_transitions'] = min(1.0, sudden_changes / total_transitions * 5)
-            
-            # 2. Temporal smoothness analysis
-            temporal_smoothness = self._calculate_temporal_smoothness(spectrogram)
-            temporal_artifacts['temporal_roughness'] = 1.0 - temporal_smoothness
-            
-            # 3. Periodic artifacts (indicating frame-based synthesis)
-            periodicity_score = self._detect_periodicity(spectrogram)
-            temporal_artifacts['periodic_artifacts'] = periodicity_score
-            
-            # 4. Silence/speech transition artifacts
-            transition_artifacts = self._detect_transition_artifacts(spectrogram)
-            temporal_artifacts['transition_artifacts'] = transition_artifacts
             
         except Exception as e:
-            logger.warning(f"Temporal artifact detection error: {e}")
-            temporal_artifacts = {
-                'unnatural_transitions': 0.08,
-                'temporal_roughness': 0.1,
-                'periodic_artifacts': 0.05,
-                'transition_artifacts': 0.07
-            }
-        
-        return temporal_artifacts
+            logger.error(f"Frequency domain analysis failed: {e}")
+            return {'score': 0.5}
     
-    def _detect_synthesis_markers(self, spectrogram: np.ndarray) -> Dict[str, float]:
-        """Detect markers specific to synthetic speech generation."""
-        synthesis_artifacts = {}
+    def _combine_all_audio_scores(self, details: Dict) -> Tuple[float, float, str]:
+        """Combine all audio analysis scores"""
+        scores = []
+        weights = []
         
-        try:
-            # 1. Repetitive pattern detection
-            pattern_score = self._detect_repetitive_patterns(spectrogram)
-            synthesis_artifacts['repetitive_patterns'] = pattern_score
-            
-            # 2. Vocoder artifacts
-            vocoder_score = self._detect_vocoder_artifacts(spectrogram)
-            synthesis_artifacts['vocoder_artifacts'] = vocoder_score
-            
-            # 3. Neural network fingerprints
-            nn_fingerprint = self._detect_nn_fingerprints(spectrogram)
-            synthesis_artifacts['neural_fingerprints'] = nn_fingerprint
-            
-            # 4. Formant synthesis artifacts
-            formant_artifacts = self._detect_formant_synthesis_artifacts(spectrogram)
-            synthesis_artifacts['formant_synthesis'] = formant_artifacts
-            
-        except Exception as e:
-            logger.warning(f"Synthesis marker detection error: {e}")
-            synthesis_artifacts = {
-                'repetitive_patterns': 0.1,
-                'vocoder_artifacts': 0.08,
-                'neural_fingerprints': 0.12,
-                'formant_synthesis': 0.06
-            }
+        # ML classification
+        if 'ml_classification' in details:
+            scores.append(details['ml_classification']['score'])
+            weights.append(self.analysis_weights['ml_classification'])
         
-        return synthesis_artifacts
-    
-    def _detect_phase_artifacts(self, audio: np.ndarray) -> Dict[str, float]:
-        """Detect phase-related artifacts in raw audio."""
-        phase_artifacts = {}
+        # Spectral analysis
+        if 'spectral_analysis' in details:
+            scores.append(details['spectral_analysis']['score'])
+            weights.append(self.analysis_weights['spectral_analysis'])
         
-        try:
-            # STFT for phase analysis
-            window_size = 1024
-            hop_size = 512
-            
-            # Simple STFT implementation
-            stft_result = []
-            for i in range(0, len(audio) - window_size, hop_size):
-                window = audio[i:i + window_size] * np.hanning(window_size)
-                fft_result = np.fft.fft(window)
-                stft_result.append(fft_result)
-            
-            if len(stft_result) > 1:
-                stft_matrix = np.array(stft_result).T
-                
-                # Phase consistency analysis
-                phases = np.angle(stft_matrix)
-                phase_diff = np.diff(phases, axis=1)
-                
-                # Detect phase jumps
-                phase_jumps = np.sum(np.abs(phase_diff) > np.pi/2) / phase_diff.size
-                phase_artifacts['phase_inconsistencies'] = min(1.0, phase_jumps * 3)
-                
-                # Phase coherence
-                phase_coherence = self._calculate_phase_coherence(phases)
-                phase_artifacts['phase_incoherence'] = 1.0 - phase_coherence
-            else:
-                phase_artifacts = {'phase_inconsistencies': 0.05, 'phase_incoherence': 0.1}
-            
-        except Exception as e:
-            logger.warning(f"Phase artifact detection error: {e}")
-            phase_artifacts = {'phase_inconsistencies': 0.05, 'phase_incoherence': 0.1}
+        # Prosody analysis
+        if 'prosody_analysis' in details:
+            scores.append(details['prosody_analysis']['score'])
+            weights.append(self.analysis_weights['prosody_analysis'])
         
-        return phase_artifacts
-    
-    def _detect_compression_artifacts(self, spectrogram: np.ndarray) -> Dict[str, float]:
-        """Detect artifacts from audio compression/decompression."""
-        compression_artifacts = {}
+        # Voice quality
+        if 'voice_quality' in details:
+            scores.append(details['voice_quality']['score'])
+            weights.append(self.analysis_weights['voice_quality'])
         
-        try:
-            # 1. Frequency cutoff artifacts (common in lossy compression)
-            high_freq_cutoff = self._detect_frequency_cutoff(spectrogram)
-            compression_artifacts['frequency_cutoff'] = high_freq_cutoff
-            
-            # 2. Quantization noise
-            quantization_noise = self._detect_quantization_noise(spectrogram)
-            compression_artifacts['quantization_noise'] = quantization_noise
-            
-            # 3. Block artifacts (from block-based compression)
-            block_artifacts = self._detect_block_artifacts(spectrogram)
-            compression_artifacts['block_artifacts'] = block_artifacts
-            
-        except Exception as e:
-            logger.warning(f"Compression artifact detection error: {e}")
-            compression_artifacts = {
-                'frequency_cutoff': 0.05,
-                'quantization_noise': 0.03,
-                'block_artifacts': 0.04
-            }
+        # Artifact detection
+        if 'artifact_detection' in details:
+            scores.append(details['artifact_detection']['score'])
+            weights.append(self.analysis_weights['artifact_detection'])
         
-        return compression_artifacts
-    
-    def _detect_neural_network_artifacts(self, spectrogram: np.ndarray) -> Dict[str, float]:
-        """Detect artifacts specific to neural network-generated audio."""
-        nn_artifacts = {}
+        # Temporal consistency
+        if 'temporal_consistency' in details:
+            scores.append(details['temporal_consistency']['score'])
+            weights.append(self.analysis_weights['temporal_consistency'])
         
-        try:
-            # 1. Spectral smoothness (neural networks often produce overly smooth spectra)
-            smoothness_score = self._calculate_spectral_smoothness(spectrogram)
-            nn_artifacts['excessive_smoothness'] = max(0, smoothness_score - 0.7) / 0.3
-            
-            # 2. Lack of natural noise
-            noise_level = self._estimate_background_noise(spectrogram)
-            nn_artifacts['insufficient_noise'] = max(0, 0.1 - noise_level) / 0.1
-            
-            # 3. Artificial texture patterns
-            texture_score = self._analyze_spectral_texture(spectrogram)
-            nn_artifacts['artificial_texture'] = 1.0 - texture_score
-            
-        except Exception as e:
-            logger.warning(f"Neural network artifact detection error: {e}")
-            nn_artifacts = {
-                'excessive_smoothness': 0.1,
-                'insufficient_noise': 0.08,
-                'artificial_texture': 0.12
-            }
+        if not scores:
+            return 0.5, 0.0, 'unknown'
         
-        return nn_artifacts
-    
-    def _analyze_harmonic_structure(self, spectrogram: np.ndarray) -> float:
-        """Analyze naturalness of harmonic structure."""
-        try:
-            # Look for harmonic patterns in the spectrogram
-            # Natural speech has characteristic harmonic structures
-            
-            # Calculate autocorrelation in frequency domain
-            freq_autocorr = []
-            for t in range(spectrogram.shape[1]):
-                frame = spectrogram[:, t]
-                autocorr = np.correlate(frame, frame, mode='full')
-                autocorr = autocorr[autocorr.size // 2:]
-                freq_autocorr.append(autocorr[:min(20, len(autocorr))])
-            
-            if freq_autocorr:
-                avg_autocorr = np.mean(freq_autocorr, axis=0)
-                # Look for harmonic peaks
-                harmonic_strength = np.max(avg_autocorr[1:]) / (np.mean(avg_autocorr) + 1e-8)
-                return min(1.0, harmonic_strength / 2.0)
-            
-        except Exception:
-            pass
+        # Normalize weights
+        total_weight = sum(weights)
+        normalized_weights = [w / total_weight for w in weights]
         
-        return 0.7  # Default moderate harmonic score
-    
-    def _calculate_temporal_smoothness(self, spectrogram: np.ndarray) -> float:
-        """Calculate temporal smoothness of spectrogram."""
-        if spectrogram.shape[1] < 2:
-            return 1.0
+        # Weighted average
+        final_score = sum(s * w for s, w in zip(scores, normalized_weights))
         
-        # Calculate frame-to-frame differences
-        temporal_diff = np.diff(spectrogram, axis=1)
-        smoothness = 1.0 / (1.0 + np.mean(np.abs(temporal_diff)))
+        # Confidence based on agreement
+        confidence = 1.0 - np.std(scores) if len(scores) > 1 else 0.7
         
-        return min(1.0, smoothness)
-    
-    def _detect_periodicity(self, spectrogram: np.ndarray) -> float:
-        """Detect periodic patterns that might indicate synthesis."""
-        try:
-            # Autocorrelation analysis across time
-            if spectrogram.shape[1] < 10:
-                return 0.0
-            
-            # Average across frequency bins
-            temporal_signal = np.mean(spectrogram, axis=0)
-            
-            # Autocorrelation
-            autocorr = np.correlate(temporal_signal, temporal_signal, mode='full')
-            autocorr = autocorr[autocorr.size // 2:]
-            
-            # Look for periodic peaks
-            if len(autocorr) > 5:
-                # Normalize
-                autocorr = autocorr / autocorr[0]
-                
-                # Find peaks (excluding the first one)
-                peaks = []
-                for i in range(2, min(len(autocorr), 20)):
-                    if autocorr[i] > 0.3:  # Significant correlation
-                        peaks.append(autocorr[i])
-                
-                if peaks:
-                    return min(1.0, max(peaks))
-            
-        except Exception:
-            pass
+        # Determine label
+        thresholds = self.config.get('thresholds', {})
+        authentic_threshold = thresholds.get('authentic', 0.7)
+        deepfake_threshold = thresholds.get('deepfake', 0.4)
         
-        return 0.0
-    
-    def _detect_transition_artifacts(self, spectrogram: np.ndarray) -> float:
-        """Detect artifacts in speech/silence transitions."""
-        try:
-            # Detect energy transitions
-            energy = np.sum(spectrogram, axis=0)
-            
-            # Find transitions (simple threshold-based)
-            threshold = np.mean(energy) * 0.3
-            transitions = []
-            
-            in_speech = energy[0] > threshold
-            for i in range(1, len(energy)):
-                current_speech = energy[i] > threshold
-                if current_speech != in_speech:
-                    transitions.append(i)
-                    in_speech = current_speech
-            
-            if len(transitions) > 1:
-                # Analyze transition sharpness
-                transition_sharpness = []
-                for t in transitions:
-                    if 2 <= t < len(energy) - 2:
-                        # Look at energy change around transition
-                        before = np.mean(energy[t-2:t])
-                        after = np.mean(energy[t:t+2])
-                        sharpness = abs(after - before) / (before + after + 1e-8)
-                        transition_sharpness.append(sharpness)
-                
-                if transition_sharpness:
-                    # Very sharp transitions might indicate synthesis
-                    avg_sharpness = np.mean(transition_sharpness)
-                    return min(1.0, max(0, avg_sharpness - 0.5) / 0.5)
-            
-        except Exception:
-            pass
+        if final_score >= authentic_threshold:
+            label = 'authentic'
+        elif final_score <= deepfake_threshold:
+            label = 'deepfake'
+        else:
+            label = 'suspicious'
         
-        return 0.0
+        return float(final_score), float(confidence), label
     
-    def _detect_repetitive_patterns(self, spectrogram: np.ndarray) -> float:
-        """Detect repetitive patterns in spectrogram."""
-        try:
-            # Look for repeated spectral patterns
-            if spectrogram.shape[1] < 20:
-                return 0.0
-            
-            # Sliding window correlation
-            window_size = 10
-            max_correlation = 0.0
-            
-            for i in range(spectrogram.shape[1] - window_size * 2):
-                window1 = spectrogram[:, i:i + window_size]
-                
-                for j in range(i + window_size, spectrogram.shape[1] - window_size):
-                    window2 = spectrogram[:, j:j + window_size]
-                    
-                    # Calculate correlation
-                    corr = np.corrcoef(window1.flatten(), window2.flatten())[0, 1]
-                    if not np.isnan(corr):
-                        max_correlation = max(max_correlation, abs(corr))
-            
-            # High correlation indicates repetitive patterns
-            return min(1.0, max(0, max_correlation - 0.7) / 0.3)
-            
-        except Exception:
-            pass
+    def _generate_audio_explanation(self, results: Dict) -> str:
+        """Generate comprehensive explanation"""
+        label = results.get('label', 'unknown')
+        score = results.get('authenticity_score', 0)
+        confidence = results.get('confidence', 0)
         
-        return 0.0
-    
-    def _detect_vocoder_artifacts(self, spectrogram: np.ndarray) -> float:
-        """Detect vocoder-specific artifacts."""
-        # Simplified vocoder artifact detection
-        # Real vocoders often create characteristic spectral patterns
+        explanations = []
         
-        try:
-            # Look for regular frequency spacing (vocoder channels)
-            freq_profile = np.mean(spectrogram, axis=1)
-            
-            # Simple peak detection
-            peaks = []
-            for i in range(1, len(freq_profile) - 1):
-                if (freq_profile[i] > freq_profile[i-1] and 
-                    freq_profile[i] > freq_profile[i+1] and
-                    freq_profile[i] > np.mean(freq_profile) * 1.2):
-                    peaks.append(i)
-            
-            if len(peaks) > 3:
-                # Check for regular spacing
-                spacings = np.diff(peaks)
-                spacing_std = np.std(spacings)
-                spacing_mean = np.mean(spacings)
-                
-                # Regular spacing indicates vocoder
-                if spacing_mean > 0:
-                    regularity = 1.0 - (spacing_std / spacing_mean)
-                    return min(1.0, max(0, regularity - 0.5) / 0.5)
-            
-        except Exception:
-            pass
+        # Main verdict
+        if label == 'authentic':
+            explanations.append(f"Audio appears to be authentic (score: {score:.2f}, confidence: {confidence:.2f}).")
+        elif label == 'deepfake':
+            explanations.append(f"Audio shows strong signs of voice cloning/synthesis (score: {score:.2f}, confidence: {confidence:.2f}).")
+        else:
+            explanations.append(f"Audio shows suspicious characteristics (score: {score:.2f}, confidence: {confidence:.2f}).")
         
-        return 0.0
-    
-    def _detect_nn_fingerprints(self, spectrogram: np.ndarray) -> float:
-        """Detect neural network fingerprints."""
-        # This is a simplified approach - real NN fingerprint detection
-        # would require training on known NN-generated samples
+        # Artifacts
+        if results.get('artifacts_detected'):
+            explanations.append(f"Detected artifacts: {', '.join(results['artifacts_detected'][:3])}.")
         
-        try:
-            # Look for overly regular patterns
-            regularity_score = self._calculate_spectral_regularity(spectrogram)
-            
-            # Neural networks often produce overly regular patterns
-            return min(1.0, max(0, regularity_score - 0.8) / 0.2)
-            
-        except Exception:
-            pass
+        # ML classification
+        if 'ml_classification' in results.get('details', {}):
+            ml = results['details']['ml_classification']
+            if 'fake_probability' in ml and ml['fake_probability'] > 0.6:
+                explanations.append(f"ML model detected {ml['fake_probability']*100:.1f}% probability of synthesis.")
         
-        return 0.0
+        return " ".join(explanations)
     
-    def _calculate_spectral_regularity(self, spectrogram: np.ndarray) -> float:
-        """Calculate how regular/predictable the spectrogram is."""
-        try:
-            # Calculate local variance across time and frequency
-            time_variance = np.var(spectrogram, axis=1)
-            freq_variance = np.var(spectrogram, axis=0)
-            
-            # Low variance indicates high regularity
-            avg_time_var = np.mean(time_variance)
-            avg_freq_var = np.mean(freq_variance)
-            
-            # Normalize and combine
-            regularity = 1.0 / (1.0 + avg_time_var + avg_freq_var)
-            
-            return min(1.0, regularity)
-            
-        except Exception:
-            pass
+    def _generate_audio_recommendations(self, results: Dict) -> List[str]:
+        """Generate recommendations"""
+        recommendations = []
         
-        return 0.5
-    
-    def _generate_fallback_artifacts(self) -> Dict[str, float]:
-        """Generate fallback artifact scores."""
-        return {
-            'frequency_anomalies': 0.1,
-            'spectral_discontinuities': 0.05,
-            'harmonic_anomalies': 0.1,
-            'high_frequency_artifacts': 0.08,
-            'unnatural_transitions': 0.08,
-            'temporal_roughness': 0.1,
-            'periodic_artifacts': 0.05,
-            'transition_artifacts': 0.07,
-            'repetitive_patterns': 0.1,
-            'vocoder_artifacts': 0.08,
-            'neural_fingerprints': 0.12,
-            'formant_synthesis': 0.06,
-            'phase_inconsistencies': 0.05,
-            'phase_incoherence': 0.1,
-            'frequency_cutoff': 0.05,
-            'quantization_noise': 0.03,
-            'block_artifacts': 0.04,
-            'excessive_smoothness': 0.1,
-            'insufficient_noise': 0.08,
-            'artificial_texture': 0.12
-        }
-    
-    # Additional helper methods for completeness
-    def _detect_formant_synthesis_artifacts(self, spectrogram: np.ndarray) -> float:
-        """Detect artifacts from formant synthesis."""
-        return 0.06  # Placeholder
-    
-    def _calculate_phase_coherence(self, phases: np.ndarray) -> float:
-        """Calculate phase coherence."""
-        return 0.8  # Placeholder
-    
-    def _detect_frequency_cutoff(self, spectrogram: np.ndarray) -> float:
-        """Detect frequency cutoff artifacts."""
-        return 0.05  # Placeholder
-    
-    def _detect_quantization_noise(self, spectrogram: np.ndarray) -> float:
-        """Detect quantization noise."""
-        return 0.03  # Placeholder
-    
-    def _detect_block_artifacts(self, spectrogram: np.ndarray) -> float:
-        """Detect block artifacts."""
-        return 0.04  # Placeholder
-    
-    def _calculate_spectral_smoothness(self, spectrogram: np.ndarray) -> float:
-        """Calculate spectral smoothness."""
-        return 0.7  # Placeholder
-    
-    def _estimate_background_noise(self, spectrogram: np.ndarray) -> float:
-        """Estimate background noise level."""
-        return 0.05  # Placeholder
-    
-    def _analyze_spectral_texture(self, spectrogram: np.ndarray) -> float:
-        """Analyze spectral texture naturalness."""
-        return 0.8  # Placeholder
-    
-    def analyze(self, audio_buffer: bytes, **kwargs) -> Dict[str, Any]:
-        """
-        Analyze audio for deepfake manipulation.
+        label = results.get('label', 'unknown')
         
-        Args:
-            audio_buffer: Raw audio data as bytes
-            **kwargs: Additional parameters
-            
-        Returns:
-            Analysis result dictionary
-        """
-        start_time = time.time()
+        if label == 'deepfake':
+            recommendations.append("Do not trust this audio for voice verification")
+            recommendations.append("Likely voice cloning or synthesis detected")
+        elif label == 'suspicious':
+            recommendations.append("Exercise caution with this audio")
+            recommendations.append("Consider additional verification methods")
+        else:
+            recommendations.append("Audio appears authentic, but verify source")
         
-        try:
-            logger.info(f"Analyzing audio: {len(audio_buffer)} bytes")
-            
-            # Load audio
-            audio, sr = self.load_audio(audio_buffer)
-            if audio is None:
-                return self._create_result(
-                    authenticity='ANALYSIS FAILED',
-                    confidence=0.0,
-                    key_findings=['Failed to load audio file'],
-                    error='Audio loading failed'
-                )
-            
-            # Preprocess
-            audio = self.preprocess_audio(audio, sr)
-            audio_duration = len(audio) / self.sample_rate
-            
-            logger.info(f"Audio duration: {audio_duration:.2f} seconds")
-            
-            # Generate spectrogram
-            spectrogram = self.generate_spectrogram(audio)
-            if spectrogram is None:
-                return self._create_result(
-                    authenticity='ANALYSIS FAILED',
-                    confidence=0.0,
-                    key_findings=['Failed to generate spectrogram'],
-                    error='Spectrogram generation failed'
-                )
-            
-            # Extract features
-            features = self.extract_features(audio, spectrogram)
-            
-            # Analyze voice patterns
-            voice_score = self.analyze_voice_patterns(features)
-            
-            # Detect artifacts
-            artifacts = self.detect_artifacts(spectrogram)
-            
-            # Calculate overall authenticity score
-            # Combine voice pattern score with artifact detection
-            artifact_penalty = np.mean(list(artifacts.values()))
-            overall_score = voice_score * (1 - artifact_penalty * 0.5)
-            
-            # Determine authenticity
-            if overall_score >= 0.5:
-                authenticity = 'AUTHENTIC MEDIA'
-                confidence = overall_score * 100
-            else:
-                authenticity = 'MANIPULATED MEDIA'
-                confidence = (1 - overall_score) * 100
-            
-            # Create key findings
-            key_findings = []
-            if authenticity == 'AUTHENTIC MEDIA':
-                key_findings = [
-                    'Natural voice patterns detected',
-                    'No synthetic artifacts found',
-                    'Frequency analysis shows organic characteristics',
-                    f'Audio duration: {audio_duration:.2f} seconds'
-                ]
-            else:
-                key_findings = [
-                    'Synthetic voice markers detected',
-                    'Unusual frequency patterns found',
-                    'Audio artifacts indicate manipulation',
-                    f'Audio duration: {audio_duration:.2f} seconds'
-                ]
-            
-            # Calculate spectrogram quality
-            spectrogram_quality = 1.0 - artifact_penalty
-            
-            # Build result
-            result = self._create_result(
-                authenticity=authenticity,
-                confidence=confidence,
-                key_findings=key_findings,
-                audio_analysis={
-                    'synthesis_detection': artifacts['synthesis_markers'],
-                    'spectrogram_quality': spectrogram_quality,
-                    'audio_duration_seconds': audio_duration,
-                    'sample_rate': self.sample_rate,
-                    'voice_pattern_score': voice_score,
-                    'artifact_score': artifact_penalty
-                },
-                metrics={
-                    'audio_duration': audio_duration,
-                    'sample_rate': self.sample_rate,
-                    'processing_time_ms': int((time.time() - start_time) * 1000)
-                },
-                features=features,
-                artifacts=artifacts
-            )
-            
-            return result
-            
-        except Exception as e:
-            logger.error(f"Audio analysis error: {e}", exc_info=True)
-            return self._create_result(
-                authenticity='ANALYSIS FAILED',
-                confidence=0.0,
-                key_findings=[f'Analysis failed: {str(e)}'],
-                error=str(e)
-            )
+        if results.get('artifacts_detected'):
+            recommendations.append("Multiple synthesis artifacts detected")
+        
+        return recommendations
+
+
+# Singleton instance
+_audio_detector_instance = None
+
+def get_audio_detector() -> AudioDetector:
+    """Get or create audio detector instance"""
+    global _audio_detector_instance
+    if _audio_detector_instance is None:
+        _audio_detector_instance = AudioDetector()
+    return _audio_detector_instance

@@ -5,7 +5,7 @@ Combines results from multiple detection modalities for unified analysis
 
 import logging
 import numpy as np
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -583,7 +583,3 @@ class FusionEngine:
                 'key_findings': [f'Fusion failed: {str(e)}'],
                 'error': str(e)
             }
-
-
-# Helper function for tuple return type
-from typing import Tuple

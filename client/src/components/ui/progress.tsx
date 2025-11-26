@@ -1,4 +1,4 @@
-import React from 'react';
+
 
 interface ProgressProps {
   value: number;
@@ -7,11 +7,11 @@ interface ProgressProps {
   showValue?: boolean;
 }
 
-export function Progress({ 
-  value, 
-  max = 100, 
-  className = '', 
-  showValue = false 
+export function Progress({
+  value,
+  max = 100,
+  className = '',
+  showValue = false
 }: ProgressProps) {
   const percentage = Math.min(Math.max((value / max) * 100, 0), 100);
 

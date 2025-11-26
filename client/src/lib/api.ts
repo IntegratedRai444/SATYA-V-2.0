@@ -4,9 +4,12 @@
  */
 
 import axios, { type AxiosInstance } from 'axios';
+import logger from './logger';
+import { handleError, classifyError } from './errorHandler';
+import { createErrorInterceptor } from '../utils/apiErrorHandler';
 
 // API Configuration
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const API_TIMEOUT = 300000; // 5 minutes for analysis endpoints
 
 // Types
@@ -26,6 +29,7 @@ export interface AuthResponse {
     id: number;
     username: string;
     email?: string;
+    fullName?: string;
     role: string;
   };
   errors?: string[];
@@ -56,6 +60,18 @@ export interface AnalysisResult {
       originalName: string;
       size: number;
       mimeType: string;
+    };
+    modalityResults?: {
+      [key: string]: {
+        authenticity: 'AUTHENTIC MEDIA' | 'MANIPULATED MEDIA' | 'UNCERTAIN';
+        confidence: number;
+      };
+    };
+    fusionAnalysis?: {
+      aggregatedScore: number;
+      consistencyScore: number;
+      confidenceLevel: 'low' | 'medium' | 'high';
+      conflictsDetected: string[];
     };
   };
   jobId?: string;
@@ -124,12 +140,19 @@ class ApiClient {
       xsrfCookieName: 'XSRF-TOKEN',
       xsrfHeaderName: 'X-XSRF-TOKEN'
     } as any); // Type assertion to handle custom properties
-    
 
-    // Load auth token from localStorage
-    this.authToken = localStorage.getItem('satyaai_token');
+    // Load auth token from localStorage (use same key as auth service)
+    this.authToken = localStorage.getItem('satyaai_auth_token');
     if (this.authToken) {
-      this.setAuthToken(this.authToken);
+      // Check if token has expiry set, if not, set it with default
+      const expiry = localStorage.getItem('satyaai_token_expiry');
+      if (!expiry) {
+        // Set default expiry for existing tokens without expiry
+        this.setAuthToken(this.authToken, 24 * 60 * 60 * 1000);
+      } else {
+        // Just set the token without updating expiry
+        this.client.defaults.headers.common['Authorization'] = `Bearer ${this.authToken}`;
+      }
     }
 
     // Request interceptor
@@ -139,184 +162,160 @@ class ApiClient {
         if (this.authToken) {
           config.headers.Authorization = `Bearer ${this.authToken}`;
         }
-        
-        // Add CORS headers
-        config.headers['Access-Control-Allow-Origin'] = window.location.origin;
-        config.headers['Access-Control-Allow-Credentials'] = 'true';
-        
-        // Ensure withCredentials is set
+
+        // Enable credentials for CORS (cookies, auth headers)
         config.withCredentials = true;
-        
+
         // Enhanced logging in development
-        if (import.meta.env.DEV) {
-          console.group(`🌐 API Request: ${config.method?.toUpperCase()} ${config.url}`);
-          console.log('📤 Config:', {
-            url: config.url,
-            method: config.method,
-            headers: config.headers,
-            timeout: config.timeout,
-            baseURL: config.baseURL,
-            withCredentials: config.withCredentials
-          });
-          if (config.data) {
-            console.log('📦 Data:', config.data);
-          }
-          console.groupEnd();
-        }
-        
+        logger.debug(`API Request: ${config.method?.toUpperCase()} ${config.url}`, {
+          url: config.url,
+          method: config.method,
+          timeout: config.timeout,
+          baseURL: config.baseURL,
+          withCredentials: config.withCredentials,
+          hasData: !!config.data
+        });
+
         return config;
       },
       (error) => {
-        if (import.meta.env.DEV) {
-          console.error('❌ Request interceptor error:', error);
-          if (error.response) {
-            console.error('Response error:', {
-              status: error.response.status,
-              statusText: error.response.statusText,
-              data: error.response.data,
-              headers: error.response.headers
-            });
-          } else if (error.request) {
-            console.error('No response received:', error.request);
-          } else {
-            console.error('Error setting up request:', error.message);
-          }
-        }
+        logger.error('Request interceptor error', error, {
+          hasResponse: !!error.response,
+          hasRequest: !!error.request,
+          status: error.response?.status
+        });
         return Promise.reject(error);
       }
     );
 
-    // Response interceptor
+    // Response interceptor with token refresh
     this.client.interceptors.response.use(
       (response) => {
-        // Enhanced logging in development
-        if (import.meta.env.DEV) {
-          console.group(`✅ API Response: ${response.config.method?.toUpperCase()} ${response.config.url}`);
-          console.log('📥 Response:', {
-            status: response.status,
-            statusText: response.statusText,
-            headers: response.headers,
-            data: response.data,
-            config: {
-              withCredentials: response.config.withCredentials,
-              baseURL: response.config.baseURL,
-              url: response.config.url,
-              method: response.config.method
-            }
-          });
-          console.groupEnd();
+        // Transform response format for consistency
+        // Backend returns 'result' for analysis endpoints, transform to 'data' for consistency
+        if (response.data && response.data.result && !response.data.data) {
+          response.data.data = response.data.result;
         }
+
+        // Enhanced logging in development
+        logger.debug(`API Response: ${response.config.method?.toUpperCase()} ${response.config.url}`, {
+          status: response.status,
+          statusText: response.statusText,
+          hasData: !!response.data
+        });
         return response;
       },
-      (error) => {
-        // Enhanced error logging in development
-        if (import.meta.env.DEV) {
-          console.group(`❌ API Error: ${error.config?.method?.toUpperCase()} ${error.config?.url}`);
-          
-          // Log CORS specific issues
-          if (error.message?.includes('Network Error') && !error.response) {
-            console.error('CORS or Network Error:', {
-              message: 'This is likely a CORS issue. Check if the server is running and CORS is properly configured.',
-              details: 'Make sure the server is running and the Access-Control-Allow-Origin header is set correctly.'
-            });
-          }
-          
-          console.error('Error details:', {
-            message: error.message,
-            code: error.code,
-            status: error.response?.status,
-            statusText: error.response?.statusText,
-            data: error.response?.data,
-            config: {
-              url: error.config?.url,
-              baseURL: error.config?.baseURL,
-              method: error.config?.method,
-              withCredentials: error.config?.withCredentials,
-              headers: error.config?.headers
+      async (error) => {
+        // Enhanced error logging
+        const classified = classifyError(error);
+        logger.error(`API Error: ${error.config?.method?.toUpperCase()} ${error.config?.url}`, error, {
+          type: classified.type,
+          status: error.response?.status,
+          code: error.code,
+          url: error.config?.url
+        });
+
+        const originalRequest = error.config;
+
+        // Handle auth errors with token refresh attempt
+        if (error.response?.status === 401 && !originalRequest._retry && originalRequest.url !== '/api/auth/refresh' && originalRequest.url !== '/api/auth/login') {
+          originalRequest._retry = true;
+
+          try {
+            logger.info('401 error, attempting to refresh token');
+            // Try to refresh the token using a direct axios call to avoid interceptor loop
+            const refreshResponse = await axios.post(
+              `${API_BASE_URL}/api/auth/refresh`,
+              {},
+              {
+                headers: {
+                  'Authorization': `Bearer ${this.authToken}`,
+                  'Content-Type': 'application/json'
+                },
+                withCredentials: true
+              }
+            );
+
+            if (refreshResponse.data.success && refreshResponse.data.token) {
+              // Update token and retry original request
+              logger.info('Token refreshed successfully');
+              this.setAuthToken(refreshResponse.data.token);
+              originalRequest.headers.Authorization = `Bearer ${refreshResponse.data.token}`;
+              return this.client(originalRequest);
+            } else {
+              // Token refresh failed, clear auth only if not a network error
+              logger.info('Token refresh failed, clearing auth');
+              this.clearAuth();
             }
-          });
-          
-          // Specific error diagnostics
-          if (error.code === 'ECONNREFUSED') {
-            console.warn('🔧 Connection refused - Backend server may not be running');
-            console.log('💡 Try running: npm run dev (in another terminal)');
-          } else if (error.code === 'NETWORK_ERROR' || error.message?.includes('Network Error')) {
-            console.warn('🌐 Network error - Check your internet connection and CORS configuration');
-            console.log('💡 Check if the backend server is running and CORS is properly configured');
-          } else if (error.response?.status === 404) {
-            console.warn('🔍 Endpoint not found - Check if the API route exists');
-          } else if (error.response?.status === 401) {
-            console.warn('🔐 Unauthorized - Check if you need to log in');
-          } else if (error.response?.status === 403) {
-            console.warn('🚫 Forbidden - You do not have permission to access this resource');
-          } else if (error.response?.status >= 500) {
-            console.warn('🚨 Server error - Check backend logs');
-          }
-          
-          // Log CORS specific headers if available
-          if (error.response?.headers) {
-            console.log('Response Headers:', error.response.headers);
-          }
-          
-          console.groupEnd();
-        }
-        
-        // Handle auth errors
-        if (error.response?.status === 401) {
-          console.log('🔐 Authentication failed, clearing auth and redirecting...');
-          this.clearAuth();
-          // Only redirect if not already on login page
-          if (window.location.pathname !== '/login') {
-            window.location.href = '/login';
+          } catch (refreshError: any) {
+            // Only clear auth if it's an actual auth error, not a network error
+            if (refreshError.response?.status === 401) {
+              logger.error('Token refresh returned 401, clearing auth', refreshError as Error);
+              this.clearAuth();
+            } else {
+              logger.error('Token refresh network error, keeping auth', refreshError as Error);
+              // Don't clear auth on network errors, just reject the request
+            }
           }
         }
-        
+
         // Handle CORS errors
         if (error.message?.includes('Network Error') && !error.response) {
           error.isCorsError = true;
         }
-        
+
         // Handle rate limiting
         if (error.response?.status === 429) {
-          console.warn('⏱️ Rate limit exceeded. Please try again later.');
+          logger.warn('Rate limit exceeded');
         }
-        
+
+        // Use centralized error handler for consistent error handling
+        // This will log and show notifications automatically
+        createErrorInterceptor('API Request')(error);
+
         return Promise.reject(error);
       }
     );
   }
 
   // Auth methods
-  setAuthToken(token: string) {
+  setAuthToken(token: string, expiresIn: number = 24 * 60 * 60 * 1000) {
     this.authToken = token;
     this.client.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-    localStorage.setItem('satyaai_token', token);
+    localStorage.setItem('satyaai_auth_token', token);
+    // Set expiry time
+    const expiryTime = Date.now() + expiresIn;
+    localStorage.setItem('satyaai_token_expiry', expiryTime.toString());
   }
 
   clearAuth() {
     this.authToken = null;
     delete this.client.defaults.headers.common['Authorization'];
-    localStorage.removeItem('satyaai_token');
+    localStorage.removeItem('satyaai_auth_token');
+    localStorage.removeItem('satyaai_token_expiry');
+    // Dispatch custom event to notify AuthContext
+    window.dispatchEvent(new CustomEvent('auth-cleared'));
   }
 
   // Authentication endpoints
   async login(username: string, password: string): Promise<AuthResponse> {
     try {
-      console.log('Making login request to:', `${API_BASE_URL}/api/auth/login`);
+      logger.debug('Making login request');
       const response = await this.client.post('/api/auth/login', {
         username,
         password,
       });
-      
-      console.log('Login response:', response.data);
-      
+
+      logger.info('Login successful');
+
       if (response.data.success && response.data.token) {
         this.setAuthToken(response.data.token);
       }
-      
+
       return response.data;
     } catch (error: any) {
-      console.error('Login request failed:', error.response?.data || error.message);
+      logger.error('Login request failed', error);
+      await handleError(error, { showToast: false });
       const errorData = error.response?.data;
       return {
         success: false,
@@ -334,14 +333,15 @@ class ApiClient {
         password,
         fullName,
       });
-      
+
       if (response.data.success && response.data.token) {
         this.setAuthToken(response.data.token);
       }
-      
+
       return response.data;
     } catch (error: any) {
-      console.error('Registration request failed:', error.response?.data || error.message);
+      logger.error('Registration request failed', error);
+      await handleError(error, { showToast: false });
       const errorData = error.response?.data;
       return {
         success: false,
@@ -355,7 +355,7 @@ class ApiClient {
     try {
       await this.client.post('/api/auth/logout');
     } catch (error) {
-      console.warn('Logout request failed:', error);
+      logger.warn('Logout request failed', { error });
     } finally {
       this.clearAuth();
     }
@@ -370,6 +370,24 @@ class ApiClient {
       };
     } catch (error) {
       return { valid: false };
+    }
+  }
+
+  async refreshToken(): Promise<{ success: boolean; token?: string; user?: any }> {
+    try {
+      const refreshResponse = await this.client.post('/api/auth/refresh');
+      if (refreshResponse.data.success && refreshResponse.data.token) {
+        this.setAuthToken(refreshResponse.data.token);
+        return {
+          success: true,
+          token: refreshResponse.data.token,
+          user: refreshResponse.data.user
+        };
+      }
+      return { success: false };
+    } catch (error) {
+      logger.error('Token refresh failed', error as Error);
+      return { success: false };
     }
   }
 
@@ -403,15 +421,51 @@ class ApiClient {
     }
   }
 
+  async updateProfile(data: { fullName?: string; email?: string }): Promise<ApiResponse> {
+    try {
+      const response = await this.client.put('/api/auth/profile', data);
+      return response.data;
+    } catch (error: any) {
+      const errorData = error.response?.data;
+      return {
+        success: false,
+        message: errorData?.message || 'Failed to update profile',
+        error: errorData?.errors?.join(', ') || errorData?.error
+      };
+    }
+  }
+
+  async deleteAccount(): Promise<ApiResponse> {
+    try {
+      const response = await this.client.delete('/api/auth/account');
+      return response.data;
+    } catch (error: any) {
+      const errorData = error.response?.data;
+      return {
+        success: false,
+        message: errorData?.message || 'Failed to delete account',
+      };
+    }
+  }
+
   // Health and status endpoints
   async getHealth(): Promise<HealthStatus> {
-    const response = await this.client.get<HealthStatus>('/api/health');
+    const response = await this.client.get<HealthStatus>('/health');
     return response.data;
   }
 
   async getDetailedHealth(): Promise<any> {
-    const response = await this.client.get('/api/health/detailed');
+    const response = await this.client.get('/health/detailed');
     return response.data;
+  }
+
+  async checkPythonHealth(): Promise<{ healthy: boolean; message?: string }> {
+    try {
+      const response = await this.client.get('/api/health/python');
+      return { healthy: response.data.success, message: response.data.message };
+    } catch (error) {
+      return { healthy: false, message: 'Python server not responding' };
+    }
   }
 
   // Analysis endpoints
@@ -434,7 +488,7 @@ class ApiClient {
       if (options) {
         formData.append('options', JSON.stringify(options));
       }
-      
+
       const response = await this.client.post<AnalysisResult>('/api/analysis/image', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
@@ -455,7 +509,7 @@ class ApiClient {
     if (options) {
       formData.append('options', JSON.stringify(options));
     }
-    
+
     const response = await this.client.post<AnalysisResult>('/api/analysis/video', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
@@ -475,7 +529,7 @@ class ApiClient {
     if (options) {
       formData.append('options', JSON.stringify(options));
     }
-    
+
     const response = await this.client.post<AnalysisResult>('/api/analysis/audio', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
@@ -495,14 +549,14 @@ class ApiClient {
     async?: boolean;
   }): Promise<AnalysisResult> {
     const formData = new FormData();
-    
+
     if (files.image) formData.append('image', files.image);
     if (files.video) formData.append('video', files.video);
     if (files.audio) formData.append('audio', files.audio);
     if (options) {
       formData.append('options', JSON.stringify(options));
     }
-    
+
     const response = await this.client.post<AnalysisResult>('/api/analysis/multimodal', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
@@ -584,9 +638,9 @@ class ApiClient {
     try {
       const formData = new FormData();
       formData.append('image', imageFile);
-      
+
       const response = await this.client.post<Omit<ApiResponse, 'success'>>(
-        '/api/upload/image', 
+        '/api/upload/image',
         formData,
         {
           headers: {
@@ -594,7 +648,7 @@ class ApiClient {
           },
         }
       );
-      
+
       return {
         success: true,
         ...response.data,
@@ -609,9 +663,9 @@ class ApiClient {
     try {
       const formData = new FormData();
       formData.append('video', videoFile);
-      
+
       const response = await this.client.post<Omit<ApiResponse, 'success'>>(
-        '/api/upload/video', 
+        '/api/upload/video',
         formData,
         {
           headers: {
@@ -619,7 +673,7 @@ class ApiClient {
           },
         }
       );
-      
+
       return {
         success: true,
         ...response.data,
@@ -633,7 +687,7 @@ class ApiClient {
   async uploadAudio(audioFile: File): Promise<ApiResponse> {
     const formData = new FormData();
     formData.append('audio', audioFile);
-    
+
     const response = await this.client.post('/api/upload/audio', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
@@ -656,15 +710,11 @@ class ApiClient {
   private handleError = (error: unknown): never => {
     if (axios.isAxiosError(error)) {
       if (error.response) {
-        // The request was made and the server responded with a status code
-        // that falls out of the range of 2xx
-        console.error('API Error Response:', {
+        logger.error('API Error Response', error, {
           status: error.response.status,
-          statusText: error.response.statusText,
-          data: error.response.data,
-          headers: error.response.headers
+          statusText: error.response.statusText
         });
-        
+
         const errorData = error.response.data as Record<string, any>;
         const errorMessage = errorData?.message || error.message || 'An unknown error occurred';
         const errorResponse: ApiResponse = {
@@ -673,11 +723,10 @@ class ApiClient {
           statusCode: error.response.status,
           ...(errorData || {})
         };
-        
+
         throw errorResponse as never;
       } else if (error.request) {
-        // The request was made but no response was received
-        console.error('No response received:', error.request);
+        logger.error('No response received from server', error);
         const errorResponse: ApiResponse = {
           success: false,
           error: 'No response from server. Please check your network connection.',
@@ -686,10 +735,10 @@ class ApiClient {
         throw errorResponse as never;
       }
     }
-    
+
     // Handle non-Axios errors
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-    console.error('API Error:', error);
+    logger.error('API Error', error as Error);
     const errorResponse: ApiResponse = {
       success: false,
       error: errorMessage,
@@ -705,9 +754,7 @@ class ApiClient {
       // Use _ to indicate we're intentionally not using the response
       await this.client.get('/health', {
         headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0'
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
         },
         withCredentials: true
       });
@@ -719,26 +766,25 @@ class ApiClient {
     } catch (error) {
       return {
         connected: false,
-        error: error.message
+        error: error instanceof Error ? error.message : 'Connection failed'
       };
     }
   }
 
   async retryConnection(maxRetries: number = 3): Promise<boolean> {
-    console.log(`🔄 Retrying connection (attempt ${this.connectionStatus.retryCount + 1}/${maxRetries})`);
-    
+    logger.info(`Retrying connection (attempt ${this.connectionStatus.retryCount + 1}/${maxRetries})`);
+
     for (let i = 0; i < maxRetries; i++) {
       const health = await this.checkBackendHealth();
       if (health.connected) {
         return true;
       }
-      
-      // Exponential backoff: 1s, 2s, 4s
+
       const delay = Math.pow(2, i) * 1000;
-      console.log(`⏳ Waiting ${delay}ms before next retry...`);
+      logger.debug(`Waiting ${delay}ms before next retry`);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
-    
+
     return false;
   }
 
@@ -790,21 +836,21 @@ class ApiClient {
   // Development configuration diagnostics
   validateConfiguration(): { valid: boolean; issues: string[] } {
     const issues: string[] = [];
-    
+
     if (!API_BASE_URL) {
       issues.push('VITE_API_URL is not set');
     }
-    
+
     if (API_BASE_URL === 'http://localhost:3000' && import.meta.env.DEV) {
       // This is expected in development
     } else if (API_BASE_URL.includes('localhost') && !import.meta.env.DEV) {
       issues.push('Using localhost URL in production build');
     }
-    
+
     if (API_TIMEOUT < 5000) {
       issues.push('API timeout is very low (< 5 seconds)');
     }
-    
+
     return {
       valid: issues.length === 0,
       issues
@@ -814,38 +860,29 @@ class ApiClient {
   // Development diagnostics
   async runDiagnostics(): Promise<void> {
     if (!import.meta.env.DEV) return;
-    
+
     console.group('🔧 SatyaAI API Client Diagnostics');
-    
-    // Configuration check
+
     const config = this.validateConfiguration();
-    console.log('⚙️ Configuration:', {
+    logger.debug('API Configuration', {
       baseURL: API_BASE_URL,
       timeout: API_TIMEOUT,
       valid: config.valid,
       issues: config.issues
     });
-    
-    // Environment variables
-    console.log('🌍 Environment:', {
+
+    logger.debug('Environment', {
       NODE_ENV: import.meta.env.MODE,
-      DEV: import.meta.env.DEV,
-      VITE_API_URL: import.meta.env.VITE_API_URL,
-      VITE_BYPASS_AUTH: import.meta.env.VITE_BYPASS_AUTH,
-      VITE_DEMO_MODE: import.meta.env.VITE_DEMO_MODE
+      DEV: import.meta.env.DEV
     });
-    
-    // Connection test
-    console.log('🔍 Testing backend connection...');
+
     const health = await this.checkBackendHealth();
-    console.log('🏥 Backend health:', health);
-    
-    // Auth status
-    console.log('🔐 Authentication:', {
-      hasToken: !!this.authToken,
-      token: this.authToken ? `${this.authToken.substring(0, 10)}...` : null
+    logger.debug('Backend health check', health);
+
+    logger.debug('Authentication status', {
+      hasToken: !!this.authToken
     });
-    
+
     console.groupEnd();
   }
 }

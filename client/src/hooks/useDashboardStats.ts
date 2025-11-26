@@ -13,11 +13,11 @@ interface DashboardStats {
 }
 
 const fetchDashboardStats = async (): Promise<DashboardStats> => {
-  const response = await fetch('/api/dashboard/stats');
-  if (!response.ok) {
-    throw new Error('Failed to fetch dashboard stats');
+  const response = await api.getDashboardStats();
+  if (!response.success) {
+    throw new Error(response.error || 'Failed to fetch dashboard stats');
   }
-  return response.json();
+  return response.data as any;
 };
 
 export const useDashboardStats = () => {

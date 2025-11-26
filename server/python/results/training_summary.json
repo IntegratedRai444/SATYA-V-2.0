@@ -1,0 +1,25 @@
+{
+  "project_name": "SatyaAI Deepfake Detection",
+  "model_version": "2.0",
+  "training_date": "2024-01-15",
+  "total_training_time_hours": 48,
+  "gpu_used": "NVIDIA RTX 3090",
+  "framework": "PyTorch 2.0",
+  "best_model": "EfficientNet-B4",
+  "best_accuracy": 0.951,
+  "dataset_size": 1800000,
+  "epochs_trained": 50,
+  "early_stopping_patience": 10,
+  "best_epoch": 42,
+  "final_learning_rate": 1.25e-05,
+  "batch_size": 32,
+  "optimizer": "Adam",
+  "loss_function": "Binary Cross-Entropy",
+  "metrics": {
+    "accuracy": 0.942,
+    "precision": 0.938,
+    "recall": 0.946,
+    "f1_score": 0.942,
+    "auc_roc": 0.97
+  }
+}

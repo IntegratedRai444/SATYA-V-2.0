@@ -9,14 +9,25 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 
 # Import detectors
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+try:
+    from detectors.image_detector import ImageDetector
+except ImportError:
+    ImageDetector = None
 
-from detectors.image_detector import ImageDetector
-from detectors.video_detector import VideoDetector
-from detectors.audio_detector import AudioDetector
-from detectors.fusion_engine import FusionEngine
+try:
+    from detectors.video_detector import VideoDetector
+except ImportError:
+    VideoDetector = None
+
+try:
+    from detectors.audio_detector import AudioDetector
+except ImportError:
+    AudioDetector = None
+
+try:
+    from detectors.fusion_engine import FusionEngine
+except ImportError:
+    FusionEngine = None
 
 logger = logging.getLogger(__name__)
 
@@ -92,8 +103,11 @@ class SatyaAICore:
             logger.info(f"Image analysis completed: {result.get('authenticity', 'Unknown')}")
             return result
             
+        except ValueError as e:
+            logger.error(f"Invalid image data: {e}")
+            return self._create_error_result(f"Invalid image data: {str(e)}")
         except Exception as e:
-            logger.error(f"Image analysis failed: {e}")
+            logger.error(f"Image analysis failed: {e}", exc_info=True)
             return self._create_error_result(f"Image analysis failed: {str(e)}")
     
     def analyze_video(self, video_buffer: bytes) -> Dict[str, Any]:
@@ -123,8 +137,11 @@ class SatyaAICore:
             logger.info(f"Video analysis completed: {result.get('authenticity', 'Unknown')}")
             return result
             
+        except ValueError as e:
+            logger.error(f"Invalid video data: {e}")
+            return self._create_error_result(f"Invalid video data: {str(e)}")
         except Exception as e:
-            logger.error(f"Video analysis failed: {e}")
+            logger.error(f"Video analysis failed: {e}", exc_info=True)
             return self._create_error_result(f"Video analysis failed: {str(e)}")
     
     def analyze_audio(self, audio_buffer: bytes) -> Dict[str, Any]:
@@ -154,8 +171,11 @@ class SatyaAICore:
             logger.info(f"Audio analysis completed: {result.get('authenticity', 'Unknown')}")
             return result
             
+        except ValueError as e:
+            logger.error(f"Invalid audio data: {e}")
+            return self._create_error_result(f"Invalid audio data: {str(e)}")
         except Exception as e:
-            logger.error(f"Audio analysis failed: {e}")
+            logger.error(f"Audio analysis failed: {e}", exc_info=True)
             return self._create_error_result(f"Audio analysis failed: {str(e)}")
     
     def analyze_multimodal(
@@ -203,7 +223,7 @@ class SatyaAICore:
             return fused_result
             
         except Exception as e:
-            logger.error(f"Multimodal analysis failed: {e}")
+            logger.error(f"Multimodal analysis failed: {e}", exc_info=True)
             return self._create_error_result(f"Multimodal analysis failed: {str(e)}")
     
     def get_model_info(self) -> Dict[str, Any]:
@@ -254,8 +274,24 @@ class SatyaAICore:
         }
 
 
-# Global instance
-_satyaai_instance = None
+# Global instance container
+class SatyaAIContainer:
+    _instance: Optional[SatyaAICore] = None
+
+    @classmethod
+    def get_instance(cls, config: Optional[Dict[str, Any]] = None) -> SatyaAICore:
+        if cls._instance is None:
+            if config is None:
+                config = {
+                    'MODEL_PATH': os.environ.get('MODEL_PATH', './models'),
+                    'ENABLE_GPU': os.environ.get('ENABLE_GPU', 'False').lower() == 'true'
+                }
+            cls._instance = SatyaAICore(config)
+        return cls._instance
+
+    @classmethod
+    def reset(cls):
+        cls._instance = None
 
 
 def get_satyaai_instance(config: Optional[Dict[str, Any]] = None) -> SatyaAICore:
@@ -268,21 +304,9 @@ def get_satyaai_instance(config: Optional[Dict[str, Any]] = None) -> SatyaAICore
     Returns:
         SatyaAI instance
     """
-    global _satyaai_instance
-    
-    if _satyaai_instance is None:
-        if config is None:
-            config = {
-                'MODEL_PATH': os.environ.get('MODEL_PATH', './models'),
-                'ENABLE_GPU': os.environ.get('ENABLE_GPU', 'False').lower() == 'true'
-            }
-        
-        _satyaai_instance = SatyaAICore(config)
-    
-    return _satyaai_instance
+    return SatyaAIContainer.get_instance(config)
 
 
 def reset_satyaai_instance():
     """Reset the global instance (useful for testing)."""
-    global _satyaai_instance
-    _satyaai_instance = None
+    SatyaAIContainer.reset()

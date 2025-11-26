@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Image, Video, Mic, FileText, Clock, ArrowRight, Activity } from 'lucide-react';
-import { useLocation } from 'wouter';
+import { useNavigate } from 'react-router-dom';
 
 interface AnalysisResult {
   id: string;
@@ -11,11 +11,12 @@ interface AnalysisResult {
   type: 'image' | 'video' | 'audio';
   processingTime?: string;
   thumbnailUrl?: string;
+  reportCode?: string; // Case ID
 }
 
 const FileIcon: React.FC<{ type: string }> = ({ type }) => {
   const iconClass = "w-5 h-5";
-  
+
   const getIconColor = (type: string) => {
     switch (type) {
       case 'image':
@@ -28,7 +29,7 @@ const FileIcon: React.FC<{ type: string }> = ({ type }) => {
         return 'text-gray-400';
     }
   };
-  
+
   switch (type) {
     case 'image':
       return <Image className={`${iconClass} ${getIconColor(type)}`} />;
@@ -63,7 +64,7 @@ const RecentActivityItem: React.FC<RecentActivityItemProps> = ({ result, onClick
     const now = new Date();
     const diff = now.getTime() - timestamp.getTime();
     const minutes = Math.floor(diff / 60000);
-    
+
     if (minutes < 1) return 'Just now';
     if (minutes < 60) return `${minutes}m ago`;
     const hours = Math.floor(minutes / 60);
@@ -71,9 +72,9 @@ const RecentActivityItem: React.FC<RecentActivityItemProps> = ({ result, onClick
     const days = Math.floor(hours / 24);
     return `${days}d ago`;
   };
-  
+
   return (
-    <div 
+    <div
       onClick={() => onClick(result.id)}
       className="flex items-center justify-between p-4 bg-gray-700/30 rounded-lg hover:bg-gray-700/50 transition-all duration-200 cursor-pointer group border border-gray-600/30 hover:border-gray-500/50"
     >
@@ -82,7 +83,7 @@ const RecentActivityItem: React.FC<RecentActivityItemProps> = ({ result, onClick
         <div className="w-10 h-10 bg-gray-600/30 rounded-lg flex items-center justify-center group-hover:bg-gray-600/50 transition-colors">
           <FileIcon type={result.type} />
         </div>
-        
+
         {/* File Info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center space-x-2 mb-1">
@@ -106,10 +107,16 @@ const RecentActivityItem: React.FC<RecentActivityItemProps> = ({ result, onClick
             )}
             <span>•</span>
             <span>{formatTimestamp(result.timestamp)}</span>
+            {result.reportCode && (
+              <>
+                <span>•</span>
+                <span className="text-gray-500 font-mono text-[10px]">{result.reportCode}</span>
+              </>
+            )}
           </div>
         </div>
       </div>
-      
+
       {/* Status Badge and Arrow */}
       <div className="flex items-center space-x-3">
         <div className={`px-3 py-1 rounded-full border ${getStatusBgColor(result.status, result.confidenceScore)}`}>
@@ -129,58 +136,56 @@ interface RecentActivityProps {
 
 const RecentActivity: React.FC<RecentActivityProps> = ({ loading = false }) => {
   const [recentResults, setRecentResults] = useState<AnalysisResult[]>([]);
-  const [, setLocation] = useLocation();
+  const navigate = useNavigate();
 
   const handleActivityClick = (id: string) => {
-    setLocation(`/history/${id}`);
+    navigate(`/history/${id}`);
   };
 
   const handleViewAllClick = () => {
-    setLocation('/history');
+    navigate('/history');
   };
 
   useEffect(() => {
-    // Enhanced default data matching the design
-    const defaultResults: AnalysisResult[] = [
-      {
-        id: '1',
-        filename: 'Profile_Image.jpg',
-        confidenceScore: 98,
-        status: 'Authentic',
-        timestamp: new Date(Date.now() - 5 * 60000), // 5 minutes ago
-        type: 'image',
-        processingTime: '2.3s'
-      },
-      {
-        id: '2',
-        filename: 'Interview_Clip.mp4',
-        confidenceScore: 55,
-        status: 'Deepfake',
-        timestamp: new Date(Date.now() - 15 * 60000), // 15 minutes ago
-        type: 'video',
-        processingTime: '8.7s'
-      },
-      {
-        id: '3',
-        filename: 'Voice_Message.mp3',
-        confidenceScore: 89,
-        status: 'Authentic',
-        timestamp: new Date(Date.now() - 45 * 60000), // 45 minutes ago
-        type: 'audio',
-        processingTime: '3.1s'
-      },
-      {
-        id: '4',
-        filename: 'Presentation_Video.mp4',
-        confidenceScore: 72,
-        status: 'Suspicious',
-        timestamp: new Date(Date.now() - 2 * 60 * 60000), // 2 hours ago
-        type: 'video',
-        processingTime: '12.4s'
-      }
-    ];
+    // Fetch real recent activity from API
+    const fetchRecentActivity = async () => {
+      try {
+        const response = await fetch('/api/dashboard/recent-activity', {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('satyaai_auth_token')}`,
+            'Content-Type': 'application/json'
+          }
+        });
 
-    setRecentResults(defaultResults);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.data.recentScans) {
+            // Map API response to component format
+            const mappedResults: AnalysisResult[] = data.data.recentScans.map((scan: any) => ({
+              id: scan.id.toString(),
+              filename: scan.filename,
+              confidenceScore: Math.round(scan.confidenceScore * 100),
+              status: scan.result === 'authentic' ? 'Authentic' : 
+                      scan.result === 'deepfake' ? 'Deepfake' : 'Suspicious',
+              timestamp: new Date(scan.createdAt),
+              type: scan.type,
+              processingTime: scan.processingTime || undefined,
+              reportCode: scan.reportCode // Include Case ID
+            }));
+            setRecentResults(mappedResults);
+          }
+        } else {
+          // If API fails, show empty state
+          setRecentResults([]);
+        }
+      } catch (error) {
+        console.error('Failed to fetch recent activity:', error);
+        // Show empty state on error
+        setRecentResults([]);
+      }
+    };
+
+    fetchRecentActivity();
   }, []);
 
   if (loading) {
@@ -207,7 +212,7 @@ const RecentActivity: React.FC<RecentActivityProps> = ({ loading = false }) => {
       </div>
     );
   }
-  
+
   return (
     <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6 hover:bg-gray-800/70 transition-all duration-300">
       <div className="flex items-center justify-between mb-6">
@@ -220,13 +225,13 @@ const RecentActivity: React.FC<RecentActivityProps> = ({ loading = false }) => {
         </div>
         <Activity className="w-5 h-5 text-gray-400" />
       </div>
-      
+
       <div className="space-y-3">
         {recentResults.length > 0 ? (
           recentResults.map((result) => (
-            <RecentActivityItem 
-              key={result.id} 
-              result={result} 
+            <RecentActivityItem
+              key={result.id}
+              result={result}
               onClick={handleActivityClick}
             />
           ))
@@ -243,7 +248,7 @@ const RecentActivity: React.FC<RecentActivityProps> = ({ loading = false }) => {
 
       {recentResults.length > 0 && (
         <div className="mt-6 pt-4 border-t border-gray-700/50">
-          <button 
+          <button
             onClick={handleViewAllClick}
             className="w-full text-blue-400 hover:text-blue-300 text-sm font-medium transition-colors flex items-center justify-center space-x-2 py-2 hover:bg-blue-400/5 rounded-lg"
           >

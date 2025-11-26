@@ -208,25 +208,6 @@ class EnvironmentManager {
         rateLimit: { ...base.server.rateLimit, ...override.server?.rateLimit }
       },
       python: { ...base.python, ...override.python },
-      storage: { ...base.storage, ...override.storage },
-      logging: { ...base.logging, ...override.logging },
-      security: { ...base.security, ...override.security },
-      monitoring: { ...base.monitoring, ...override.monitoring },
-      features: { ...base.features, ...override.features },
-      external: {
-        ...base.external,
-        ...override.external,
-        redis: { ...base.external.redis, ...override.external?.redis },
-        email: override.external?.email ? {
-          smtp: { ...base.external.email?.smtp, ...override.external.email.smtp }
-        } : base.external.email,
-        webhook: { ...base.external.webhook, ...override.external?.webhook }
-      }
-    };
-  }
-
-  private validateConfiguration(): void {
-    const errors: string[] = [];
 
     // Validate required fields
     if (!this.config.security.jwtSecret || this.config.security.jwtSecret.length < 32) {

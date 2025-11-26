@@ -1,5 +1,7 @@
 import json
 import os
+import uuid
+from datetime import datetime
 
 # Lazy import fpdf for faster startup
 _FPDF = None
@@ -17,10 +19,11 @@ def get_fpdf():
     return _FPDF
 
 def generate_image_report(filename, result, exif, heatmap_path=None):
+    report_code = f"SATYA-IMG-{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:8].upper()}"
     report = {
         "file": filename,
         "scan_type": "Single Frame Forensic Analysis",
-        "report_code": "SATYA-IMG-20250714-0013",  # TODO: generate dynamically
+        "report_code": report_code,
         "status": result["label"],
         "confidence": result["confidence"],
         "summary": result["explanation"],

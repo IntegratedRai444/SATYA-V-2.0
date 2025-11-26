@@ -1,4 +1,5 @@
 import { webSocketService } from './websocket';
+import logger from '../lib/logger';
 
 interface ScanStats {
   totalScans: number;
@@ -45,10 +46,13 @@ class AnalyticsService {
 
   private initializeWebSocket() {
     webSocketService.subscribe((data) => {
-      if (data.type === 'scan_update') {
+      if (data.type === 'scan_update' && data.payload) {
         this.handleScanUpdate(data.payload);
-      } else if (data.type === 'storage_update') {
-        this.handleStorageUpdate(data.payload);
+      } else if (data.type === 'dashboard_update' && data.payload) {
+        const payload = data.payload as any;
+        if (payload.updateType === 'storage') {
+          this.handleStorageUpdate(payload.data);
+        }
       }
     });
   }
@@ -56,7 +60,7 @@ class AnalyticsService {
   private handleScanUpdate(scanData: any) {
     // Update scan statistics
     this.stats.totalScans++;
-    
+
     // Update scan type count
     if (scanData.type in this.stats.scansByType) {
       this.stats.scansByType[scanData.type as keyof typeof this.stats.scansByType]++;
@@ -67,7 +71,7 @@ class AnalyticsService {
     const successfulScans = this.stats.recentActivity.filter(
       (activity) => activity.type === 'scan' && activity.metadata?.status === 'completed'
     ).length;
-    
+
     this.stats.successRate = (successfulScans / totalScans) * 100;
     this.stats.failureRate = 100 - this.stats.successRate;
 
@@ -104,7 +108,7 @@ class AnalyticsService {
       const data = await response.json();
       this.stats = { ...this.stats, ...data };
     } catch (error) {
-      console.error('Failed to fetch initial analytics data:', error);
+      logger.error('Failed to fetch initial analytics data', error as Error);
     }
   }
 }

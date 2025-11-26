@@ -1,0 +1,4 @@
+Split,Real_Samples,Fake_Samples,Total_Samples,Image_Size,Augmentation
+Training,720000,720000,1440000,224x224,Yes
+Validation,180000,180000,360000,224x224,No
+Test,50000,50000,100000,224x224,No

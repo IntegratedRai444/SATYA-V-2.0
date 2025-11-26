@@ -1,6 +1,0 @@
-{
-  "scripts": {
-    "find-unused": "node find-unused-files.js",
-    "find-unused:install": "npm install --save-dev glob @babel/parser @babel/traverse chalk"
-  }
-}

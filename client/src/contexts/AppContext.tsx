@@ -23,6 +23,7 @@ type AppState = {
 type Action =
   | { type: 'SET_THEME'; payload: 'light' | 'dark' | 'system' }
   | { type: 'SET_ONLINE_STATUS'; payload: boolean }
+  | { type: 'SET_KEYBOARD_USER'; payload: boolean }
   | { type: 'ADD_NOTIFICATION'; payload: Notification }
   | { type: 'REMOVE_NOTIFICATION'; payload: string }
   | { type: 'UPDATE_NOTIFICATION_SETTINGS'; payload: Partial<AppState['notificationSettings']> }
@@ -65,6 +66,8 @@ function appReducer(state: AppState, action: Action): AppState {
       return { ...state, theme: action.payload };
     case 'SET_ONLINE_STATUS':
       return { ...state, isOnline: action.payload };
+    case 'SET_KEYBOARD_USER':
+      return { ...state, isKeyboardUser: action.payload };
     case 'ADD_NOTIFICATION':
       return { ...state, notifications: [...state.notifications, action.payload] };
     case 'REMOVE_NOTIFICATION':
@@ -95,7 +98,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     defaultOptions: {
       queries: {
         staleTime: 5 * 60 * 1000, // 5 minutes
-        cacheTime: 30 * 60 * 1000, // 30 minutes
+        gcTime: 30 * 60 * 1000, // 30 minutes
         refetchOnWindowFocus: false,
         retry: 1,
       },
@@ -132,7 +135,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const root = window.document.documentElement;
     root.classList.remove('light', 'dark');
-    
+
     if (state.theme === 'system') {
       const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
       root.classList.add(isDark ? 'dark' : 'light');
@@ -145,7 +148,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     <AppContext.Provider value={{ state, dispatch }}>
       <QueryClientProvider client={queryClient}>
         {children}
-        <ReactQueryDevtools initialIsOpen={false} />
+        {/* DevTools only in development */}
+        {process.env.NODE_ENV === 'development' && (
+          <ReactQueryDevtools initialIsOpen={false} />
+        )}
       </QueryClientProvider>
     </AppContext.Provider>
   );

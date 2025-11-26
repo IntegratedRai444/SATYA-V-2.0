@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import apiClient from '../lib/api';
-import type { DashboardStats, Detection } from '../types/dashboard';
+import apiClient, { DashboardStats as ApiDashboardStats } from '../lib/api';
+import logger from '../lib/logger';
+import type { Detection } from '../types/dashboard';
 import { toast } from '../components/ui/use-toast';
 import type { ApiResponse } from '../lib/api';
 
@@ -25,30 +26,15 @@ const ActivityItemSchema = z.object({
   time: z.string(),
 });
 
-export interface StatItem extends z.infer<typeof StatItemSchema> {}
-export interface AnalysisData extends z.infer<typeof AnalysisDataSchema> {}
-export interface ActivityItem extends z.infer<typeof ActivityItemSchema> {}
+export interface StatItem extends z.infer<typeof StatItemSchema> { }
+export interface AnalysisData extends z.infer<typeof AnalysisDataSchema> { }
+export interface ActivityItem extends z.infer<typeof ActivityItemSchema> { }
 
 export interface DashboardData {
   stats: StatItem[];
   monthlyAnalysis: AnalysisData[];
   performanceMetrics: AnalysisData[];
   recentActivity: ActivityItem[];
-}
-
-// Type definitions for dashboard data
-interface DashboardStatsResponse {
-  stats: DashboardStats;
-}
-
-interface AnalyticsResponse {
-  monthly: AnalysisData[];
-  metrics: AnalysisData[];
-}
-
-interface ActivityResponse {
-  items: Detection[];
-  total: number;
 }
 
 // Error class for API errors
@@ -64,31 +50,31 @@ class DashboardServiceError extends Error {
 }
 
 // Transform API stats to dashboard stats
-const transformStats = (apiStats: DashboardStats): StatItem[] => {
+const transformStats = (apiStats: ApiDashboardStats): StatItem[] => {
   return [
     {
       title: 'Total Analyses',
-      value: apiStats.analyzedMedia.count,
-      change: apiStats.analyzedMedia.growth,
-      trend: apiStats.analyzedMedia.growthType === 'positive' ? 'up' : 'down',
+      value: apiStats.totalScans,
+      change: '+0%', // Placeholder as API doesn't provide growth yet
+      trend: 'neutral',
     },
     {
       title: 'Detected Deepfakes',
-      value: apiStats.detectedDeepfakes.count,
-      change: apiStats.detectedDeepfakes.growth,
-      trend: apiStats.detectedDeepfakes.growthType === 'positive' ? 'up' : 'down',
+      value: apiStats.manipulatedScans,
+      change: '+0%',
+      trend: 'neutral',
     },
     {
-      title: 'Avg. Detection Time',
-      value: apiStats.avgDetectionTime.time,
-      change: apiStats.avgDetectionTime.improvement,
-      trend: apiStats.avgDetectionTime.improvementType === 'positive' ? 'down' : 'up',
+      title: 'Avg. Confidence',
+      value: `${Math.round(apiStats.averageConfidence * 100)}%`,
+      change: '+0%',
+      trend: 'neutral',
     },
     {
-      title: 'Detection Accuracy',
-      value: `${apiStats.detectionAccuracy.percentage}%`,
-      change: apiStats.detectionAccuracy.improvement,
-      trend: apiStats.detectionAccuracy.improvementType === 'positive' ? 'up' : 'down',
+      title: 'Uncertain Scans',
+      value: apiStats.uncertainScans,
+      change: '+0%',
+      trend: 'neutral',
     },
   ];
 };
@@ -109,30 +95,32 @@ const transformActivity = (detections: Detection[]): ActivityItem[] => {
  * @returns Processed dashboard data
  * @throws {DashboardServiceError} When there's an error fetching or processing data
  */
-export const fetchDashboardData = async (params: {
+export const fetchDashboardData = async (_params: {
   timeRange: string;
   analysisType: string;
 }): Promise<DashboardData> => {
+
   try {
-    type StatsResponse = ApiResponse<{ stats: DashboardStats }>;
-    type AnalyticsResponse = ApiResponse<{ 
-      monthly: AnalysisData[]; 
-      metrics: AnalysisData[] 
+    // Define expected API response types for clarity and type safety
+    type StatsApiResponse = ApiResponse<ApiDashboardStats>;
+    type AnalyticsApiResponse = ApiResponse<{
+      monthly: AnalysisData[];
+      metrics: AnalysisData[];
     }>;
-    type ActivityResponse = ApiResponse<Detection[]>;
+    type ActivityApiResponse = ApiResponse<{ history: Detection[] }>;
 
     // Fetch all dashboard data in parallel using the apiClient methods
     const [statsRes, analyticsRes, activityRes] = await Promise.all([
-      apiClient.getDashboardStats(),
-      apiClient.getUserAnalytics(),
-      apiClient.getRecentActivity()
+      apiClient.getDashboardStats() as Promise<StatsApiResponse>,
+      apiClient.getUserAnalytics() as Promise<AnalyticsApiResponse>,
+      apiClient.getAnalysisHistory({ limit: 5 }) as Promise<ActivityApiResponse>
     ]);
 
     // Validate and transform responses
-    const stats = statsRes.success ? transformStats(statsRes.data) : [];
+    const stats = statsRes.success && statsRes.data ? transformStats(statsRes.data) : [];
     const monthlyAnalysis = analyticsRes.success ? (analyticsRes.data as any)?.monthly || [] : [];
     const performanceMetrics = analyticsRes.success ? (analyticsRes.data as any)?.metrics || [] : [];
-    const recentActivity = activityRes.success ? transformActivity((activityRes.data as any)?.items || []) : [];
+    const recentActivity = activityRes.success ? transformActivity((activityRes.data as any)?.history || []) : [];
 
     // Validate data with Zod schemas
     const validatedData = {
@@ -145,7 +133,7 @@ export const fetchDashboardData = async (params: {
     return validatedData;
   } catch (error) {
     if (error instanceof z.ZodError) {
-      console.error('Validation error in dashboard service:', error.errors);
+      logger.error('Validation error in dashboard service', new Error(JSON.stringify(error.errors)));
       throw new DashboardServiceError(
         'Data validation failed',
         422,
@@ -170,7 +158,7 @@ export const fetchDashboardData = async (params: {
       };
     } else {
       // Handle non-Error case
-      console.error('Unexpected error type:', error);
+      logger.error('Unexpected error type', new Error(String(error)));
       throw new DashboardServiceError(
         'An unknown error occurred',
         500,

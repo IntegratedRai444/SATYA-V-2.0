@@ -1,17 +1,56 @@
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { useState, useRef, useEffect } from 'react';
 import {
   FiHome,
   FiZap,
   FiClock,
   FiSettings,
   FiHelpCircle,
+  FiUser,
+  FiLogOut,
+  FiChevronDown,
 } from 'react-icons/fi';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
-import { useUser } from '@/hooks/useUser';
+import { useAuth } from '@/contexts/AuthContext';
+
 
 const Navbar = () => {
   const location = useLocation();
-  const { user } = useUser();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowUserMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleLogout = async () => {
+    await logout();
+    window.location.href = '/login';
+  };
+
+  // Get first letter of user's name (from full_name or username)
+  const getUserInitial = () => {
+    if (!user) return 'U';
+    // Try to get first letter from full name if available, otherwise from username
+    const name = user.fullName || user.username || 'User';
+    return name.charAt(0).toUpperCase();
+  };
+
+  // Get display name (full name or username)
+  const getDisplayName = () => {
+    if (!user) return 'User';
+    return user.fullName || user.username || 'User';
+  };
 
   const navItems = [
     { icon: FiHome, label: 'Home', path: '/dashboard' },
@@ -54,6 +93,7 @@ const Navbar = () => {
             return (
               <button
                 key={item.path}
+                onClick={() => navigate(item.path)}
                 className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[15px] font-medium transition-all duration-200 ${
                   active
                     ? 'bg-[#00BFFF] text-white shadow-lg shadow-cyan-500/30'
@@ -72,9 +112,67 @@ const Navbar = () => {
           {/* Notification Bell with real-time updates */}
           <NotificationBell />
           
-          {/* User Avatar */}
-          <div className="w-9 h-9 rounded-full bg-[#00BFFF] flex items-center justify-center text-white font-bold text-[14px] shadow-lg shadow-cyan-500/30 cursor-pointer hover:shadow-cyan-500/50 transition-shadow">
-            U
+          {/* User Profile Dropdown */}
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+            >
+              {/* User Avatar */}
+              <div className="w-9 h-9 rounded-full bg-[#00BFFF] flex items-center justify-center text-white font-bold text-[14px] shadow-lg shadow-cyan-500/30 cursor-pointer hover:shadow-cyan-500/50 transition-shadow">
+                {getUserInitial()}
+              </div>
+              <FiChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Dropdown Menu */}
+            {showUserMenu && (
+              <div className="absolute right-0 mt-2 w-64 bg-[#1C2128] border border-white/10 rounded-lg shadow-xl overflow-hidden z-50">
+                {/* User Info Section */}
+                <div className="px-4 py-3 border-b border-white/10">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-full bg-[#00BFFF] flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-cyan-500/30">
+                      {getUserInitial()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white font-semibold text-sm truncate">
+                        {getDisplayName()}
+                      </p>
+                      {user?.email && (
+                        <p className="text-gray-400 text-xs truncate">
+                          {user.email}
+                        </p>
+                      )}
+                      <p className="text-[#00BFFF] text-xs font-medium mt-0.5 capitalize">
+                        {user?.role || 'User'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Menu Items */}
+                <div className="py-1">
+                  <button
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      navigate('/settings');
+                    }}
+                    className="w-full px-4 py-2.5 flex items-center gap-3 text-gray-300 hover:bg-white/5 hover:text-white transition-colors"
+                  >
+                    <FiUser className="w-4 h-4" />
+                    <span className="text-sm">Profile Settings</span>
+                  </button>
+                  
+                  <button
+                    onClick={handleLogout}
+                    className="w-full px-4 py-2.5 flex items-center gap-3 text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors"
+                  >
+                    <FiLogOut className="w-4 h-4" />
+                    <span className="text-sm">Logout</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

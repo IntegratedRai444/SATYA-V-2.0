@@ -99,11 +99,13 @@
   }
 
   body {
-    @apply font-sans text-foreground min-h-screen flex flex-col;
+    @apply font-sans text-foreground flex flex-col;
     background-color: #0a0a0a;
     color: #ffffff;
     font-feature-settings: 'rlig' 1, 'calt' 1;
     transition: background-color 200ms ease-in-out, color 200ms ease-in-out;
+    height: 100vh;
+    overflow: hidden;
   }
 
   h1, h2, h3, h4, h5, h6 {

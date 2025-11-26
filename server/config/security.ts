@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { logger } from './logger';
 
 export interface RateLimitRule {
@@ -404,21 +404,6 @@ export const defaultSecurityConfig: SecurityConfig = {
     securityEvents: true,
     failedLoginAttempts: true,
     sensitiveOperations: true
-  },
-  
-  // Security Headers
-  headers: {
-    xssProtection: true,
-    noSniff: true,
-    xFrameOptions: true,
-    xContentTypeOptions: true,
-    referrerPolicy: 'strict-origin-when-cross-origin',
-    permissionsPolicy: {
-      'geolocation': ["'none'"],
-      'camera': ["'none'"],
-      'microphone': ["'none'"],
-      'payment': ["'none'"]
-    }
   }
 };
 

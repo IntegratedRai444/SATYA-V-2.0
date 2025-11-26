@@ -1,0 +1,6 @@
+Model,Accuracy,Precision,Recall,F1-Score,AUC-ROC,Inference_Time_Seconds,Model_Size_MB,Parameters_Millions
+ResNet50,94.2,93.8,94.6,94.2,0.97,0.5,200,25.6
+EfficientNet-B4,95.1,94.5,95.7,95.1,0.98,0.8,150,19.3
+3D CNN (Video),91.8,90.5,93.2,91.8,0.95,2.5,500,45.2
+Wav2Vec2 (Audio),89.5,88.2,91.0,89.6,0.93,0.3,100,95.0
+Multimodal Fusion,95.7,95.2,96.3,95.7,0.98,3.0,800,140.1

@@ -1,28 +1,27 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { FiSend, FiPaperclip, FiX, FiLoader } from 'react-icons/fi';
+import { FiSend, FiLoader } from 'react-icons/fi';
 import { useToast } from '../ui/use-toast';
-import FileUpload from '../ui/FileUpload';
 import ChatMessage, { MessageStatus } from './ChatMessage';
 import WelcomeMessage from './WelcomeMessage';
 import { sendMessage, getChatHistory, Message as MessageType, ChatHistoryItem } from '../../services/chatService';
 import { v4 as uuidv4 } from 'uuid';
-import { useWebSocket } from '../../hooks/useWebSocket';
 
 interface Message extends MessageType {
   status?: MessageStatus;
   error?: string;
 }
 
-const ChatInterface: React.FC = () => {
+interface ChatInterfaceProps {
+  initialPrompt?: string | null;
+}
+
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialPrompt }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
-  const [showFileUpload, setShowFileUpload] = useState(false);
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { isConnected: isWsConnected, sendMessage: sendWsMessage } = useWebSocket({ autoConnect: true });
   const { toast } = useToast();
 
   // Load conversation history on mount
@@ -58,6 +57,13 @@ const ChatInterface: React.FC = () => {
     loadConversation();
   }, [toast]);
 
+  // Handle initial prompt from navigation
+  useEffect(() => {
+    if (initialPrompt && !isSending && messages.length === 0) {
+      setInputValue(initialPrompt);
+    }
+  }, [initialPrompt, isSending, messages.length]);
+
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     scrollToBottom();
@@ -69,7 +75,17 @@ const ChatInterface: React.FC = () => {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if ((!inputValue.trim() && selectedFiles.length === 0) || isSending) return;
+    if (!inputValue.trim() || isSending) return;
+
+    // Validate message length (max 4000 characters)
+    if (inputValue.length > 4000) {
+      toast({
+        variant: 'destructive',
+        title: 'Message too long',
+        description: 'Please keep your message under 4000 characters.',
+      });
+      return;
+    }
 
     const userMessage: Message = {
       id: `msg_${uuidv4()}`,
@@ -82,32 +98,16 @@ const ChatInterface: React.FC = () => {
     setMessages(prev => [...prev, userMessage]);
     
     const messageText = inputValue;
-    const filesToSend = [...selectedFiles];
     setInputValue('');
-    setSelectedFiles([]);
-    setShowFileUpload(false);
     setIsSending(true);
 
     try {
-      // Send via WebSocket if available
-      if (isWsConnected) {
-        sendWsMessage({
-          type: 'new_message',
-          data: {
-            messageId: userMessage.id,
-            content: messageText,
-            conversationId,
-            files: filesToSend.map(f => f.name)
-          }
-        });
-      }
-
       const response = await sendMessage(
         messageText,
         conversationId,
-        filesToSend,
+        [],
         {
-          model: 'gpt-4',
+          model: 'gpt-4o-mini',
           temperature: 0.7,
           includeSources: true
         }
@@ -174,18 +174,6 @@ const ChatInterface: React.FC = () => {
     }
   }, []);
 
-  const handleFilesSelected = useCallback((files: File[]) => {
-    setSelectedFiles(files);
-  }, []);
-
-  const removeFile = useCallback((index: number) => {
-    setSelectedFiles(prev => {
-      const newFiles = [...prev];
-      newFiles.splice(index, 1);
-      return newFiles;
-    });
-  }, []);
-
   return (
     <div className="flex flex-col h-full">
       {/* Messages container */}
@@ -213,69 +201,19 @@ const ChatInterface: React.FC = () => {
         )}
       </div>
 
-      {/* File Upload Area */}
-      {showFileUpload && (
-        <div className="px-6 pb-4">
-          <div className="bg-gray-800/50 rounded-xl p-4">
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="font-medium text-white">Upload Files</h3>
-              <button
-                onClick={() => setShowFileUpload(false)}
-                className="text-gray-400 hover:text-white"
-              >
-                <FiX />
-              </button>
-            </div>
-            <FileUpload
-              onFilesSelected={handleFilesSelected}
-              multiple={true}
-              maxSizeMB={50}
-            />
-          </div>
-        </div>
-      )}
 
-      {/* Selected Files Preview */}
-      {selectedFiles.length > 0 && !showFileUpload && (
-        <div className="px-6 pb-2">
-          <div className="flex flex-wrap gap-2">
-            {selectedFiles.map((file, index) => (
-              <div
-                key={index}
-                className="flex items-center bg-gray-800/70 rounded-full px-3 py-1.5 text-sm"
-              >
-                <span className="text-purple-400 mr-2">
-                  {file.name.length > 15 ? `${file.name.substring(0, 10)}...` : file.name}
-                </span>
-                <button
-                  onClick={() => removeFile(index)}
-                  className="text-gray-400 hover:text-white"
-                >
-                  <FiX className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Input Area */}
       <div className="p-4 border-t border-gray-800">
         <form onSubmit={handleSendMessage} className="relative">
           <div className="flex items-end space-x-2">
-            <button
-              type="button"
-              onClick={() => setShowFileUpload(!showFileUpload)}
-              className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg"
-            >
-              <FiPaperclip className="w-5 h-5" />
-            </button>
             <div className="flex-1 relative">
               <input
                 type="text"
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 placeholder="Message SATYA AI..."
+                maxLength={4000}
                 className="w-full bg-gray-800 border border-gray-700 rounded-xl py-3 pl-4 pr-12 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
@@ -286,9 +224,9 @@ const ChatInterface: React.FC = () => {
               />
               <button
                 type="submit"
-                disabled={(!inputValue.trim() && selectedFiles.length === 0) || isSending}
+                disabled={!inputValue.trim() || isSending}
                 className={`absolute right-2 bottom-2 p-1.5 rounded-lg flex items-center justify-center ${
-                  (inputValue.trim() || selectedFiles.length > 0) && !isSending
+                  inputValue.trim() && !isSending
                     ? 'text-white bg-purple-600 hover:bg-purple-700'
                     : 'text-gray-600 bg-gray-700 cursor-not-allowed'
                 }`}
@@ -305,9 +243,14 @@ const ChatInterface: React.FC = () => {
             </div>
           </div>
         </form>
-        <p className="text-xs text-gray-500 text-center mt-2">
-          SATYA AI can make mistakes. Consider checking important information.
-        </p>
+        <div className="flex items-center justify-between mt-2">
+          <p className="text-xs text-gray-500">
+            SATYA AI can make mistakes. Consider checking important information.
+          </p>
+          <p className="text-xs text-gray-500">
+            {inputValue.length}/4000
+          </p>
+        </div>
       </div>
     </div>
   );

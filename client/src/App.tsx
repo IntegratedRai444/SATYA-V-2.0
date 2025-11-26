@@ -9,7 +9,6 @@ import { AppProvider } from '@/contexts/AppContext';
 import { RealtimeProvider } from '@/contexts/RealtimeContext';
 import { router } from './utils/router';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
-import { useAnalytics } from '@/hooks/useAnalytics';
 import { useEffect } from 'react';
 
 // Create a client
@@ -25,12 +24,15 @@ const queryClient = new QueryClient({
 
 // Analytics wrapper component
 const AnalyticsWrapper = ({ children }: { children: React.ReactNode }) => {
-  const { trackPageView } = useAnalytics();
   const location = window.location;
 
   useEffect(() => {
-    trackPageView();
-  }, [location.pathname, trackPageView]);
+    // Track page view analytics
+    // TODO: Integrate with proper analytics service (Google Analytics, Mixpanel, etc.)
+    if (import.meta.env.DEV) {
+      console.log('Page view:', location.pathname);
+    }
+  }, [location.pathname]);
 
   return <>{children}</>;
 };

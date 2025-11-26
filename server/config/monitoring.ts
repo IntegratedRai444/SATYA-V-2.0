@@ -1,5 +1,5 @@
 import { createLogger, format, transports } from 'winston';
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { defaultSecurityConfig } from './security';
 
 // Initialize logger

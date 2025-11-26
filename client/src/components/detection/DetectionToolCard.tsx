@@ -1,6 +1,6 @@
 import React from 'react';
 import { Check, ArrowRight } from 'lucide-react';
-import { useLocation } from 'wouter';
+import { useNavigate } from 'react-router-dom';
 
 interface DetectionTool {
   title: string;
@@ -15,10 +15,10 @@ interface DetectionToolCardProps {
 }
 
 const DetectionToolCard: React.FC<DetectionToolCardProps> = ({ tool }) => {
-  const [, setLocation] = useLocation();
+  const navigate = useNavigate();
 
   const handleStartAnalysis = () => {
-    setLocation(tool.path);
+    navigate(tool.path);
   };
 
   return (

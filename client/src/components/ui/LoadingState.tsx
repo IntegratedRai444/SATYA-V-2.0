@@ -42,7 +42,6 @@ export default function LoadingState({
   connectionStatus = 'checking',
   isLoading = true,
   className = '',
-  children,
   variant = 'page',
   skeletonCount = 3,
 }: LoadingStateProps) {
@@ -112,7 +111,7 @@ export default function LoadingState({
               <div className="w-8 h-8 bg-green-500 rounded-full"></div>
             </div>
           )}
-          
+
           <h2 className="text-xl font-semibold text-white mb-2">
             {error ? 'Connection Error' : message}
           </h2>
@@ -128,7 +127,7 @@ export default function LoadingState({
         {error && (
           <div className="mb-6 p-4 bg-red-900/20 border border-red-500/20 rounded-lg">
             <p className="text-red-400 text-sm mb-2">{error}</p>
-            
+
             {/* Development Tips */}
             {import.meta.env.DEV && (
               <div className="text-xs text-slate-400 mt-3 space-y-1">
@@ -165,14 +164,7 @@ export default function LoadingState({
           </div>
         )}
 
-        {/* Demo Mode Indicator */}
-        {error?.includes('demo mode') && (
-          <div className="mt-4 p-3 bg-yellow-900/20 border border-yellow-500/20 rounded-lg">
-            <p className="text-yellow-400 text-sm">
-              🚧 Running in demo mode - some features may be limited
-            </p>
-          </div>
-        )}
+
       </div>
     </div>
   );

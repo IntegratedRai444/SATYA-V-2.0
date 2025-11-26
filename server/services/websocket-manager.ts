@@ -1,14 +1,21 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { Server } from 'http';
+import { Server, IncomingMessage } from 'http';
 import { jwtAuthService } from './jwt-auth-service';
-import { fileProcessor, ProcessingJob } from './file-processor';
+import { fileProcessor } from './file-processor';
+import type { ProcessingJob } from './file-processor';
 import { logger } from '../config';
 import { rateLimitRules } from '../middleware/advanced-rate-limiting';
+import { extractTokenFromQuery } from '../utils/token-utils';
 
 interface AuthenticatedWebSocket extends WebSocket {
   userId?: number;
   username?: string;
   isAlive?: boolean;
+}
+
+interface AuthenticatedRequest extends IncomingMessage {
+  userId?: number;
+  username?: string;
 }
 
 interface WebSocketMessage {
@@ -32,21 +39,44 @@ class WebSocketManager {
   initialize(server: Server): void {
     this.wss = new WebSocketServer({ 
       server,
-      path: '/ws',
-      verifyClient: this.verifyClient.bind(this)
+      path: '/api/v1/dashboard/ws',
+      verifyClient: (info, callback) => {
+        this.verifyClientAsync(info)
+          .then(result => {
+            if (result.valid) {
+              // Attach user info to request for later use
+              const authReq = info.req as AuthenticatedRequest;
+              authReq.userId = result.userId;
+              authReq.username = result.username;
+              callback(true);
+            } else {
+              logger.warn('WebSocket authentication failed', {
+                reason: result.reason,
+                ip: info.req.headers['x-forwarded-for'] || info.req.socket.remoteAddress
+              });
+              callback(false, 401, result.reason || 'Authentication failed');
+            }
+          })
+          .catch(error => {
+            logger.error('WebSocket verification error', {
+              error: error.message
+            });
+            callback(false, 500, 'Internal server error');
+          });
+      }
     });
 
     this.wss.on('connection', this.handleConnection.bind(this));
     this.startHeartbeat();
     this.setupFileProcessorListeners();
 
-    logger.info('WebSocket server initialized');
+    logger.info('WebSocket server initialized at /api/v1/dashboard/ws');
   }
 
   /**
-   * Verify client connection (authentication)
+   * Verify client connection (authentication) - async version
    */
-  private async verifyClient(info: any): Promise<boolean> {
+  private async verifyClientAsync(info: any): Promise<{ valid: boolean; userId?: number; username?: string; reason?: string }> {
     try {
       const ip = info.req.headers['x-forwarded-for'] || info.req.socket.remoteAddress;
       
@@ -66,8 +96,7 @@ class WebSocketManager {
       const attempt = this.connectionAttempts.get(key) || { count: 0, lastAttempt: 0 };
       if (now - attempt.lastAttempt < rateLimit.windowMs && attempt.count >= rateLimit.maxRequests) {
         logger.warn(`WebSocket connection rate limited for IP: ${ip}`);
-        info.req.rateLimited = true;
-        return false;
+        return { valid: false, reason: 'Rate limit exceeded' };
       }
       
       // Update attempt count
@@ -76,35 +105,43 @@ class WebSocketManager {
         lastAttempt: now
       });
 
-      const url = new URL(info.req.url, 'http://localhost');
-      const token = url.searchParams.get('token');
+      // Extract token from query parameter
+      const token = extractTokenFromQuery(info.req.url || '');
 
       if (!token) {
-        return false;
+        logger.debug('WebSocket connection rejected: No token provided');
+        return { valid: false, reason: 'No authentication token' };
       }
 
+      // Verify token
       const payload = await jwtAuthService.verifyToken(token);
       if (!payload) {
-        return false;
+        logger.debug('WebSocket connection rejected: Invalid token');
+        return { valid: false, reason: 'Invalid or expired token' };
       }
 
-      // Store user info for later use
-      info.req.userId = payload.userId;
-      info.req.username = payload.username;
+      logger.debug('WebSocket authentication successful', {
+        userId: payload.userId,
+        username: payload.username
+      });
 
-      return true;
+      return {
+        valid: true,
+        userId: payload.userId,
+        username: payload.username
+      };
     } catch (error) {
-      logger.debug('WebSocket authentication failed', {
+      logger.error('WebSocket authentication error', {
         error: (error as Error).message
       });
-      return false;
+      return { valid: false, reason: 'Authentication failed' };
     }
   }
 
   /**
    * Handle new WebSocket connection
    */
-  private handleConnection(ws: AuthenticatedWebSocket, req: any): void {
+  private handleConnection(ws: AuthenticatedWebSocket, req: AuthenticatedRequest): void {
     const userId = req.userId;
     const username = req.username;
     const clientId = req.headers['x-client-id'] || `client_${Date.now()}`;
@@ -125,6 +162,7 @@ class WebSocketManager {
     (ws as any).connectedAt = Date.now();
     (ws as any).lastActivity = Date.now();
     (ws as any).messageQueue = [];
+    (ws as any).maxQueueSize = 50; // Limit queue size per client
 
     // Add client to user's connection set
     if (!this.clients.has(userId)) {
@@ -294,6 +332,16 @@ class WebSocketManager {
           messageType: message.type 
         });
         
+        // Check queue size limit
+        const maxQueueSize = (ws as any).maxQueueSize || 50;
+        if ((ws as any).messageQueue.length >= maxQueueSize) {
+          logger.warn('WebSocket message queue full, dropping oldest message', {
+            userId: ws.userId,
+            queueSize: (ws as any).messageQueue.length
+          });
+          (ws as any).messageQueue.shift(); // Remove oldest message
+        }
+        
         // Add to queue with retry count
         (ws as any).messageQueue.push({
           ...message,
@@ -392,14 +440,67 @@ class WebSocketManager {
         }
       });
     });
+
+    fileProcessor.on('jobCompleted', (job: ProcessingJob) => {
+      // Send job completion notification
+      this.sendToUser(job.userId, {
+        type: 'job_completed',
+        data: {
+          jobId: job.id,
+          status: job.status,
+          result: job.result,
+          timestamp: Date.now()
+        }
+      });
+
+      // Send dashboard update for real-time chart
+      this.sendToUser(job.userId, {
+        type: 'dashboard_update',
+        data: {
+          type: 'scan_completed',
+          jobId: job.id,
+          timestamp: Date.now()
+        }
+      });
+    });
     
+    // Throttle map to limit progress events to once per second per job
+    const progressThrottle = new Map<string, number>();
+    const PROGRESS_THROTTLE_MS = 1000; // 1 second
+    const MAX_THROTTLE_ENTRIES = 100;
+    const THROTTLE_CLEANUP_INTERVAL = 60000; // 1 minute
+
+    // Periodic cleanup of throttle map
+    const throttleCleanupInterval = setInterval(() => {
+      const now = Date.now();
+      const fiveMinutesAgo = now - 5 * 60 * 1000;
+      
+      for (const [jobId, timestamp] of progressThrottle.entries()) {
+        if (timestamp < fiveMinutesAgo) {
+          progressThrottle.delete(jobId);
+        }
+      }
+      
+      logger.debug(`Progress throttle map cleaned up. Size: ${progressThrottle.size}`);
+    }, THROTTLE_CLEANUP_INTERVAL);
+
     fileProcessor.on('jobProgress', (job: ProcessingJob, stage?: string, progress?: number) => {
+      const now = Date.now();
+      const lastSent = progressThrottle.get(job.id) || 0;
+      
+      // Only send progress update if at least 1 second has passed since last update
+      if (now - lastSent < PROGRESS_THROTTLE_MS) {
+        return;
+      }
+      
+      progressThrottle.set(job.id, now);
+      
       const progressUpdate = {
         jobId: job.id,
         status: job.status,
         progress: progress || job.progress,
         stage: stage || 'processing',
-        timestamp: Date.now(),
+        timestamp: now,
         estimatedCompletion: this.calculateEstimatedCompletion(job),
         metrics: job.metrics || {}
       };
@@ -408,6 +509,16 @@ class WebSocketManager {
         type: 'job_progress',
         data: progressUpdate
       });
+      
+      // Immediate cleanup if map gets too large
+      if (progressThrottle.size > MAX_THROTTLE_ENTRIES) {
+        const fiveMinutesAgo = now - 5 * 60 * 1000;
+        for (const [jobId, timestamp] of progressThrottle.entries()) {
+          if (timestamp < fiveMinutesAgo) {
+            progressThrottle.delete(jobId);
+          }
+        }
+      }
     });
     
     fileProcessor.on('jobStage', (job: ProcessingJob, stage: string) => {
@@ -528,6 +639,17 @@ class WebSocketManager {
     if (!job.startedAt) return null;
     let total = 0;
     this.clients.forEach(clientSet => {
+      total += clientSet.size;
+    });
+    return total;
+  }
+
+  /**
+   * Get total number of connections across all users
+   */
+  private getTotalConnections(): number {
+    let total = 0;
+    this.clients.forEach((clientSet) => {
       total += clientSet.size;
     });
     return total;

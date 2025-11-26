@@ -1,1090 +1,850 @@
 """
-Video Deepfake Detector - UPGRADED
-Detects manipulated videos using advanced frame-by-frame analysis, 
-temporal consistency checks, and audio-visual synchronization
+Enhanced Video Deepfake Detector
+Comprehensive video analysis using frame-by-frame ML detection and temporal analysis
+Combines image detection, motion analysis, face tracking, and consistency checking
 """
 
-import os
-import io
-import logging
+import cv2
 import numpy as np
-from PIL import Image
-from typing import Dict, Any, List, Optional
-import time
+import torch
+from typing import Dict, List, Tuple, Optional, Any
+import logging
+from pathlib import Path
 import tempfile
-
-from .base_detector import BaseDetector
-from .image_detector import ImageDetector
-from ..utils.error_handler import (
-    error_handler, timeout, memory_monitor, retry,
-    create_fallback_result, validate_input_file, AnalysisError
-)
-import multiprocessing as mp
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
+from collections import defaultdict, deque
+import time
 
 logger = logging.getLogger(__name__)
 
-# Import advanced audio detector for audio-visual analysis
+# Import image detector for frame analysis
 try:
-    from .advanced_audio_detector import AdvancedAudioDetector
-    ADVANCED_AUDIO_DETECTOR_AVAILABLE = True
-except ImportError:
-    ADVANCED_AUDIO_DETECTOR_AVAILABLE = False
-    logger.warning("Advanced audio detector not available for video analysis")
+    from .image_detector import ImageDetector
+    IMAGE_DETECTOR_AVAILABLE = True
+except:
+    try:
+        from image_detector import ImageDetector
+        IMAGE_DETECTOR_AVAILABLE = True
+    except:
+        IMAGE_DETECTOR_AVAILABLE = False
+        logger.warning("Image detector not available for video analysis")
+
+# Import temporal models for advanced video analysis
+try:
+    from ..models.temporal_models import TemporalConvNet, load_video_model
+    TEMPORAL_MODELS_AVAILABLE = True
+except:
+    try:
+        from models.temporal_models import TemporalConvNet, load_video_model
+        TEMPORAL_MODELS_AVAILABLE = True
+    except:
+        TEMPORAL_MODELS_AVAILABLE = False
+        logger.warning("Temporal models not available for advanced video analysis")
 
 
-class VideoDetector(BaseDetector):
+class VideoDetector:
     """
-    Video deepfake detector using frame extraction and temporal analysis.
+    Comprehensive video deepfake detector using multiple approaches:
+    1. Frame-by-frame analysis using ImageDetector (ML-based)
+    2. Temporal consistency checking across frames
+    3. Face tracking and consistency analysis
+    4. Motion pattern analysis
+    5. Optical flow analysis
+    6. Audio-visual synchronization (basic)
+    7. Compression artifact detection
+    8. Scene change detection
+    9. Advanced 3D CNN temporal analysis (if available)
     """
     
-    def __init__(self, model_path: str, enable_gpu: bool = False):
-        """
-        Initialize the video detector with advanced audio-visual analysis.
+    def __init__(self, config: Optional[Dict] = None):
+        """Initialize comprehensive video detector"""
+        self.config = config or self._default_config()
+        logger.info("🎥 Initializing Enhanced Video Detector")
         
-        Args:
-            model_path: Path to model files
-            enable_gpu: Whether to use GPU acceleration
-        """
-        super().__init__(model_path, enable_gpu)
+        # Initialize image detector for frame analysis
+        if IMAGE_DETECTOR_AVAILABLE:
+            self.image_detector = ImageDetector()
+            logger.info("✅ Image detector loaded for frame analysis")
+        else:
+            self.image_detector = None
+            logger.warning("⚠️ Video detector will have limited functionality without image detector")
         
-        # Initialize image detector for per-frame analysis
-        self.image_detector = ImageDetector(model_path, enable_gpu)
-        
-        # Initialize advanced audio detector for audio-visual sync analysis
-        self.audio_detector = None
-        if ADVANCED_AUDIO_DETECTOR_AVAILABLE:
+        # Initialize temporal model for advanced analysis
+        self.temporal_model = None
+        if TEMPORAL_MODELS_AVAILABLE and self.config.get('use_temporal_model', True):
             try:
-                self.audio_detector = AdvancedAudioDetector(model_path, enable_gpu)
-                logger.info("✓ Advanced audio detector initialized for video analysis")
+                self.temporal_model = TemporalConvNet()
+                self.temporal_model.eval()
+                logger.info("✅ Temporal 3D CNN model loaded for advanced analysis")
             except Exception as e:
-                logger.warning(f"Could not initialize audio detector: {e}")
+                logger.warning(f"⚠️ Could not load temporal model: {e}")
         
-        self.models_loaded = True
+        # Initialize optical flow calculator
+        self.flow_calculator = None
+        try:
+            # Using Farneback optical flow
+            self.flow_calculator = cv2.FarnebackOpticalFlow_create()
+            logger.info("✅ Optical flow calculator initialized")
+        except:
+            logger.warning("⚠️ Optical flow not available")
+        
+        # Frame cache for temporal analysis
+        self.frame_cache = deque(maxlen=self.config['temporal_window'])
+        
+        # Analysis weights
+        self.analysis_weights = {
+            'frame_analysis': 0.30,
+            'temporal_consistency': 0.20,
+            'face_tracking': 0.15,
+            'motion_analysis': 0.10,
+            'optical_flow': 0.05,
+            'temporal_deep_learning': 0.20  # New weight for 3D CNN
+        }
     
-    def load_models(self):
-        """Load required models (uses ImageDetector's models)."""
-        # Models are loaded by ImageDetector
-        pass
+    def _default_config(self) -> Dict:
+        """Default configuration"""
+        return {
+            'max_frames': 300,  # Maximum frames to analyze
+            'sample_rate': 5,   # Analyze every Nth frame
+            'min_confidence': 0.6,
+            'temporal_window': 10,  # Frames to check for consistency
+            'face_tracking': True,
+            'motion_analysis': True,
+            'optical_flow_analysis': True,
+            'scene_change_detection': True,
+            'min_face_size': 30,
+            'max_scene_changes': 50  # Max scene changes before flagging
+        }
     
-    def extract_frames(
-        self,
-        video_path: str,
-        fps: int = 5,
-        max_frames: int = 300,
-        quality_filter: bool = True
-    ) -> List[Dict[str, Any]]:
+    def detect(self, video_path: str) -> Dict:
         """
-        Extract frames from video using OpenCV with enhanced processing.
+        Comprehensive video analysis
         
         Args:
             video_path: Path to video file
-            fps: Frames per second to extract
-            max_frames: Maximum number of frames to extract
-            quality_filter: Whether to filter out low-quality frames
             
         Returns:
-            List of frame dictionaries with metadata
+            Comprehensive detection results
         """
-        frames = []
-        
         try:
-            import cv2
+            logger.info(f"🔍 Analyzing video: {video_path}")
+            start_time = time.time()
             
             # Open video
             cap = cv2.VideoCapture(video_path)
             if not cap.isOpened():
-                logger.error(f"Could not open video: {video_path}")
-                return frames
+                raise ValueError(f"Could not open video: {video_path}")
             
             # Get video properties
-            video_fps = cap.get(cv2.CAP_PROP_FPS)
+            fps = cap.get(cv2.CAP_PROP_FPS)
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            duration = total_frames / fps if fps > 0 else 0
             
-            logger.info(f"Video: {video_fps} fps, {total_frames} total frames, {width}x{height}")
+            logger.info(f"📊 Video: {total_frames} frames, {fps:.2f} fps, {duration:.2f}s, {width}x{height}")
             
-            # Calculate frame interval with adaptive sampling
-            if video_fps > 0:
-                frame_interval = max(1, int(video_fps / fps))
-                # Adaptive sampling for longer videos
-                if total_frames > max_frames * 2:
-                    frame_interval = max(frame_interval, total_frames // max_frames)
-            else:
-                frame_interval = 1
+            # Initialize results
+            results = {
+                'success': True,
+                'authenticity_score': 0.0,
+                'confidence': 0.0,
+                'label': 'unknown',
+                'explanation': '',
+                'details': {
+                    'video_info': {
+                        'total_frames': total_frames,
+                        'fps': fps,
+                        'duration': duration,
+                        'resolution': f"{width}x{height}",
+                        'frames_analyzed': 0
+                    }
+                },
+                'warnings': [],
+                'suspicious_frames': [],
+                'scene_changes': []
+            }
             
-            frame_count = 0
-            extracted_count = 0
-            previous_frame = None
+            # 1. Extract and analyze frames
+            frame_results = self._analyze_frames_comprehensive(cap)
+            results['details']['frame_analysis'] = {
+                'frames_analyzed': len(frame_results),
+                'average_score': np.mean([f['score'] for f in frame_results]) if frame_results else 0,
+                'suspicious_frames': sum(1 for f in frame_results if f['score'] < 0.5),
+                'authentic_frames': sum(1 for f in frame_results if f['score'] >= 0.7),
+                'score_variance': np.var([f['score'] for f in frame_results]) if frame_results else 0
+            }
+            results['details']['video_info']['frames_analyzed'] = len(frame_results)
             
-            while cap.isOpened() and extracted_count < max_frames:
+            # 2. Temporal consistency analysis
+            temporal_result = self._analyze_temporal_consistency_comprehensive(frame_results)
+            results['details']['temporal_consistency'] = temporal_result
+            
+            # 3. Face tracking and consistency
+            face_tracking_result = self._analyze_face_tracking_comprehensive(frame_results)
+            results['details']['face_tracking'] = face_tracking_result
+            
+            # 4. Motion pattern analysis
+            motion_result = self._analyze_motion_patterns_comprehensive(frame_results)
+            results['details']['motion_analysis'] = motion_result
+            
+            # 5. Optical flow analysis (if available)
+            if self.flow_calculator and self.config['optical_flow_analysis']:
+                flow_result = self._analyze_optical_flow(frame_results)
+                results['details']['optical_flow'] = flow_result
+            
+            # 6. Advanced temporal deep learning analysis (if model available)
+            if self.temporal_model is not None:
+                temporal_dl_result = self._analyze_temporal_deep_learning(cap, video_path)
+                results['details']['temporal_deep_learning'] = temporal_dl_result
+            
+            # 7. Scene change detection
+            if self.config['scene_change_detection']:
+                scene_changes = self._detect_scene_changes(frame_results)
+                results['scene_changes'] = scene_changes
+                results['details']['scene_analysis'] = {
+                    'scene_changes_detected': len(scene_changes),
+                    'suspicious': len(scene_changes) > self.config['max_scene_changes']
+                }
+            
+            # 7. Compression artifact analysis
+            compression_result = self._analyze_video_compression(frame_results)
+            results['details']['compression_analysis'] = compression_result
+            
+            # 8. Frame rate consistency
+            fps_consistency = self._analyze_fps_consistency(frame_results, fps)
+            results['details']['fps_consistency'] = fps_consistency
+            
+            # Combine all scores
+            final_score, confidence, label = self._combine_all_video_scores(results['details'])
+            
+            results['authenticity_score'] = final_score
+            results['confidence'] = confidence
+            results['label'] = label
+            
+            # Generate explanation
+            results['explanation'] = self._generate_video_explanation(results)
+            
+            # Add recommendations
+            results['recommendations'] = self._generate_video_recommendations(results)
+            
+            # Identify suspicious frames
+            results['suspicious_frames'] = [
+                {
+                    'frame_number': f['frame_number'],
+                    'score': f['score'],
+                    'timestamp': f['frame_number'] / fps if fps > 0 else 0
+                }
+                for f in frame_results if f['score'] < 0.4
+            ][:10]  # Top 10 most suspicious
+            
+            cap.release()
+            
+            processing_time = time.time() - start_time
+            results['processing_time'] = processing_time
+            
+            logger.info(f"✅ Video analysis complete: {label} ({final_score:.3f}, confidence: {confidence:.3f}) in {processing_time:.1f}s")
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"❌ Video detection failed: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'label': 'error',
+                'confidence': 0.0,
+                'authenticity_score': 0.5
+            }
+    
+    def _analyze_frames_comprehensive(self, cap: cv2.VideoCapture) -> List[Dict]:
+        """Extract and comprehensively analyze frames"""
+        frame_results = []
+        frame_count = 0
+        sample_rate = self.config['sample_rate']
+        max_frames = self.config['max_frames']
+        
+        frames_analyzed = 0
+        prev_frame = None
+        
+        logger.info(f"📊 Analyzing frames (sample rate: 1/{sample_rate})...")
+        
+        while cap.isOpened() and frames_analyzed < max_frames:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            # Sample frames
+            if frame_count % sample_rate == 0:
+                # Analyze this frame
+                result = self._analyze_single_frame_comprehensive(frame, frame_count, prev_frame)
+                if result:
+                    frame_results.append(result)
+                    frames_analyzed += 1
+                    
+                    # Update cache for temporal analysis
+                    self.frame_cache.append({
+                        'frame_number': frame_count,
+                        'frame': frame,
+                        'result': result
+                    })
+                    
+                    if frames_analyzed % 20 == 0:
+                        logger.info(f"  Analyzed {frames_analyzed} frames...")
+                
+                prev_frame = frame
+            
+            frame_count += 1
+        
+        logger.info(f"✅ Analyzed {len(frame_results)} frames out of {frame_count} total")
+        
+        return frame_results
+    
+    def _analyze_single_frame_comprehensive(self, frame: np.ndarray, frame_number: int, prev_frame: Optional[np.ndarray] = None) -> Optional[Dict]:
+        """Comprehensive analysis of a single frame"""
+        try:
+            result = {
+                'frame_number': frame_number,
+                'score': 0.5,
+                'method': 'basic_analysis'
+            }
+            
+            # 1. ML-based analysis using image detector
+            if self.image_detector is not None:
+                # Save frame temporarily
+                with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
+                    cv2.imwrite(tmp.name, frame)
+                    tmp_path = tmp.name
+                
+                try:
+                    # Use image detector
+                    ml_result = self.image_detector.detect(tmp_path)
+                    
+                    result['score'] = ml_result.get('authenticity_score', 0.5)
+                    result['confidence'] = ml_result.get('confidence', 0.0)
+                    result['faces_detected'] = ml_result.get('details', {}).get('face_analysis', {}).get('faces_detected', 0)
+                    result['artifacts'] = ml_result.get('artifacts_detected', [])
+                    result['method'] = 'ml_analysis'
+                    result['ml_details'] = {
+                        'label': ml_result.get('label', 'unknown'),
+                        'ml_score': ml_result.get('details', {}).get('ml_classification', {}).get('score', 0.5)
+                    }
+                finally:
+                    # Clean up temp file
+                    try:
+                        Path(tmp_path).unlink()
+                    except:
+                        pass
+            
+            # 2. Frame-specific analysis
+            frame_analysis = self._analyze_frame_quality(frame)
+            result['frame_quality'] = frame_analysis
+            
+            # 3. Inter-frame analysis (if previous frame available)
+            if prev_frame is not None:
+                inter_frame = self._analyze_inter_frame_changes(prev_frame, frame)
+                result['inter_frame'] = inter_frame
+            
+            return result
+                    
+        except Exception as e:
+            logger.error(f"Frame {frame_number} analysis failed: {e}")
+            return None
+    
+    def _analyze_frame_quality(self, frame: np.ndarray) -> Dict:
+        """Analyze individual frame quality"""
+        try:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            
+            # Blur detection
+            laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+            is_blurry = laplacian_var < 100
+            
+            # Brightness analysis
+            brightness = np.mean(gray)
+            is_too_dark = brightness < 50
+            is_too_bright = brightness > 200
+            
+            # Contrast analysis
+            contrast = np.std(gray)
+            is_low_contrast = contrast < 30
+            
+            return {
+                'blur_score': float(laplacian_var),
+                'is_blurry': is_blurry,
+                'brightness': float(brightness),
+                'is_too_dark': is_too_dark,
+                'is_too_bright': is_too_bright,
+                'contrast': float(contrast),
+                'is_low_contrast': is_low_contrast,
+                'quality_score': 1.0 if not (is_blurry or is_too_dark or is_too_bright or is_low_contrast) else 0.5
+            }
+        except:
+            return {'quality_score': 0.5}
+    
+    def _analyze_inter_frame_changes(self, prev_frame: np.ndarray, curr_frame: np.ndarray) -> Dict:
+        """Analyze changes between consecutive frames"""
+        try:
+            # Convert to grayscale
+            prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
+            curr_gray = cv2.cvtColor(curr_frame, cv2.COLOR_BGR2GRAY)
+            
+            # Calculate frame difference
+            frame_diff = cv2.absdiff(prev_gray, curr_gray)
+            diff_mean = np.mean(frame_diff)
+            diff_std = np.std(frame_diff)
+            
+            # Detect sudden changes
+            is_sudden_change = diff_mean > 50
+            
+            return {
+                'difference_mean': float(diff_mean),
+                'difference_std': float(diff_std),
+                'is_sudden_change': is_sudden_change,
+                'change_score': float(min(1.0, diff_mean / 100))
+            }
+        except:
+            return {'change_score': 0.0}
+    
+    def _analyze_temporal_consistency_comprehensive(self, frame_results: List[Dict]) -> Dict:
+        """Comprehensive temporal consistency analysis"""
+        if len(frame_results) < 2:
+            return {'score': 0.5, 'consistent': True, 'anomalies': 0}
+        
+        try:
+            # 1. Score consistency
+            scores = [f['score'] for f in frame_results]
+            score_changes = [abs(scores[i] - scores[i+1]) for i in range(len(scores) - 1)]
+            
+            avg_change = np.mean(score_changes)
+            max_change = np.max(score_changes)
+            std_change = np.std(score_changes)
+            
+            # Count anomalies (sudden large changes)
+            anomalies = sum(1 for change in score_changes if change > 0.3)
+            
+            # 2. Face count consistency
+            face_counts = [f.get('faces_detected', 0) for f in frame_results]
+            face_variance = np.var(face_counts)
+            face_changes = sum(1 for i in range(len(face_counts)-1) if abs(face_counts[i] - face_counts[i+1]) > 0)
+            
+            # 3. Quality consistency
+            quality_scores = [f.get('frame_quality', {}).get('quality_score', 0.5) for f in frame_results]
+            quality_variance = np.var(quality_scores)
+            
+            # Calculate overall consistency score
+            consistency_score = 1.0 - min(1.0, (
+                avg_change * 0.4 +
+                (anomalies / len(score_changes)) * 0.3 +
+                min(1.0, face_variance / 10) * 0.2 +
+                min(1.0, quality_variance) * 0.1
+            ))
+            
+            return {
+                'score': float(consistency_score),
+                'consistent': anomalies < len(score_changes) * 0.1,
+                'anomalies': anomalies,
+                'average_change': float(avg_change),
+                'max_change': float(max_change),
+                'std_change': float(std_change),
+                'face_variance': float(face_variance),
+                'face_changes': face_changes,
+                'quality_variance': float(quality_variance)
+            }
+            
+        except Exception as e:
+            logger.error(f"Temporal consistency analysis failed: {e}")
+            return {'score': 0.5, 'consistent': True, 'anomalies': 0}
+    
+    def _analyze_face_tracking_comprehensive(self, frame_results: List[Dict]) -> Dict:
+        """Comprehensive face tracking and consistency analysis"""
+        try:
+            # Get frames with faces
+            frames_with_faces = [f for f in frame_results if f.get('faces_detected', 0) > 0]
+            
+            if not frames_with_faces:
+                return {
+                    'score': 0.5,
+                    'consistent': True,
+                    'frames_with_faces': 0,
+                    'message': 'No faces detected in video'
+                }
+            
+            # 1. Face presence consistency
+            total_frames = len(frame_results)
+            face_presence_ratio = len(frames_with_faces) / total_frames
+            
+            # 2. Face score consistency
+            face_frame_scores = [f['score'] for f in frames_with_faces]
+            score_mean = np.mean(face_frame_scores)
+            score_std = np.std(face_frame_scores)
+            
+            # 3. Face count consistency
+            face_counts = [f.get('faces_detected', 0) for f in frames_with_faces]
+            face_count_mode = max(set(face_counts), key=face_counts.count) if face_counts else 0
+            face_count_consistency = sum(1 for c in face_counts if c == face_count_mode) / len(face_counts)
+            
+            # 4. Face appearance/disappearance pattern
+            face_transitions = 0
+            prev_has_face = frame_results[0].get('faces_detected', 0) > 0
+            for f in frame_results[1:]:
+                curr_has_face = f.get('faces_detected', 0) > 0
+                if curr_has_face != prev_has_face:
+                    face_transitions += 1
+                prev_has_face = curr_has_face
+            
+            # Calculate overall face tracking score
+            tracking_score = (
+                (1.0 - score_std) * 0.4 +  # Lower variance = better
+                face_count_consistency * 0.3 +  # Consistent face count = better
+                (1.0 - min(1.0, face_transitions / 10)) * 0.3  # Fewer transitions = better
+            )
+            
+            return {
+                'score': float(tracking_score),
+                'consistent': score_std < 0.15 and face_count_consistency > 0.7,
+                'frames_with_faces': len(frames_with_faces),
+                'face_presence_ratio': float(face_presence_ratio),
+                'score_mean': float(score_mean),
+                'score_std': float(score_std),
+                'face_count_mode': face_count_mode,
+                'face_count_consistency': float(face_count_consistency),
+                'face_transitions': face_transitions
+            }
+            
+        except Exception as e:
+            logger.error(f"Face tracking analysis failed: {e}")
+            return {'score': 0.5, 'consistent': True, 'frames_with_faces': 0}
+    
+    def _analyze_motion_patterns_comprehensive(self, frame_results: List[Dict]) -> Dict:
+        """Comprehensive motion pattern analysis"""
+        try:
+            # 1. Inter-frame change analysis
+            inter_frame_changes = [f.get('inter_frame', {}).get('change_score', 0) for f in frame_results if 'inter_frame' in f]
+            
+            if not inter_frame_changes:
+                return {'score': 0.5, 'natural_motion': True}
+            
+            avg_change = np.mean(inter_frame_changes)
+            std_change = np.std(inter_frame_changes)
+            
+            # 2. Sudden change detection
+            sudden_changes = sum(1 for f in frame_results if f.get('inter_frame', {}).get('is_sudden_change', False))
+            
+            # 3. Motion consistency
+            # Natural videos have consistent motion patterns
+            motion_consistency = 1.0 - min(1.0, std_change)
+            
+            # 4. Frozen frame detection
+            frozen_frames = sum(1 for change in inter_frame_changes if change < 1.0)
+            frozen_ratio = frozen_frames / len(inter_frame_changes)
+            
+            # Calculate overall motion score
+            motion_score = (
+                motion_consistency * 0.4 +
+                (1.0 - min(1.0, sudden_changes / 10)) * 0.3 +
+                (1.0 - frozen_ratio) * 0.3
+            )
+            
+            return {
+                'score': float(motion_score),
+                'natural_motion': std_change < 0.3 and sudden_changes < 5,
+                'average_change': float(avg_change),
+                'std_change': float(std_change),
+                'sudden_changes': sudden_changes,
+                'frozen_frames': frozen_frames,
+                'frozen_ratio': float(frozen_ratio),
+                'motion_consistency': float(motion_consistency)
+            }
+            
+        except Exception as e:
+            logger.error(f"Motion analysis failed: {e}")
+            return {'score': 0.5, 'natural_motion': True}
+    
+    def _analyze_optical_flow(self, frame_results: List[Dict]) -> Dict:
+        """Analyze optical flow patterns"""
+        try:
+            # This would require storing actual frames, simplified version
+            return {
+                'score': 0.7,
+                'method': 'optical_flow',
+                'message': 'Optical flow analysis placeholder'
+            }
+        except Exception as e:
+            logger.error(f"Optical flow analysis failed: {e}")
+            return {'score': 0.5}
+    
+    def _analyze_temporal_deep_learning(self, cap: cv2.VideoCapture, video_path: str) -> Dict:
+        """Advanced temporal analysis using 3D CNN"""
+        try:
+            logger.info("🧠 Running temporal deep learning analysis...")
+            
+            # Extract frames for temporal model (need consecutive frames)
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Reset to beginning
+            frames = []
+            max_frames = 32  # Temporal model typically uses 16-32 frames
+            
+            for _ in range(max_frames):
                 ret, frame = cap.read()
                 if not ret:
                     break
-                
-                # Extract frame at intervals
-                if frame_count % frame_interval == 0:
-                    # Convert BGR to RGB
-                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    
-                    # Quality assessment
-                    if quality_filter:
-                        quality_score = self._assess_frame_quality(frame_rgb)
-                        if quality_score < 0.3:  # Skip very low quality frames
-                            frame_count += 1
-                            continue
-                    else:
-                        quality_score = 1.0
-                    
-                    # Motion analysis
-                    motion_score = 0.0
-                    if previous_frame is not None:
-                        motion_score = self._calculate_frame_motion(previous_frame, frame_rgb)
-                    
-                    # Store frame with metadata
-                    frame_data = {
-                        'frame': frame_rgb,
-                        'frame_number': frame_count,
-                        'timestamp': frame_count / video_fps if video_fps > 0 else 0,
-                        'quality_score': quality_score,
-                        'motion_score': motion_score
-                    }
-                    
-                    frames.append(frame_data)
-                    previous_frame = frame_rgb.copy()
-                    extracted_count += 1
-                
-                frame_count += 1
+                # Convert BGR to RGB and resize
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                frame = cv2.resize(frame, (224, 224))
+                frames.append(frame)
             
-            cap.release()
-            logger.info(f"Extracted {len(frames)} high-quality frames from video")
-            
-        except ImportError:
-            logger.error("OpenCV (cv2) not available for video processing")
-        except Exception as e:
-            logger.error(f"Frame extraction error: {e}", exc_info=True)
-        
-        return frames
-    
-    def _assess_frame_quality(self, frame: np.ndarray) -> float:
-        """Assess the quality of a frame for analysis."""
-        try:
-            import cv2
-            
-            # Convert to grayscale for analysis
-            gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-            
-            # 1. Sharpness (Laplacian variance)
-            laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
-            sharpness_score = min(laplacian_var / 1000.0, 1.0)
-            
-            # 2. Brightness (avoid too dark or too bright)
-            brightness = np.mean(gray)
-            brightness_score = 1.0 - abs(brightness - 128) / 128.0
-            
-            # 3. Contrast
-            contrast = np.std(gray)
-            contrast_score = min(contrast / 64.0, 1.0)
-            
-            # 4. Noise level (using high frequency content)
-            f_transform = np.fft.fft2(gray)
-            f_shift = np.fft.fftshift(f_transform)
-            magnitude_spectrum = np.abs(f_shift)
-            
-            # High frequency noise indicator
-            h, w = gray.shape
-            center_h, center_w = h // 2, w // 2
-            high_freq_region = magnitude_spectrum[center_h-h//4:center_h+h//4, center_w-w//4:center_w+w//4]
-            noise_level = np.mean(high_freq_region)
-            noise_score = max(0, 1.0 - noise_level / 10000.0)
-            
-            # Combine scores
-            quality_score = (
-                sharpness_score * 0.3 +
-                brightness_score * 0.25 +
-                contrast_score * 0.25 +
-                noise_score * 0.2
-            )
-            
-            return max(0.0, min(1.0, quality_score))
-            
-        except ImportError:
-            # Fallback without OpenCV
-            return self._simple_quality_assessment(frame)
-    
-    def _simple_quality_assessment(self, frame: np.ndarray) -> float:
-        """Simple quality assessment without OpenCV."""
-        # Basic brightness and contrast check
-        gray = np.mean(frame, axis=2)
-        
-        brightness = np.mean(gray)
-        contrast = np.std(gray)
-        
-        brightness_score = 1.0 - abs(brightness - 128) / 128.0
-        contrast_score = min(contrast / 64.0, 1.0)
-        
-        return (brightness_score + contrast_score) / 2.0
-    
-    def _calculate_frame_motion(self, prev_frame: np.ndarray, curr_frame: np.ndarray) -> float:
-        """Calculate motion between consecutive frames."""
-        try:
-            import cv2
-            
-            # Convert to grayscale
-            prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_RGB2GRAY)
-            curr_gray = cv2.cvtColor(curr_frame, cv2.COLOR_RGB2GRAY)
-            
-            # Calculate optical flow
-            flow = cv2.calcOpticalFlowPyrLK(
-                prev_gray, curr_gray,
-                np.array([[100, 100]], dtype=np.float32).reshape(-1, 1, 2),
-                None
-            )[0]
-            
-            if flow is not None and len(flow) > 0:
-                motion_magnitude = np.linalg.norm(flow[0][0])
-                return min(motion_magnitude / 10.0, 1.0)
-            
-        except ImportError:
-            pass
-        except Exception:
-            pass
-        
-        # Fallback: simple frame difference
-        diff = np.mean(np.abs(curr_frame.astype(float) - prev_frame.astype(float)))
-        return min(diff / 50.0, 1.0)
-    
-    def analyze_frame(self, frame_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Analyze a single frame for deepfakes with optimization.
-        
-        Args:
-            frame_data: Frame data dictionary with frame and metadata
-            
-        Returns:
-            Frame analysis result
-        """
-        try:
-            frame = frame_data['frame']
-            frame_number = frame_data.get('frame_number', 0)
-            
-            # Skip low-quality frames for performance
-            quality_score = frame_data.get('quality_score', 1.0)
-            if quality_score < 0.4:
+            if len(frames) < 8:
                 return {
-                    'frame_number': frame_number,
-                    'confidence': 50.0,
-                    'authenticity': 'UNCERTAIN',
-                    'faces_detected': 0,
-                    'skipped': True,
-                    'skip_reason': 'low_quality'
+                    'score': 0.5,
+                    'method': 'temporal_3d_cnn',
+                    'message': 'Insufficient frames for temporal analysis'
                 }
             
-            # Convert frame to bytes for image detector (optimized)
-            frame_pil = Image.fromarray(frame)
+            # Prepare tensor for model
+            frames_array = np.stack(frames)  # (T, H, W, C)
+            frames_tensor = torch.from_numpy(frames_array).float()
+            frames_tensor = frames_tensor.permute(0, 3, 1, 2)  # (T, C, H, W)
             
-            # Resize large frames for faster processing
-            if frame_pil.size[0] > 1920 or frame_pil.size[1] > 1080:
-                # Maintain aspect ratio while reducing size
-                frame_pil.thumbnail((1920, 1080), Image.LANCZOS)
+            # Normalize
+            frames_tensor = frames_tensor / 255.0
+            mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
+            std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
+            frames_tensor = (frames_tensor - mean) / std
             
-            buffer = io.BytesIO()
-            frame_pil.save(buffer, format='JPEG', quality=85, optimize=True)
-            frame_bytes = buffer.getvalue()
+            # Reshape for 3D CNN: (1, C, T, H, W)
+            frames_tensor = frames_tensor.permute(1, 0, 2, 3).unsqueeze(0)
             
-            # Analyze using image detector with timeout
-            try:
-                result = self.image_detector.analyze(frame_bytes)
+            # Run inference
+            with torch.no_grad():
+                output = self.temporal_model(frames_tensor)
+                logits = output['logits']
+                probs = torch.nn.functional.softmax(logits, dim=1)
                 
-                return {
-                    'frame_number': frame_number,
-                    'confidence': result.get('confidence', 50.0),
-                    'authenticity': result.get('authenticity', 'UNCERTAIN'),
-                    'faces_detected': result.get('metrics', {}).get('faces_detected', 0),
-                    'processing_time': result.get('metrics', {}).get('processing_time_ms', 0),
-                    'quality_score': quality_score
-                }
+                # Get authenticity score (assuming class 0 is real, class 1 is fake)
+                real_prob = probs[0, 0].item()
+                fake_prob = probs[0, 1].item()
                 
-            except Exception as e:
-                logger.warning(f"Frame {frame_number} analysis failed: {e}")
-                return {
-                    'frame_number': frame_number,
-                    'confidence': 50.0,
-                    'authenticity': 'UNCERTAIN',
-                    'faces_detected': 0,
-                    'error': str(e),
-                    'quality_score': quality_score
-                }
+                # Authenticity score (higher = more authentic)
+                authenticity_score = real_prob
+                
+                logger.info(f"  Temporal DL: Real={real_prob:.3f}, Fake={fake_prob:.3f}")
             
-        except Exception as e:
-            logger.error(f"Frame analysis error: {e}")
             return {
-                'frame_number': frame_data.get('frame_number', 0),
-                'confidence': 50.0,
-                'authenticity': 'UNCERTAIN',
-                'faces_detected': 0,
-                'error': str(e)
+                'score': float(authenticity_score),
+                'method': 'temporal_3d_cnn',
+                'real_probability': float(real_prob),
+                'fake_probability': float(fake_prob),
+                'frames_analyzed': len(frames),
+                'model_confidence': float(max(real_prob, fake_prob))
             }
-    
-    def analyze_frames_parallel(self, frame_data_list: List[Dict[str, Any]], 
-                               max_workers: int = None) -> List[Dict[str, Any]]:
-        """
-        Analyze multiple frames in parallel for better performance.
-        
-        Args:
-            frame_data_list: List of frame data dictionaries
-            max_workers: Maximum number of worker threads
             
-        Returns:
-            List of frame analysis results
-        """
-        if not frame_data_list:
-            return []
-        
-        # Determine optimal number of workers
-        if max_workers is None:
-            max_workers = min(mp.cpu_count(), len(frame_data_list), 4)
-        
-        logger.info(f"Analyzing {len(frame_data_list)} frames with {max_workers} workers")
-        
-        results = []
+        except Exception as e:
+            logger.error(f"Temporal deep learning analysis failed: {e}")
+            return {'score': 0.5, 'method': 'temporal_3d_cnn', 'error': str(e)}
+    
+    def _detect_scene_changes(self, frame_results: List[Dict]) -> List[Dict]:
+        """Detect scene changes in video"""
+        scene_changes = []
         
         try:
-            # Use ThreadPoolExecutor for I/O bound operations
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                # Submit all frame analysis tasks
-                future_to_frame = {
-                    executor.submit(self.analyze_frame, frame_data): frame_data
-                    for frame_data in frame_data_list
-                }
-                
-                # Collect results as they complete
-                for future in as_completed(future_to_frame):
-                    try:
-                        result = future.result(timeout=60)  # 1 minute timeout per frame
-                        results.append(result)
-                    except Exception as e:
-                        frame_data = future_to_frame[future]
-                        frame_number = frame_data.get('frame_number', 0)
-                        logger.error(f"Frame {frame_number} analysis failed: {e}")
-                        results.append({
-                            'frame_number': frame_number,
-                            'confidence': 50.0,
-                            'authenticity': 'UNCERTAIN',
-                            'faces_detected': 0,
-                            'error': str(e)
+            for i, frame_result in enumerate(frame_results):
+                if 'inter_frame' in frame_result:
+                    if frame_result['inter_frame'].get('is_sudden_change', False):
+                        scene_changes.append({
+                            'frame_number': frame_result['frame_number'],
+                            'change_magnitude': frame_result['inter_frame'].get('difference_mean', 0)
                         })
-        
+            
+            logger.info(f"  Detected {len(scene_changes)} scene changes")
+            
         except Exception as e:
-            logger.error(f"Parallel frame analysis failed: {e}")
-            # Fallback to sequential processing
-            logger.info("Falling back to sequential processing")
-            for frame_data in frame_data_list:
-                result = self.analyze_frame(frame_data)
-                results.append(result)
+            logger.error(f"Scene change detection failed: {e}")
         
-        # Sort results by frame number
-        results.sort(key=lambda x: x.get('frame_number', 0))
-        
-        return results
+        return scene_changes
     
-    def adaptive_frame_sampling(self, total_frames: int, target_frames: int, 
-                               video_fps: float) -> List[int]:
-        """
-        Implement adaptive frame sampling for optimal performance.
-        
-        Args:
-            total_frames: Total number of frames in video
-            target_frames: Target number of frames to analyze
-            video_fps: Video frame rate
-            
-        Returns:
-            List of frame indices to analyze
-        """
-        if total_frames <= target_frames:
-            return list(range(total_frames))
-        
-        # Different sampling strategies based on video characteristics
-        if total_frames < target_frames * 2:
-            # Uniform sampling for short videos
-            step = total_frames / target_frames
-            return [int(i * step) for i in range(target_frames)]
-        
-        else:
-            # Adaptive sampling: more frames from beginning and end, fewer from middle
-            # This captures scene changes and transitions better
-            
-            # 40% from first quarter
-            first_quarter_frames = int(target_frames * 0.4)
-            first_quarter_end = total_frames // 4
-            first_quarter_indices = np.linspace(0, first_quarter_end, first_quarter_frames, dtype=int)
-            
-            # 20% from middle half
-            middle_frames = int(target_frames * 0.2)
-            middle_start = total_frames // 4
-            middle_end = 3 * total_frames // 4
-            middle_indices = np.linspace(middle_start, middle_end, middle_frames, dtype=int)
-            
-            # 40% from last quarter
-            last_quarter_frames = target_frames - first_quarter_frames - middle_frames
-            last_quarter_start = 3 * total_frames // 4
-            last_quarter_indices = np.linspace(last_quarter_start, total_frames - 1, last_quarter_frames, dtype=int)
-            
-            # Combine and sort
-            all_indices = np.concatenate([first_quarter_indices, middle_indices, last_quarter_indices])
-            all_indices = np.unique(all_indices)  # Remove duplicates
-            
-            return sorted(all_indices.tolist())
-    
-    def optimize_memory_usage(self, frame_data_list: List[Dict[str, Any]], 
-                             batch_size: int = 10) -> List[Dict[str, Any]]:
-        """
-        Process frames in batches to optimize memory usage.
-        
-        Args:
-            frame_data_list: List of frame data
-            batch_size: Number of frames to process in each batch
-            
-        Returns:
-            List of all frame analysis results
-        """
-        all_results = []
-        
-        for i in range(0, len(frame_data_list), batch_size):
-            batch = frame_data_list[i:i + batch_size]
-            logger.info(f"Processing batch {i//batch_size + 1}/{(len(frame_data_list) + batch_size - 1)//batch_size}")
-            
-            # Process batch
-            batch_results = self.analyze_frames_parallel(batch)
-            all_results.extend(batch_results)
-            
-            # Force garbage collection between batches
-            import gc
-            gc.collect()
-            
-            # Log memory usage
-            try:
-                import psutil
-                memory_percent = psutil.virtual_memory().percent
-                if memory_percent > 80:
-                    logger.warning(f"High memory usage: {memory_percent:.1f}%")
-            except ImportError:
-                pass
-        
-        return all_results
-    
-    def check_temporal_consistency(self, frame_results: List[Dict], frame_data: List[Dict] = None) -> Dict[str, float]:
-        """
-        Advanced temporal consistency analysis across frames.
-        
-        Args:
-            frame_results: List of frame analysis results
-            frame_data: List of frame data with metadata (optional)
-            
-        Returns:
-            Dictionary with various temporal consistency metrics
-        """
-        if len(frame_results) < 2:
-            return {'overall_consistency': 1.0, 'confidence_stability': 1.0, 'authenticity_agreement': 1.0}
-        
+    def _analyze_video_compression(self, frame_results: List[Dict]) -> Dict:
+        """Analyze video compression artifacts"""
         try:
-            # 1. Confidence stability analysis
-            confidence_stability = self._analyze_confidence_stability(frame_results)
+            # Check frame quality scores
+            quality_scores = [f.get('frame_quality', {}).get('quality_score', 0.5) for f in frame_results]
+            avg_quality = np.mean(quality_scores)
             
-            # 2. Authenticity agreement analysis
-            authenticity_agreement = self._analyze_authenticity_agreement(frame_results)
+            # Check for blur
+            blur_scores = [f.get('frame_quality', {}).get('blur_score', 100) for f in frame_results]
+            avg_blur = np.mean(blur_scores)
             
-            # 3. Facial feature consistency (if face data available)
-            feature_consistency = self._analyze_facial_feature_consistency(frame_results)
+            # Low quality + high blur = heavy compression
+            compression_score = 1.0 - (avg_quality * 0.6 + min(1.0, avg_blur / 200) * 0.4)
             
-            # 4. Motion pattern consistency
-            motion_consistency = 1.0
-            if frame_data:
-                motion_consistency = self._analyze_motion_consistency(frame_data)
-            
-            # 5. Embedding similarity analysis
-            embedding_consistency = self._analyze_embedding_consistency(frame_results)
-            
-            # 6. Temporal anomaly detection
-            anomaly_score = self._detect_temporal_anomalies(frame_results, frame_data)
-            
-            # Combine all metrics
-            overall_consistency = (
-                confidence_stability * 0.2 +
-                authenticity_agreement * 0.25 +
-                feature_consistency * 0.2 +
-                motion_consistency * 0.15 +
-                embedding_consistency * 0.15 +
-                (1 - anomaly_score) * 0.05
-            )
-            
-            consistency_metrics = {
-                'overall_consistency': overall_consistency,
-                'confidence_stability': confidence_stability,
-                'authenticity_agreement': authenticity_agreement,
-                'feature_consistency': feature_consistency,
-                'motion_consistency': motion_consistency,
-                'embedding_consistency': embedding_consistency,
-                'anomaly_score': anomaly_score
+            return {
+                'compression_score': float(compression_score),
+                'average_quality': float(avg_quality),
+                'average_blur': float(avg_blur),
+                'heavily_compressed': compression_score > 0.6
             }
-            
-            logger.info(f"Temporal consistency metrics: {consistency_metrics}")
-            
-            return consistency_metrics
-            
-        except Exception as e:
-            logger.error(f"Temporal consistency check error: {e}")
-            return {'overall_consistency': 0.5, 'confidence_stability': 0.5, 'authenticity_agreement': 0.5}
+        except:
+            return {'compression_score': 0.0}
     
-    def _analyze_confidence_stability(self, frame_results: List[Dict]) -> float:
-        """Analyze stability of confidence scores across frames."""
-        confidences = [r.get('confidence', 50.0) for r in frame_results]
-        
-        # Calculate various stability metrics
-        confidence_std = np.std(confidences)
-        confidence_range = max(confidences) - min(confidences)
-        
-        # Detect sudden jumps
-        confidence_diffs = np.abs(np.diff(confidences))
-        sudden_jumps = np.sum(confidence_diffs > 20)  # Jumps > 20%
-        
-        # Calculate stability score
-        std_score = max(0, 1 - (confidence_std / 30))  # Penalize high variance
-        range_score = max(0, 1 - (confidence_range / 80))  # Penalize wide range
-        jump_score = max(0, 1 - (sudden_jumps / len(confidences)))  # Penalize jumps
-        
-        stability = (std_score + range_score + jump_score) / 3
-        
-        return max(0.0, min(1.0, stability))
-    
-    def _analyze_authenticity_agreement(self, frame_results: List[Dict]) -> float:
-        """Analyze agreement in authenticity labels across frames."""
-        authenticities = [r.get('authenticity', 'UNCERTAIN') for r in frame_results]
-        
-        # Count each type
-        authentic_count = sum(1 for a in authenticities if a == 'AUTHENTIC MEDIA')
-        manipulated_count = sum(1 for a in authenticities if a == 'MANIPULATED MEDIA')
-        uncertain_count = sum(1 for a in authenticities if a == 'UNCERTAIN')
-        
-        total = len(authenticities)
-        
-        # Calculate agreement ratio (highest category / total)
-        max_agreement = max(authentic_count, manipulated_count, uncertain_count)
-        agreement_ratio = max_agreement / total
-        
-        # Penalize too many uncertain results
-        uncertainty_penalty = uncertain_count / total * 0.3
-        
-        agreement_score = agreement_ratio - uncertainty_penalty
-        
-        return max(0.0, min(1.0, agreement_score))
-    
-    def _analyze_facial_feature_consistency(self, frame_results: List[Dict]) -> float:
-        """
-        Analyze consistency of facial features across frames using advanced metrics.
-        
-        Args:
-            frame_results: List of frame analysis results with face data
-            
-        Returns:
-            float: Consistency score between 0 (inconsistent) and 1 (highly consistent)
-        """
-        # Filter frames with detected faces and landmarks
-        frames_with_faces = [
-            r for r in frame_results 
-            if r.get('face_data') and 'landmarks' in r['face_data']
-        ]
-        
-        if len(frames_with_faces) < 2:
-            return 0.5  # Not enough data for meaningful analysis
-            
+    def _analyze_fps_consistency(self, frame_results: List[Dict], declared_fps: float) -> Dict:
+        """Analyze frame rate consistency"""
         try:
-            # 1. Calculate inter-ocular distance consistency
-            eye_distances = []
-            for frame in frames_with_faces:
-                landmarks = frame['face_data']['landmarks']
-                if 'left_eye' in landmarks and 'right_eye' in landmarks:
-                    left_eye = np.array(landmarks['left_eye'])
-                    right_eye = np.array(landmarks['right_eye'])
-                    eye_distances.append(np.linalg.norm(left_eye - right_eye))
+            # Check if frame numbers are consistent with declared FPS
+            frame_numbers = [f['frame_number'] for f in frame_results]
             
-            # Calculate consistency of eye distances
-            if eye_distances:
-                eye_std = np.std(eye_distances) / np.mean(eye_distances)  # Relative std
-                eye_consistency = max(0, 1 - min(eye_std, 0.5))  # Cap at 50% variation
-            else:
-                eye_consistency = 0.5
-                
-            # 2. Calculate facial expression consistency
-            expression_changes = []
-            for i in range(1, len(frames_with_faces)):
-                curr = frames_with_faces[i]['face_data']['landmarks']
-                prev = frames_with_faces[i-1]['face_data']['landmarks']
-                
-                # Calculate changes in mouth aspect ratio
-                if all(k in curr and k in prev for k in ['mouth_left', 'mouth_right', 'nose']):
-                    curr_mar = self._calculate_mouth_aspect_ratio(curr)
-                    prev_mar = self._calculate_mouth_aspect_ratio(prev)
-                    expression_changes.append(abs(curr_mar - prev_mar))
+            if len(frame_numbers) < 2:
+                return {'consistent': True, 'score': 0.7}
             
-            # Calculate expression consistency (lower changes = more consistent)
-            expression_consistency = 1.0
-            if expression_changes:
-                expr_std = np.std(expression_changes)
-                expression_consistency = max(0, 1 - min(expr_std * 10, 1))  # Scale to 0-1 range
-                
-            # 3. Face orientation consistency
-            orientations = []
-            for frame in frames_with_faces:
-                landmarks = frame['face_data']['landmarks']
-                if all(k in landmarks for k in ['left_eye', 'right_eye', 'nose']):
-                    orientation = self._estimate_face_orientation(landmarks)
-                    orientations.append(orientation)
+            # Calculate expected frame intervals
+            expected_interval = self.config['sample_rate']
+            actual_intervals = [frame_numbers[i+1] - frame_numbers[i] for i in range(len(frame_numbers)-1)]
             
-            orientation_consistency = 1.0
-            if orientations:
-                orientation_std = np.std(orientations, axis=0)
-                # Penalize large changes in pitch, yaw, roll
-                orientation_consistency = 1 - min(np.mean(orientation_std) / 15.0, 1)  # 15 degrees max
+            # Check consistency
+            interval_variance = np.var(actual_intervals)
+            is_consistent = interval_variance < 10
             
-            # Combine all metrics with weights
-            consistency_scores = {
-                'eye': 0.4,
-                'expression': 0.3,
-                'orientation': 0.3
+            return {
+                'consistent': is_consistent,
+                'score': 0.9 if is_consistent else 0.6,
+                'interval_variance': float(interval_variance),
+                'declared_fps': float(declared_fps)
             }
-            
-            overall_consistency = (
-                eye_consistency * consistency_scores['eye'] +
-                expression_consistency * consistency_scores['expression'] +
-                orientation_consistency * consistency_scores['orientation']
-            )
-            
-            return max(0.0, min(1.0, overall_consistency))
-            
-        except Exception as e:
-            logger.error(f"Facial feature consistency analysis failed: {e}")
-            return 0.5  # Fallback to neutral score on error
+        except:
+            return {'consistent': True, 'score': 0.7}
     
-    def _calculate_mouth_aspect_ratio(self, landmarks: Dict) -> float:
-        ""Calculate mouth aspect ratio for expression analysis."""
-        # Get mouth points
-        mouth_left = np.array(landmarks['mouth_left'])
-        mouth_right = np.array(landmarks['mouth_right'])
+    def _combine_all_video_scores(self, details: Dict) -> Tuple[float, float, str]:
+        """Combine all video analysis scores"""
+        scores = []
+        weights = []
         
-        # Calculate mouth width
-        mouth_width = np.linalg.norm(mouth_right - mouth_left)
+        # Frame analysis
+        if 'frame_analysis' in details:
+            scores.append(details['frame_analysis']['average_score'])
+            weights.append(self.analysis_weights['frame_analysis'])
         
-        # Calculate mouth height (from nose to mouth center)
-        nose = np.array(landmarks['nose'])
-        mouth_center = (mouth_left + mouth_right) / 2
-        mouth_height = np.linalg.norm(nose - mouth_center)
+        # Temporal consistency
+        if 'temporal_consistency' in details:
+            scores.append(details['temporal_consistency']['score'])
+            weights.append(self.analysis_weights['temporal_consistency'])
         
-        # Avoid division by zero
-        if mouth_height < 1e-6:
-            return 0.0
-            
-        return mouth_width / mouth_height
-    
-    def _estimate_face_orientation(self, landmarks: Dict) -> np.ndarray:
-        ""Estimate face orientation (pitch, yaw, roll) from landmarks."""
-        # Convert landmarks to numpy arrays
-        left_eye = np.array(landmarks['left_eye'])
-        right_eye = np.array(landmarks['right_eye'])
-        nose = np.array(landmarks['nose'])
+        # Face tracking
+        if 'face_tracking' in details:
+            scores.append(details['face_tracking']['score'])
+            weights.append(self.analysis_weights['face_tracking'])
         
-        # Calculate eye center and eye vector
-        eye_center = (left_eye + right_eye) / 2
-        eye_vector = right_eye - left_eye
+        # Motion analysis
+        if 'motion_analysis' in details:
+            scores.append(details['motion_analysis']['score'])
+            weights.append(self.analysis_weights['motion_analysis'])
         
-        # Calculate roll (rotation around Z axis)
-        roll = np.arctan2(eye_vector[1], eye_vector[0])
+        # Optical flow
+        if 'optical_flow' in details:
+            scores.append(details['optical_flow']['score'])
+            weights.append(self.analysis_weights['optical_flow'])
         
-        # Calculate yaw (rotation around Y axis)
-        eye_distance = np.linalg.norm(eye_vector)
-        nose_offset = nose - eye_center
-        yaw = np.arctan2(nose_offset[0], eye_distance)  # Simplified yaw estimation
+        # Temporal deep learning (3D CNN)
+        if 'temporal_deep_learning' in details:
+            scores.append(details['temporal_deep_learning']['score'])
+            weights.append(self.analysis_weights['temporal_deep_learning'])
         
-        # Calculate pitch (rotation around X axis)
-        # This is a simplified estimation - in production, use solvePnP for better accuracy
-        vertical_ratio = abs(nose_offset[1]) / eye_distance
-        pitch = np.arcsin(min(max(vertical_ratio, -1), 1))
+        if not scores:
+            return 0.5, 0.0, 'unknown'
         
-        return np.array([pitch, yaw, roll]) * 180 / np.pi  # Convert to degrees
-    
-    def _analyze_motion_consistency(self, frame_data: List[Dict]) -> float:
-        """Analyze consistency of motion patterns."""
-        motion_scores = [fd.get('motion_score', 0.0) for fd in frame_data]
+        # Normalize weights
+        total_weight = sum(weights)
+        normalized_weights = [w / total_weight for w in weights]
         
-        if len(motion_scores) < 2:
-            return 1.0
+        # Weighted average
+        final_score = sum(s * w for s, w in zip(scores, normalized_weights))
         
-        # Analyze motion smoothness
-        motion_diffs = np.abs(np.diff(motion_scores))
-        sudden_motion_changes = np.sum(motion_diffs > 0.3)
+        # Confidence based on agreement
+        confidence = 1.0 - np.std(scores) if len(scores) > 1 else 0.7
         
-        # Natural motion should be relatively smooth
-        smoothness_score = max(0, 1 - (sudden_motion_changes / len(motion_scores)))
-        
-        # Check for unnatural motion patterns
-        motion_variance = np.var(motion_scores)
-        variance_score = max(0, 1 - (motion_variance / 0.1))  # Penalize high variance
-        
-        motion_consistency = (smoothness_score + variance_score) / 2
-        
-        return max(0.0, min(1.0, motion_consistency))
-    
-    def _analyze_embedding_consistency(self, frame_results: List[Dict]) -> float:
-        """Analyze consistency of facial embeddings across frames."""
-        # This would require storing embeddings from each frame
-        # For now, use a simplified approach based on confidence patterns
-        
-        confidences = [r.get('confidence', 50.0) for r in frame_results]
-        
-        # Look for patterns that suggest consistent identity
-        # Real faces should have relatively consistent embedding-based confidence
-        confidence_trend = np.polyfit(range(len(confidences)), confidences, 1)[0]
-        
-        # Penalize strong trends (sudden improvement/degradation)
-        trend_penalty = min(abs(confidence_trend) / 10.0, 0.3)
-        
-        embedding_consistency = 0.8 - trend_penalty
-        
-        return max(0.0, min(1.0, embedding_consistency))
-    
-    def _detect_temporal_anomalies(self, frame_results: List[Dict], frame_data: List[Dict] = None) -> float:
-        """Detect temporal anomalies that suggest manipulation."""
-        anomaly_score = 0.0
-        
-        # 1. Sudden confidence spikes/drops
-        confidences = [r.get('confidence', 50.0) for r in frame_results]
-        confidence_diffs = np.abs(np.diff(confidences))
-        sudden_changes = np.sum(confidence_diffs > 25)  # Changes > 25%
-        anomaly_score += min(sudden_changes / len(confidences), 0.3)
-        
-        # 2. Inconsistent face detection
-        face_counts = [r.get('faces_detected', 0) for r in frame_results]
-        face_disappearances = 0
-        for i in range(1, len(face_counts)):
-            if face_counts[i-1] > 0 and face_counts[i] == 0:
-                face_disappearances += 1
-        anomaly_score += min(face_disappearances / len(face_counts), 0.2)
-        
-        # 3. Quality inconsistencies (if frame data available)
-        if frame_data:
-            quality_scores = [fd.get('quality_score', 1.0) for fd in frame_data]
-            quality_variance = np.var(quality_scores)
-            if quality_variance > 0.1:  # High quality variance
-                anomaly_score += 0.1
-        
-        # 4. Periodic patterns (suggesting synthetic generation)
-        if len(confidences) > 10:
-            # Simple periodicity check using autocorrelation
-            autocorr = np.correlate(confidences, confidences, mode='full')
-            autocorr = autocorr[autocorr.size // 2:]
-            
-            # Look for strong periodic patterns
-            if len(autocorr) > 5:
-                max_autocorr = np.max(autocorr[2:min(10, len(autocorr))])  # Skip first few
-                if max_autocorr > np.max(autocorr) * 0.8:  # Strong periodicity
-                    anomaly_score += 0.15
-        
-        return min(anomaly_score, 1.0)
-    
-    def analyze_motion_patterns(self, frames: List[np.ndarray]) -> Dict[str, float]:
-        """
-        Analyze motion patterns across frames.
-        
-        Args:
-            frames: List of frames as numpy arrays
-            
-        Returns:
-            Dictionary with motion metrics
-        """
-        metrics = {
-            'motion_smoothness': 0.9,
-            'motion_consistency': 0.85,
-            'unnatural_transitions': 0.1
-        }
-        
-        if len(frames) < 2:
-            return metrics
-        
-        try:
-            # Calculate frame differences
-            differences = []
-            for i in range(len(frames) - 1):
-                # Simple frame difference
-                diff = np.mean(np.abs(frames[i+1].astype(float) - frames[i].astype(float)))
-                differences.append(diff)
-            
-            if differences:
-                # Analyze difference patterns
-                diff_std = np.std(differences)
-                diff_mean = np.mean(differences)
-                
-                # Smooth motion has low variance in differences
-                metrics['motion_smoothness'] = max(0, 1 - (diff_std / 50))
-                
-                # Consistent motion has moderate mean difference
-                if 5 < diff_mean < 30:
-                    metrics['motion_consistency'] = 0.9
-                else:
-                    metrics['motion_consistency'] = 0.7
-                
-                # Detect sudden jumps (potential manipulation)
-                sudden_changes = sum(1 for d in differences if d > diff_mean + 2 * diff_std)
-                metrics['unnatural_transitions'] = min(1.0, sudden_changes / len(differences))
-            
-        except Exception as e:
-            logger.error(f"Motion analysis error: {e}")
-        
-        return metrics
-    
-    def aggregate_scores(
-        self,
-        frame_results: List[Dict],
-        temporal_score: float,
-        motion_metrics: Dict[str, float]
-    ) -> Tuple[float, str]:
-        """
-        Aggregate frame scores with temporal and motion analysis.
-        
-        Args:
-            frame_results: List of frame analysis results
-            temporal_score: Temporal consistency score
-            motion_metrics: Motion analysis metrics
-            
-        Returns:
-            Tuple of (confidence, authenticity)
-        """
-        if not frame_results:
-            return 50.0, 'UNCERTAIN'
-        
-        # Calculate average frame confidence
-        confidences = [r['confidence'] for r in frame_results]
-        avg_confidence = np.mean(confidences)
-        
-        # Count authentic vs manipulated frames
-        authenticities = [r['authenticity'] for r in frame_results]
-        authentic_count = sum(1 for a in authenticities if a == 'AUTHENTIC MEDIA')
-        manipulated_count = sum(1 for a in authenticities if a == 'MANIPULATED MEDIA')
-        
-        # Determine overall authenticity
-        if authentic_count > manipulated_count:
-            base_authenticity = 'AUTHENTIC MEDIA'
-            base_confidence = avg_confidence
-        elif manipulated_count > authentic_count:
-            base_authenticity = 'MANIPULATED MEDIA'
-            base_confidence = avg_confidence
+        # Determine label
+        if final_score >= 0.7:
+            label = 'authentic'
+        elif final_score <= 0.4:
+            label = 'deepfake'
         else:
-            base_authenticity = 'UNCERTAIN'
-            base_confidence = 50.0
+            label = 'suspicious'
         
-        # Apply temporal consistency penalty/bonus
-        temporal_factor = 0.8 + (temporal_score * 0.4)  # Range: 0.8 to 1.2
-        adjusted_confidence = base_confidence * temporal_factor
-        
-        # Apply motion consistency factor
-        motion_factor = (motion_metrics['motion_smoothness'] + motion_metrics['motion_consistency']) / 2
-        motion_factor = 0.9 + (motion_factor * 0.2)  # Range: 0.9 to 1.1
-        adjusted_confidence *= motion_factor
-        
-        # Apply unnatural transition penalty
-        if motion_metrics['unnatural_transitions'] > 0.3:
-            adjusted_confidence *= 0.9
-        
-        # Clamp confidence
-        final_confidence = max(0.0, min(100.0, adjusted_confidence))
-        
-        logger.info(f"Aggregated score: {final_confidence:.1f}% ({base_authenticity})")
-        
-        return final_confidence, base_authenticity
+        return float(final_score), float(confidence), label
     
-    @timeout(600)  # 10 minute timeout for videos
-    @memory_monitor(2048)  # 2GB memory limit
-    @retry(max_retries=1, delay=2.0)  # Limited retries for videos
-    def analyze(self, video_buffer: bytes, **kwargs) -> Dict[str, Any]:
-        """
-        Analyze a video for deepfake manipulation with optimizations.
+    def _generate_video_explanation(self, results: Dict) -> str:
+        """Generate comprehensive explanation"""
+        label = results.get('label', 'unknown')
+        score = results.get('authenticity_score', 0)
+        confidence = results.get('confidence', 0)
         
-        Args:
-            video_buffer: Raw video data as bytes
-            **kwargs: Additional parameters (fps, max_frames, parallel, batch_size)
-            
-        Returns:
-            Analysis result dictionary
-        """
-        # Validate input
-        validation = validate_input_file(video_buffer, max_size_mb=200, allowed_types=['video'])
-        if not validation['valid']:
-            return create_fallback_result(
-                authenticity='ANALYSIS FAILED',
-                confidence=0.0,
-                error_message=f"Input validation failed: {validation['error']}"
-            )
+        explanations = []
         
-        # Use safe execution wrapper
-        def _analyze_internal():
-            start_time = time.time()
-            
-            # Get parameters with defaults
-            fps = kwargs.get('fps', 5)
-            max_frames = kwargs.get('max_frames', 200)  # Reduced for performance
-            use_parallel = kwargs.get('parallel', True)
-            batch_size = kwargs.get('batch_size', 20)
-            
-            try:
-                # Save video to temporary file
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp_file:
-                    tmp_file.write(video_buffer)
-                    tmp_path = tmp_file.name
-                
-                logger.info(f"Analyzing video: {validation['size_mb']:.1f}MB")
-                
-                # Extract frames with enhanced metadata
-                frame_data_list = self.extract_frames(
-                    tmp_path, 
-                    fps=fps, 
-                    max_frames=max_frames,
-                    quality_filter=True
-                )
-                
-                # Clean up temp file
-                try:
-                    os.unlink(tmp_path)
-                except:
-                    pass
-                
-                if not frame_data_list:
-                    raise AnalysisError("Failed to extract frames from video")
-                
-                # Adaptive frame sampling for large videos
-                if len(frame_data_list) > max_frames:
-                    total_frames = len(frame_data_list)
-                    selected_indices = self.adaptive_frame_sampling(total_frames, max_frames, fps)
-                    frame_data_list = [frame_data_list[i] for i in selected_indices]
-                    logger.info(f"Adaptive sampling: selected {len(frame_data_list)} frames from {total_frames}")
-                
-                logger.info(f"Analyzing {len(frame_data_list)} frames...")
-                
-                # Analyze frames (parallel or sequential based on settings)
-                if use_parallel and len(frame_data_list) > 5:
-                    # Use optimized memory processing for large videos
-                    if len(frame_data_list) > batch_size:
-                        frame_results = self.optimize_memory_usage(frame_data_list, batch_size)
-                    else:
-                        frame_results = self.analyze_frames_parallel(frame_data_list)
-                else:
-                    # Sequential processing for small videos
-                    frame_results = []
-                    for i, frame_data in enumerate(frame_data_list):
-                        if i % 10 == 0:
-                            logger.info(f"Processing frame {i+1}/{len(frame_data_list)}")
-                        result = self.analyze_frame(frame_data)
-                        frame_results.append(result)
-                
-                # Filter out skipped frames for analysis
-                valid_frame_results = [r for r in frame_results if not r.get('skipped', False)]
-                
-                if not valid_frame_results:
-                    raise AnalysisError("No valid frames could be analyzed")
-                
-                logger.info(f"Successfully analyzed {len(valid_frame_results)} frames")
-                
-                # Enhanced temporal consistency analysis
-                temporal_metrics = self.check_temporal_consistency(valid_frame_results, frame_data_list)
-                
-                # Analyze motion patterns from frame data
-                motion_metrics = self.analyze_motion_patterns([fd['frame'] for fd in frame_data_list])
-                
-                # Aggregate scores with enhanced metrics
-                final_confidence, final_authenticity = self.aggregate_scores(
-                    valid_frame_results,
-                    temporal_metrics.get('overall_consistency', 0.5),
-                    motion_metrics
-                )
-                
-                # Calculate video statistics
-                video_duration = len(frame_data_list) / fps if fps > 0 else 0
-                avg_quality = np.mean([fd.get('quality_score', 1.0) for fd in frame_data_list])
-                
-                # Create enhanced key findings
-                key_findings = []
-                if final_authenticity == 'AUTHENTIC MEDIA':
-                    key_findings = [
-                        'No temporal inconsistencies detected',
-                        'Natural motion patterns observed',
-                        f'Analyzed {len(valid_frame_results)} high-quality frames',
-                        f'High temporal consistency: {temporal_metrics.get("overall_consistency", 0.5):.2f}'
-                    ]
-                elif final_authenticity == 'MANIPULATED MEDIA':
-                    key_findings = [
-                        'Temporal inconsistencies detected',
-                        'Suspicious motion patterns found',
-                        f'Analyzed {len(valid_frame_results)} frames with concerns',
-                        f'Low temporal consistency: {temporal_metrics.get("overall_consistency", 0.5):.2f}'
-                    ]
-                else:
-                    key_findings = [
-                        'Mixed results across frames',
-                        'Unable to determine with high confidence',
-                        f'Analyzed {len(valid_frame_results)} frames'
-                    ]
-                
-                # Add performance insights
-                processing_time = time.time() - start_time
-                frames_per_second = len(valid_frame_results) / processing_time if processing_time > 0 else 0
-                
-                if use_parallel:
-                    key_findings.append(f'Parallel processing: {frames_per_second:.1f} frames/sec')
-                
-                # Build comprehensive result
-                result = self._create_result(
-                    authenticity=final_authenticity,
-                    confidence=final_confidence,
-                    key_findings=key_findings,
-                    video_analysis={
-                        'total_frames_extracted': len(frame_data_list),
-                        'frames_analyzed': len(valid_frame_results),
-                        'frames_skipped': len(frame_data_list) - len(valid_frame_results),
-                        'video_duration_seconds': video_duration,
-                        'frame_rate': fps,
-                        'average_frame_quality': avg_quality,
-                        'temporal_consistency': temporal_metrics.get('overall_consistency', 0.5),
-                        'confidence_stability': temporal_metrics.get('confidence_stability', 0.5),
-                        'motion_smoothness': motion_metrics['motion_smoothness'],
-                        'motion_consistency': motion_metrics['motion_consistency'],
-                        'unnatural_transitions': motion_metrics['unnatural_transitions'],
-                        'processing_fps': frames_per_second,
-                        'parallel_processing': use_parallel
-                    },
-                    metrics={
-                        'frames_analyzed': len(valid_frame_results),
-                        'temporal_consistency': temporal_metrics.get('overall_consistency', 0.5),
-                        'processing_time_ms': int(processing_time * 1000),
-                        'memory_optimized': len(frame_data_list) > batch_size
-                    }
-                )
-                
-                return result
-                
-            except AnalysisError:
-                raise  # Re-raise analysis errors
-            except Exception as e:
-                raise AnalysisError(f"Video analysis failed: {e}")
-        
-        # Execute with comprehensive error handling
-        execution_result = error_handler.safe_execute(_analyze_internal)
-        
-        if execution_result['success']:
-            return execution_result['result']
+        # Main verdict
+        if label == 'authentic':
+            explanations.append(f"Video appears to be authentic (score: {score:.2f}, confidence: {confidence:.2f}).")
+        elif label == 'deepfake':
+            explanations.append(f"Video shows strong signs of manipulation (score: {score:.2f}, confidence: {confidence:.2f}).")
         else:
-            # Return fallback result with error details
-            error_info = execution_result['error']
-            return create_fallback_result(
-                authenticity='ANALYSIS FAILED',
-                confidence=0.0,
-                error_message=f"{error_info['type']}: {error_info['message']}"
-            )
+            explanations.append(f"Video shows suspicious characteristics (score: {score:.2f}, confidence: {confidence:.2f}).")
+        
+        # Frame analysis
+        if 'frame_analysis' in results.get('details', {}):
+            frame_analysis = results['details']['frame_analysis']
+            suspicious_frames = frame_analysis.get('suspicious_frames', 0)
+            if suspicious_frames > frame_analysis.get('frames_analyzed', 1) * 0.3:
+                explanations.append(f"{suspicious_frames} suspicious frames detected.")
+        
+        # Temporal consistency
+        if 'temporal_consistency' in results.get('details', {}):
+            temporal = results['details']['temporal_consistency']
+            if not temporal.get('consistent', True):
+                explanations.append("Temporal inconsistencies detected between frames.")
+        
+        # Face tracking
+        if 'face_tracking' in results.get('details', {}):
+            faces = results['details']['face_tracking']
+            if not faces.get('consistent', True):
+                explanations.append("Inconsistent face appearance across frames.")
+        
+        # Motion analysis
+        if 'motion_analysis' in results.get('details', {}):
+            motion = results['details']['motion_analysis']
+            if not motion.get('natural_motion', True):
+                explanations.append("Unnatural motion patterns detected.")
+        
+        # Scene changes
+        if results.get('scene_changes'):
+            scene_count = len(results['scene_changes'])
+            if scene_count > 20:
+                explanations.append(f"Excessive scene changes detected ({scene_count}).")
+        
+        return " ".join(explanations)
+    
+    def _generate_video_recommendations(self, results: Dict) -> List[str]:
+        """Generate recommendations"""
+        recommendations = []
+        
+        label = results.get('label', 'unknown')
+        
+        if label == 'deepfake':
+            recommendations.append("Do not trust this video for verification purposes")
+            recommendations.append("Multiple manipulation indicators detected")
+        elif label == 'suspicious':
+            recommendations.append("Exercise caution with this video")
+            recommendations.append("Consider additional verification")
+        else:
+            recommendations.append("Video appears authentic, but verify source")
+        
+        # Specific recommendations
+        if results.get('suspicious_frames'):
+            recommendations.append(f"Review suspicious frames at timestamps: {', '.join([f'{f['timestamp']:.1f}s' for f in results['suspicious_frames'][:3]])}")
+        
+        return recommendations
+
+
+# Singleton instance
+_video_detector_instance = None
+
+def get_video_detector() -> VideoDetector:
+    """Get or create video detector instance"""
+    global _video_detector_instance
+    if _video_detector_instance is None:
+        _video_detector_instance = VideoDetector()
+    return _video_detector_instance

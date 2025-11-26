@@ -5,8 +5,10 @@ import cv2
 import numpy as np
 import io
 import os
+import tempfile
 import logging
 from typing import Dict, List, Tuple, Any, Optional
+from pathlib import Path
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -135,17 +137,42 @@ def analyze_frames(
     """
     try:
         # Import here to avoid circular imports
-        from backend.models.video_model_enhanced import DeepFakeDetector
+        from ..detectors.video_detector import VideoDetector
         
         # Initialize detector
-        detector = DeepFakeDetector(model_name=model_name, use_gpu=use_gpu)
+        detector = VideoDetector()
         
-        # Process frames in batches
+        # Process frames using image detector for each frame
         results = []
-        for i in range(0, len(frames), batch_size):
-            batch = frames[i:i + batch_size]
-            batch_results = detector.predict_batch(batch)
-            results.extend(batch_results)
+        for i, frame in enumerate(frames):
+            # Save frame temporarily
+            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
+                cv2.imwrite(tmp.name, frame)
+                tmp_path = tmp.name
+            
+            try:
+                # Use image detector on frame
+                if detector.image_detector:
+                    frame_result = detector.image_detector.detect(tmp_path)
+                    results.append({
+                        'frame_number': i,
+                        'label': frame_result.get('label', 'unknown'),
+                        'confidence': frame_result.get('confidence', 0.0),
+                        'authenticity_score': frame_result.get('authenticity_score', 0.5)
+                    })
+                else:
+                    results.append({
+                        'frame_number': i,
+                        'label': 'unknown',
+                        'confidence': 0.0,
+                        'authenticity_score': 0.5
+                    })
+            finally:
+                # Clean up temp file
+                try:
+                    Path(tmp_path).unlink()
+                except:
+                    pass
         
         return results
     except Exception as e:

@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { defaultSecurityConfig as securityConfig } from './security';
 import { logger } from './logger';
 import { validationResult } from 'express-validator';
@@ -8,14 +8,27 @@ import cors from 'cors';
 
 export const configureSecurity = (app: any) => {
   // 1. Set security HTTP headers using Helmet
-  if (securityConfig.securityHeaders.enabled) {
+  if (securityConfig.headers) {
+    const csp = securityConfig.headers.csp;
     app.use(helmet({
       contentSecurityPolicy: {
         directives: {
-          ...securityConfig.securityHeaders.contentSecurityPolicy.directives,
+          defaultSrc: csp.defaultSrc,
+          scriptSrc: csp.scriptSrc,
+          styleSrc: csp.styleSrc,
+          imgSrc: csp.imgSrc,
+          connectSrc: csp.connectSrc,
+          fontSrc: csp.fontSrc,
+          objectSrc: csp.objectSrc,
+          mediaSrc: csp.mediaSrc,
+          frameSrc: csp.frameSrc,
+          frameAncestors: csp.frameAncestors,
+          formAction: csp.formAction,
+          baseUri: csp.baseUri,
+          upgradeInsecureRequests: csp.upgradeInsecureRequests ? [] : null,
         },
       },
-      hsts: securityConfig.securityHeaders.hsts,
+      hsts: securityConfig.headers.hsts,
       frameguard: { action: 'deny' },
       noSniff: true,
       xssFilter: true,

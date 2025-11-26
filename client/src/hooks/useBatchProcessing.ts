@@ -1,15 +1,12 @@
 import { useState, useCallback } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/components/ui/use-toast';
-import api from '@/lib/api-client';
-import { useWebSocket } from '@/contexts/WebSocketContext';
+import apiClient from '@/lib/api';
+import { useRealtime } from '@/contexts/RealtimeContext';
 
 export interface BatchFile {
   id: string;
   file: File;
-  name: string;
-  size: number;
-  type: string;
   status: 'pending' | 'uploading' | 'processing' | 'completed' | 'error';
   progress: number;
   result?: any;
@@ -19,7 +16,7 @@ export interface BatchFile {
 export const useBatchProcessing = () => {
   const [files, setFiles] = useState<BatchFile[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const { subscribeToScan } = useWebSocket();
+  const { subscribeToScan } = useRealtime(); // Changed hook
   const queryClient = useQueryClient();
 
   // Add files to batch
@@ -29,9 +26,6 @@ export const useBatchProcessing = () => {
       ...newFiles.map(file => ({
         id: `${Date.now()}-${file.name}`,
         file,
-        name: file.name,
-        size: file.size,
-        type: file.type.split('/')[0],
         status: 'pending' as const,
         progress: 0,
       })),
@@ -49,8 +43,8 @@ export const useBatchProcessing = () => {
   }, []);
 
   // Process batch mutation
-  const processBatch = useMutation(
-    async (filesToProcess: BatchFile[]) => {
+  const processBatchMutation = useMutation({
+    mutationFn: async (filesToProcess: BatchFile[]) => {
       setIsProcessing(true);
       const results: BatchFile[] = [];
 
@@ -60,20 +54,32 @@ export const useBatchProcessing = () => {
           updateFileStatus(file.id, 'uploading', 0);
 
           // Upload file and handle response
-          const response = await api.uploadFile<{ scanId: string }>(
+          const formData = new FormData();
+          formData.append('file', file.file);
+
+          const response = await apiClient.client.post<{ success: boolean; data?: { scanId: string }; error?: string }>(
             '/v2/batch/process',
-            file.file,
-            'file',
-            (progress) => {
-              updateFileStatus(file.id, 'uploading', progress);
+            formData,
+            {
+              headers: {
+                'Content-Type': 'multipart/form-data',
+              },
+              onUploadProgress: (progressEvent: any) => {
+                const progress = progressEvent.total
+                  ? Math.round((progressEvent.loaded * 100) / progressEvent.total)
+                  : 0;
+                updateFileStatus(file.id, 'uploading', progress);
+              }
             }
           );
 
-          if (!response.success) {
-            throw new Error(response.error || 'Failed to upload file');
+          const responseData = response.data;
+
+          if (!responseData.success) {
+            throw new Error(responseData.error || 'Failed to upload file');
           }
-          
-          const data = response.data;
+
+          const data = responseData.data;
           if (!data || !data.scanId) {
             throw new Error('Invalid response from server: missing scanId');
           }
@@ -85,41 +91,39 @@ export const useBatchProcessing = () => {
           updateFileStatus(file.id, 'processing', 100, { result: { scanId: data.scanId } });
           results.push({ ...file, status: 'processing' as const, progress: 100 });
         } catch (error) {
-          console.error(`Error processing file ${file.name}:`, error);
+          console.error(`Error processing file ${file.name}: `, error);
           const errorMessage = error instanceof Error ? error.message : 'Failed to process file';
           toast({
-            title: `Error processing ${file.name}`,
+            title: `Error processing ${file.name} `,
             description: errorMessage,
             variant: 'destructive',
           });
-          updateFileStatus(file.id, 'error', 0, { 
-            error: errorMessage 
+          updateFileStatus(file.id, 'error', 0, {
+            error: errorMessage
           });
         }
       }
 
       return results;
     },
-    {
-      onSettled: () => {
-        setIsProcessing(false);
-        // Invalidate queries to refresh data
-        queryClient.invalidateQueries(['scans']);
-        queryClient.invalidateQueries(['analytics']);
-      },
-    }
-  );
+    onSettled: () => {
+      setIsProcessing(false);
+      // Invalidate queries to refresh data
+      queryClient.invalidateQueries({ queryKey: ['scans'] });
+      queryClient.invalidateQueries({ queryKey: ['analytics'] });
+    },
+  });
 
   // Update file status helper
   const updateFileStatus = (
-    id: string, 
-    status: BatchFile['status'], 
-    progress: number, 
+    id: string,
+    status: BatchFile['status'],
+    progress: number,
     data: Partial<BatchFile> = {}
   ) => {
-    setFiles(prev => 
-      prev.map(file => 
-        file.id === id 
+    setFiles(prev =>
+      prev.map(file =>
+        file.id === id
           ? { ...file, status, progress, ...data } as BatchFile
           : file
       )
@@ -128,7 +132,7 @@ export const useBatchProcessing = () => {
 
   // Handle WebSocket scan updates
   const handleScanUpdate = useCallback((update: any) => {
-    setFiles(prev => 
+    setFiles(prev =>
       prev.map(file => {
         if (file.result?.scanId === update.scanId) {
           return {
@@ -150,7 +154,7 @@ export const useBatchProcessing = () => {
     addFiles,
     removeFile,
     clearFiles,
-    processBatch: () => processBatch.mutateAsync(files.filter(f => f.status === 'pending')),
+    processBatch: () => processBatchMutation.mutateAsync(files.filter(f => f.status === 'pending')),
     updateFileStatus,
     handleScanUpdate,
   };

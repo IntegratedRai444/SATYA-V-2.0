@@ -4,10 +4,12 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.pytest_cache/
 
 # Node
 node_modules/
 dist/
+client/node_modules/
 
 # VSCode
 .vscode/
@@ -18,9 +20,17 @@ dist/
 # Logs
 *.log
 logs/
+*.log.*
 
 # Environment
 .env
+client/.env
+
+# Temporary test files
+# **/test_*.py
+**/quick_test.py
+**/final_*.py
+**/*_check.py
 
 # Reports/Exports
 backend/report_engine/exports/
@@ -33,10 +43,8 @@ backend/report_engine/exports/
 *.pb
 *.pkl
 *.safetensors
-models/
-server/python/models/*.bin
-server/python/models/*.pth
-server/python/models/models--*/
+# models/  # Commented out to allow scanning
+
 
 # Database
 *.sqlite
@@ -47,3 +55,6 @@ server/python/models/models--*/
 *.tar.gz
 server/public
 vite.config.ts.*
+*.tsbuildinfo
+*-report.json
+yarn.lock

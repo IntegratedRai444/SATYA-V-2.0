@@ -1,10 +1,9 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
-import { 
-  webSocketService, 
-  WebSocketMessage, 
-  ScanUpdateMessage, 
-  NotificationMessage, 
-  SystemAlertMessage 
+import {
+  webSocketService,
+  WebSocketMessage,
+  ScanUpdateMessage,
+  SystemAlertMessage
 } from '@/services/websocket';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from './AuthContext';
@@ -29,7 +28,9 @@ interface RealtimeContextType {
   // Connection state
   connectionStatus: 'connected' | 'disconnected' | 'connecting';
   lastUpdate: Date | null;
-  
+  reconnectAttempt?: number;
+  maxReconnectAttempts?: number;
+
   // Notifications
   notifications: Notification[];
   unreadCount: number;
@@ -37,12 +38,12 @@ interface RealtimeContextType {
   markAsRead: (id: string) => void;
   markAllAsRead: () => void;
   clearAll: () => void;
-  
+
   // WebSocket methods
   subscribeToScan: (scanId: string) => void;
   unsubscribeFromScan: (scanId: string) => void;
   sendMessage: <T = any>(message: T) => void;
-  
+
   // Scan progress tracking
   activeScans: Record<string, {
     status: 'queued' | 'processing' | 'completed' | 'failed';
@@ -60,6 +61,8 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'connecting'>('connecting');
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [activeScans, setActiveScans] = useState<RealtimeContextType['activeScans']>({});
+  const [reconnectAttempt, setReconnectAttempt] = useState<number>(0);
+  const [maxReconnectAttempts] = useState<number>(5);
   const { toast } = useToast();
   const { isAuthenticated } = useAuth();
   const subscriptions = useRef<Record<string, () => void>>({});
@@ -68,7 +71,7 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const addNotification = useCallback((notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
     const newNotification: Notification = {
       ...notification,
-      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: `${Date.now()} -${Math.random().toString(36).substr(2, 9)} `,
       timestamp: new Date(),
       read: false,
     };
@@ -97,7 +100,7 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // Mark all notifications as read
   const markAllAsRead = useCallback(() => {
-    setNotifications(prev => 
+    setNotifications(prev =>
       prev.map(notif => ({
         ...notif,
         read: true
@@ -118,42 +121,42 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // Subscribe to a scan's updates
   const subscribeToScan = useCallback((scanId: string) => {
     if (!scanId || subscriptions.current[scanId]) return;
-    
+
     // Subscribe to WebSocket channel
     webSocketService.subscribeToScan(scanId);
-    
+
     // Track the subscription for cleanup
     const unsubscribe = webSocketService.subscribe((message: WebSocketMessage) => {
-      if (message.type === 'scan_update' && message.scanId === scanId) {
+      if (message.type === 'scan_update' && message.payload.scanId === scanId) {
         const scanMessage = message as ScanUpdateMessage;
         setActiveScans(prev => ({
           ...prev,
           [scanId]: {
-            status: scanMessage.status,
-            progress: scanMessage.progress || 0,
-            fileName: scanMessage.fileName,
-            error: scanMessage.error,
+            status: scanMessage.payload.status,
+            progress: scanMessage.payload.progress || 0,
+            fileName: scanMessage.payload.fileName,
+            error: scanMessage.payload.error,
             timestamp: new Date(scanMessage.timestamp)
           }
         }));
 
         // Add notification for important updates
-        if (scanMessage.status === 'completed' || scanMessage.status === 'failed') {
+        if (scanMessage.payload.status === 'completed' || scanMessage.payload.status === 'failed') {
           addNotification({
-            type: scanMessage.status === 'completed' ? 'success' : 'error',
-            title: `Scan ${scanMessage.status}`,
-            message: scanMessage.fileName 
-              ? `File "${scanMessage.fileName}" scan ${scanMessage.status}`
-              : `Scan ${scanMessage.status}`,
+            type: scanMessage.payload.status === 'completed' ? 'success' : 'error',
+            title: `Scan ${scanMessage.payload.status} `,
+            message: scanMessage.payload.fileName
+              ? `File "${scanMessage.payload.fileName}" scan ${scanMessage.payload.status} `
+              : `Scan ${scanMessage.payload.status} `,
             data: { scanId }
           });
         }
       }
     });
-    
+
     // Store the unsubscribe function
     subscriptions.current[scanId] = unsubscribe;
-    
+
     return () => {
       unsubscribe();
       delete subscriptions.current[scanId];
@@ -197,13 +200,10 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (data.type === 'system_alert') {
         const alert = data as SystemAlertMessage;
         addNotification({
-          type: alert.severity === 'critical' ? 'error' : (alert.severity as NotificationType) || 'warning',
-          title: alert.title,
-          message: alert.message,
-          action: alert.action ? {
-            label: alert.action.label,
-            onClick: alert.action.onClick
-          } : undefined
+          type: alert.payload.severity === 'critical' ? 'error' : (alert.payload.severity as NotificationType) || 'warning',
+          title: alert.payload.title,
+          message: alert.payload.message,
+          // Note: WebSocket action has callback/url, not onClick - would need adapter if actions are needed
         });
       }
     });
@@ -224,13 +224,23 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       });
     });
 
+    const unsubscribeReconnecting = webSocketService.on('reconnecting', (data: any) => {
+      setConnectionStatus('connecting');
+      setReconnectAttempt(data.attempt);
+      addNotification({
+        type: 'info',
+        title: 'Reconnecting',
+        message: `Attempting to reconnect(${data.attempt} / ${data.maxAttempts})...`,
+      });
+    });
+
     // Initial connection
     webSocketService.connect().catch((error: Error) => {
       console.error('WebSocket connection error:', error);
       addNotification({
         type: 'error',
         title: 'Connection Error',
-        message: `Failed to connect to real-time service: ${error.message}`,
+        message: `Failed to connect to real - time service: ${error.message} `,
       });
     });
 
@@ -240,11 +250,12 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       unsubscribeConnected();
       unsubscribeDisconnected();
       unsubscribeError();
-      
+      unsubscribeReconnecting();
+
       // Clean up all scan subscriptions
       Object.values(subscriptions.current).forEach(unsubscribe => unsubscribe());
       subscriptions.current = {};
-      
+
       // Disconnect WebSocket if needed
       if (webSocketService) {
         webSocketService.disconnect();
@@ -259,7 +270,9 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     // Connection state
     connectionStatus,
     lastUpdate,
-    
+    reconnectAttempt,
+    maxReconnectAttempts,
+
     // Notifications
     notifications,
     unreadCount,
@@ -267,12 +280,12 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     markAsRead,
     markAllAsRead,
     clearAll,
-    
+
     // WebSocket methods
     subscribeToScan,
     unsubscribeFromScan,
     sendMessage,
-    
+
     // Scan progress
     activeScans,
   };

@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction, RequestHandler } from 'express';
+import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import rateLimit, { Options, RateLimitRequestHandler } from 'express-rate-limit';
 import { body, validationResult, ValidationChain, ValidationError } from 'express-validator';
 import { defaultSecurityConfig } from '../config/security';

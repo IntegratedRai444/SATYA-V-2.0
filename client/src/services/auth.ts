@@ -1,82 +1,118 @@
-// This is a placeholder for your authentication service
-// You should replace this with your actual authentication logic
+/**
+ * Real Authentication Service
+ * Handles secure token management and authentication operations
+ */
 
-type AuthToken = string | null;
+import logger from '../lib/logger';
 
-// Get the authentication token from your storage (e.g., localStorage, cookies, etc.)
+const TOKEN_KEY = 'satyaai_auth_token';
+const TOKEN_EXPIRY_KEY = 'satyaai_token_expiry';
+const REFRESH_THRESHOLD = 5 * 60 * 1000; // 5 minutes before expiry
+
+export type AuthToken = string | null;
+
+/**
+ * Securely get authentication token from storage
+ */
 export const getAuthToken = (): Promise<string> => {
-  // Replace this with your actual token retrieval logic
-  const token = localStorage.getItem('authToken');
-  
-  if (!token) {
-    return Promise.reject(new Error('No authentication token found'));
+  try {
+    const token = localStorage.getItem(TOKEN_KEY);
+    const expiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
+    
+    if (!token) {
+      return Promise.reject(new Error('No authentication token found'));
+    }
+    
+    // Check if token is expired
+    if (expiry && Date.now() > parseInt(expiry)) {
+      removeAuthToken();
+      return Promise.reject(new Error('Authentication token expired'));
+    }
+    
+    return Promise.resolve(token);
+  } catch (error) {
+    logger.error('Error retrieving auth token', error as Error);
+    return Promise.reject(error);
   }
-  
-  return Promise.resolve(token);
 };
 
-// Set the authentication token
-export const setAuthToken = (token: string): void => {
-  // Replace this with your actual token storage logic
-  localStorage.setItem('authToken', token);
+/**
+ * Securely set authentication token with expiry
+ */
+export const setAuthToken = (token: string, expiresIn: number = 24 * 60 * 60 * 1000): void => {
+  try {
+    localStorage.setItem(TOKEN_KEY, token);
+    const expiryTime = Date.now() + expiresIn;
+    localStorage.setItem(TOKEN_EXPIRY_KEY, expiryTime.toString());
+    logger.info('Auth token set successfully');
+  } catch (error) {
+    logger.error('Error setting auth token', error as Error);
+    throw error;
+  }
 };
 
-// Remove the authentication token
+/**
+ * Remove authentication token and cleanup
+ */
 export const removeAuthToken = (): void => {
-  // Replace this with your actual token removal logic
-  localStorage.removeItem('authToken');
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(TOKEN_EXPIRY_KEY);
+    logger.info('Auth token removed');
+  } catch (error) {
+    logger.error('Error removing auth token', error as Error);
+  }
 };
 
-// Check if the user is authenticated
+/**
+ * Check if user is authenticated with valid token
+ */
 export const isAuthenticated = async (): Promise<boolean> => {
   try {
-    const token = await getAuthToken();
-    return !!token;
+    await getAuthToken();
+    return true;
   } catch (error) {
     return false;
   }
 };
 
-// Login function (example)
-export const login = async (credentials: { email: string; password: string }): Promise<{ token: string }> => {
-  // Replace this with your actual login API call
-  const response = await fetch('/api/auth/login', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(credentials),
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.message || 'Login failed');
+/**
+ * Check if token needs refresh
+ */
+export const shouldRefreshToken = (): boolean => {
+  try {
+    const expiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
+    if (!expiry) return false;
+    
+    const timeUntilExpiry = parseInt(expiry) - Date.now();
+    return timeUntilExpiry < REFRESH_THRESHOLD && timeUntilExpiry > 0;
+  } catch (error) {
+    return false;
   }
-
-  const data = await response.json();
-  setAuthToken(data.token);
-  return data;
 };
 
-// Logout function
-export const logout = (): void => {
+/**
+ * Get token expiry time
+ */
+export const getTokenExpiry = (): Date | null => {
+  try {
+    const expiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
+    return expiry ? new Date(parseInt(expiry)) : null;
+  } catch (error) {
+    return null;
+  }
+};
+
+/**
+ * Clear all authentication data
+ */
+export const clearAuthData = (): void => {
   removeAuthToken();
-  // Add any additional cleanup here
-};
-
-// Get user information
-export const getCurrentUser = async (): Promise<any> => {
-  const token = await getAuthToken();
-  
-  const response = await fetch('/api/auth/me', {
-    headers: {
-      'Authorization': `Bearer ${token}`,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch user data');
+  // Clear any other auth-related data
+  try {
+    localStorage.removeItem('user_data');
+    localStorage.removeItem('user_preferences');
+  } catch (error) {
+    logger.error('Error clearing auth data', error as Error);
   }
-
-  return response.json();
 };

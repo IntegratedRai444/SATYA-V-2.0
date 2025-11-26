@@ -1,41 +1,49 @@
-export type MediaType = 'image' | 'video' | 'audio';
-
-export interface User {
-  id: number;
-  username: string;
-  email?: string;
-  role: string;
-}
+// Global type definitions for SatyaAI
 
 export interface AuthResponse {
-  success: boolean;
-  message: string;
-  token?: string;
-  user?: User;
+    success: boolean;
+    message: string;
+    token?: string;
+    user?: {
+        id: number;
+        username: string;
+        email?: string;
+        fullName?: string;
+        role: string;
+    };
+    errors?: string[];
 }
+
+export interface User {
+    id: number;
+    username: string;
+    email: string;
+    fullName?: string;
+    role: string;
+    createdAt?: string;
+}
+
+export interface ApiError {
+    message: string;
+    code?: string;
+    status?: number;
+}
+
+export interface PaginatedResponse<T> {
+    data: T[];
+    total: number;
+    page: number;
+    pageSize: number;
+    hasMore: boolean;
+}
+
+export type MediaType = 'image' | 'video' | 'audio' | 'multimodal';
 
 export interface AnalysisResult {
-  id: string;
-  type: MediaType;
-  fileUrl: string;
-  filename: string;
-  confidenceScore: number;
-  authenticity: 'AUTHENTIC' | 'MANIPULATED' | 'SUSPICIOUS' | 'UNKNOWN';
-  technical_details?: {
-    model_used: string;
-    processing_time: number;
-    detection_methods: string[];
-  };
-  timestamp: string | Date;
-  metadata?: Record<string, any>;
-}
-
-export interface SystemStats {
-  totalScans: number;
-  authenticCount: number;
-  manipulatedCount: number;
-  suspiciousCount: number;
-  averageConfidence: number;
-  processingSpeed: number;
-  systemHealth: number;
+    id: string;
+    type: MediaType;
+    result: 'authentic' | 'manipulated' | 'uncertain';
+    confidence: number;
+    timestamp: string;
+    details?: Record<string, any>;
 }

@@ -40,12 +40,9 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
     "dynamic": "^4.2.2",
-    "framer-motion": "^12.23.24",
     "lucide-react": "^0.263.1",
-    "next": "^15.0.0",
-    "next-auth": "^5.0.0-beta.29",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "react-dropzone": "^14.3.8",
     "react-helmet": "^6.1.0",
     "react-helmet-async": "^2.0.4",
@@ -54,8 +51,7 @@
     "react-toastify": "^11.0.5",
     "recharts": "^2.8.0",
     "tailwind-merge": "^1.14.0",
-    "uuid": "^13.0.0",
-    "wouter": "^2.10.1"
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "@emotion/babel-plugin": "^11.13.5",

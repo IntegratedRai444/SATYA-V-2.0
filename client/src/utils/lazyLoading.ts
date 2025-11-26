@@ -1,15 +1,66 @@
 /**
  * Lazy loading utilities for performance optimization
+ * Enhanced with retry logic and preloading
  */
 
-import { lazy } from 'react';
+import React, { lazy, ComponentType } from 'react';
+import logger from '../lib/logger';
 
-// Lazy load heavy components
-export const LazyImageAnalysis = lazy(() => import('../pages/ImageAnalysis'));
-export const LazyVideoAnalysis = lazy(() => import('../pages/VideoAnalysis'));
-export const LazyAudioAnalysis = lazy(() => import('../pages/AudioAnalysis'));
-export const LazyAnalytics = lazy(() => import('../pages/Analytics'));
-export const LazySettings = lazy(() => import('../pages/Settings'));
+/**
+ * Enhanced lazy loading with retry logic
+ */
+function lazyWithRetry<T extends ComponentType<any>>(
+  componentImport: () => Promise<{ default: T }>,
+  maxRetries = 3,
+  retryDelay = 1000
+): React.LazyExoticComponent<T> {
+  return lazy(async () => {
+    const pageHasAlreadyBeenForceRefreshed = JSON.parse(
+      window.sessionStorage.getItem('page-has-been-force-refreshed') || 'false'
+    );
+
+    try {
+      const component = await componentImport();
+      window.sessionStorage.setItem('page-has-been-force-refreshed', 'false');
+      return component;
+    } catch (error) {
+      logger.error('Failed to load component', error as Error);
+
+      if (!pageHasAlreadyBeenForceRefreshed) {
+        window.sessionStorage.setItem('page-has-been-force-refreshed', 'true');
+        logger.info('Reloading page to fetch latest chunks');
+        return window.location.reload() as never;
+      }
+
+      // Retry logic
+      for (let i = 0; i < maxRetries; i++) {
+        try {
+          logger.info(`Retrying component load (attempt ${i + 1}/${maxRetries})`);
+          await new Promise(resolve => setTimeout(resolve, retryDelay * (i + 1)));
+          return await componentImport();
+        } catch (retryError) {
+          if (i === maxRetries - 1) {
+            throw retryError;
+          }
+        }
+      }
+
+      throw error;
+    }
+  });
+}
+
+// Lazy load heavy components with retry
+export const LazyImageAnalysis = lazyWithRetry(() => import('../pages/ImageAnalysis'));
+export const LazyVideoAnalysis = lazyWithRetry(() => import('../pages/VideoAnalysis'));
+export const LazyAudioAnalysis = lazyWithRetry(() => import('../pages/AudioAnalysis'));
+export const LazyAnalytics = lazyWithRetry(() => import('../pages/Analytics'));
+export const LazySettings = lazyWithRetry(() => import('../pages/Settings'));
+export const LazyBatchAnalysis = lazyWithRetry(() => import('../pages/BatchAnalysis'));
+export const LazyHistory = lazyWithRetry(() => import('../pages/History'));
+export const LazyHelp = lazyWithRetry(() => import('../pages/Help'));
+export const LazyAIAssistant = lazyWithRetry(() => import('../pages/AIAssistant'));
+export const LazyWebcamLive = lazyWithRetry(() => import('../pages/WebcamLive'));
 
 // Lazy load heavy analysis components
 export const LazyAnalysisResults = lazy(() => import('../components/analysis/AnalysisResults'));
@@ -95,7 +146,7 @@ export const useLazyImage = (src: string, placeholder?: string) => {
 
     if (img) {
       img.dataset.src = src;
-      
+
       const handleLoad = () => {
         setImageSrc(src);
         setIsLoaded(true);
@@ -121,7 +172,7 @@ export const preloadResource = (url: string, type: 'image' | 'script' | 'style' 
   const link = document.createElement('link');
   link.rel = 'preload';
   link.href = url;
-  
+
   switch (type) {
     case 'image':
       link.as = 'image';
@@ -132,8 +183,11 @@ export const preloadResource = (url: string, type: 'image' | 'script' | 'style' 
     case 'style':
       link.as = 'style';
       break;
+    case 'style':
+      link.as = 'style';
+      break;
   }
-  
+
   document.head.appendChild(link);
 };
 
@@ -145,7 +199,40 @@ export const loadChunk = async (chunkName: string) => {
     const module = await import(/* webpackChunkName: "[request]" */ `../chunks/${chunkName}`);
     return module.default || module;
   } catch (error) {
-    console.error(`Failed to load chunk: ${chunkName}`, error);
+    logger.error(`Failed to load chunk: ${chunkName}`, error as Error);
     throw error;
   }
 };
+
+/**
+ * Preload a lazy component
+ */
+export function preloadComponent<T extends ComponentType<any>>(
+  LazyComponent: React.LazyExoticComponent<T>
+): void {
+  // @ts-ignore - accessing internal preload method
+  if (LazyComponent._payload && LazyComponent._payload._result === null) {
+    // @ts-ignore
+    LazyComponent._payload._result = LazyComponent._payload._fn();
+  }
+}
+
+/**
+ * Preload critical routes on idle
+ */
+export function preloadCriticalRoutes(): void {
+  if ('requestIdleCallback' in window) {
+    requestIdleCallback(() => {
+      preloadComponent(LazyImageAnalysis);
+      preloadComponent(LazyVideoAnalysis);
+    });
+  } else {
+    setTimeout(() => {
+      preloadComponent(LazyImageAnalysis);
+      preloadComponent(LazyVideoAnalysis);
+    }, 1000);
+  }
+}
+
+export { lazyWithRetry };
+export default lazyWithRetry;

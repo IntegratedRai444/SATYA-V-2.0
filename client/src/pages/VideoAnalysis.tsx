@@ -1,10 +1,15 @@
 import React, { useState, useCallback } from 'react';
-import { Video, Upload, Film, CheckCircle, AlertCircle } from 'lucide-react';
+import { Video, Upload, Film, CheckCircle, AlertCircle, Loader2, Eye, FileText, BarChart3 } from 'lucide-react';
+import apiClient from '../lib/api';
+import { formatFileSize } from '../lib/file-utils';
+import logger from '../lib/logger';
 
 export default function VideoAnalysis() {
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState<string>('');
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<any>(null);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -43,6 +48,7 @@ export default function VideoAnalysis() {
       const file = e.dataTransfer.files[0];
       if (validateFile(file)) {
         setSelectedFile(file);
+        setAnalysisResult(null);
       }
     }
   }, []);
@@ -52,7 +58,38 @@ export default function VideoAnalysis() {
       const file = e.target.files[0];
       if (validateFile(file)) {
         setSelectedFile(file);
+        setAnalysisResult(null);
       }
+    }
+  };
+
+  const analyzeVideo = async () => {
+    if (!selectedFile) return;
+
+    setIsAnalyzing(true);
+    setError('');
+
+    try {
+      logger.info('Starting video analysis', {
+        filename: selectedFile.name,
+        size: selectedFile.size
+      });
+
+      const result = await apiClient.analyzeVideo(selectedFile);
+      logger.info('Analysis completed', { success: result.success });
+
+      if (result.result) {
+        setAnalysisResult(result.result);
+      } else if (result.success !== false) {
+        setAnalysisResult(result);
+      } else {
+        throw new Error(result.error || 'Analysis failed');
+      }
+    } catch (error: any) {
+      logger.error('Analysis failed', error);
+      setError(error.message || 'Analysis failed. Please try again.');
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
@@ -78,22 +115,21 @@ export default function VideoAnalysis() {
             <h2 className="text-xl font-semibold text-white mb-2">Upload Video for Analysis</h2>
             <p className="text-gray-400 text-sm">Drag and drop your video here, or click to browse</p>
           </div>
-          
-          <div 
-            className={`border-2 border-dashed rounded-xl p-16 transition-all duration-200 ${
-              dragActive 
-                ? 'border-purple-400 bg-purple-400/5' 
-                : selectedFile
+
+          <div
+            className={`border-2 border-dashed rounded-xl p-16 transition-all duration-200 ${dragActive
+              ? 'border-purple-400 bg-purple-400/5'
+              : selectedFile
                 ? 'border-green-500/50 bg-green-500/5'
                 : error
-                ? 'border-red-500/50 bg-red-500/5'
-                : 'border-purple-400/40 bg-[#1e2128] hover:bg-[#252930] hover:border-purple-400/60'
-            } cursor-pointer`}
+                  ? 'border-red-500/50 bg-red-500/5'
+                  : 'border-purple-400/40 bg-[#1e2128] hover:bg-[#252930] hover:border-purple-400/60'
+              } ${selectedFile ? 'cursor-default' : 'cursor-pointer'}`}
             onDragEnter={handleDrag}
             onDragLeave={handleDrag}
             onDragOver={handleDrag}
             onDrop={handleDrop}
-            onClick={() => document.getElementById('videoFileInput')?.click()}
+            onClick={() => !selectedFile && document.getElementById('videoFileInput')?.click()}
           >
             <input
               id="videoFileInput"
@@ -102,7 +138,7 @@ export default function VideoAnalysis() {
               onChange={handleFileChange}
               className="hidden"
             />
-            
+
             <div className="flex flex-col items-center gap-4">
               {selectedFile ? (
                 <>
@@ -111,11 +147,43 @@ export default function VideoAnalysis() {
                   </div>
                   <div>
                     <p className="text-lg font-medium text-white mb-1">{selectedFile.name}</p>
-                    <p className="text-gray-400 text-sm">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                    <p className="text-gray-400 text-sm">{formatFileSize(selectedFile.size)}</p>
                   </div>
-                  <button className="bg-purple-500 hover:bg-purple-600 text-white px-8 py-3 rounded-lg font-medium transition-all duration-200">
-                    Analyze Video
-                  </button>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        analyzeVideo();
+                      }}
+                      disabled={isAnalyzing}
+                      className="bg-purple-500 hover:bg-purple-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-8 py-3 rounded-lg font-medium transition-all duration-200 flex items-center gap-2"
+                    >
+                      {isAnalyzing ? (
+                        <>
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                          Analyzing...
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="w-5 h-5" />
+                          Analyze Video
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedFile(null);
+                        setAnalysisResult(null);
+                        setError('');
+                      }}
+                      disabled={isAnalyzing}
+                      className="bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-medium transition-all duration-200 flex items-center gap-2"
+                    >
+                      <Upload className="w-5 h-5" />
+                      Change File
+                    </button>
+                  </div>
                 </>
               ) : error ? (
                 <>
@@ -155,6 +223,103 @@ export default function VideoAnalysis() {
           </div>
         </div>
 
+        {/* Analysis Results */}
+        {analysisResult && (
+          <div className="bg-[#2a2e39] border border-gray-700/50 rounded-xl p-8 mb-6">
+            <div className="flex items-center gap-4 mb-6">
+              <div className={`w-16 h-16 rounded-full flex items-center justify-center ${analysisResult.authenticity === 'AUTHENTIC MEDIA'
+                ? 'bg-green-500/10 border-2 border-green-500/30'
+                : 'bg-red-500/10 border-2 border-red-500/30'
+                }`}>
+                {analysisResult.authenticity === 'AUTHENTIC MEDIA' ? (
+                  <CheckCircle className="w-8 h-8 text-green-500" />
+                ) : (
+                  <AlertCircle className="w-8 h-8 text-red-500" />
+                )}
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-white mb-1">
+                  {analysisResult.authenticity === 'AUTHENTIC MEDIA' ? 'Authentic Media' : 'Potential Deepfake'}
+                </h2>
+                <p className="text-gray-400">
+                  Confidence: <span className="text-white font-semibold">{analysisResult.confidence.toFixed(1)}%</span>
+                </p>
+              </div>
+            </div>
+
+            {/* Detailed Analysis */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Key Findings */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-purple-400" />
+                  Key Findings
+                </h3>
+                <div className="space-y-2">
+                  {analysisResult.key_findings?.map((finding: string, index: number) => (
+                    <div key={index} className="flex items-start gap-2">
+                      <div className="w-2 h-2 bg-purple-400 rounded-full mt-2 flex-shrink-0"></div>
+                      <p className="text-gray-300 text-sm">{finding}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Technical Details */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5 text-purple-400" />
+                  Analysis Scores
+                </h3>
+                <div className="space-y-3">
+                  {analysisResult.detailed_analysis && (
+                    <>
+                      {analysisResult.detailed_analysis.frame_analysis && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-300 text-sm">Frame Consistency</span>
+                          <span className="text-white font-semibold">
+                            {(analysisResult.detailed_analysis.frame_analysis.consistency_score * 100).toFixed(1)}%
+                          </span>
+                        </div>
+                      )}
+                      {analysisResult.detailed_analysis.temporal_analysis && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-300 text-sm">Temporal Consistency</span>
+                          <span className="text-white font-semibold">
+                            {(analysisResult.detailed_analysis.temporal_analysis.temporal_score * 100).toFixed(1)}%
+                          </span>
+                        </div>
+                      )}
+                      {analysisResult.detailed_analysis.audio_visual_analysis && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-300 text-sm">Audio-Visual Sync</span>
+                          <span className="text-white font-semibold">
+                            {(analysisResult.detailed_analysis.audio_visual_analysis.sync_score * 100).toFixed(1)}%
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  )}
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-300 text-sm">Processing Time</span>
+                    <span className="text-white font-semibold">
+                      {analysisResult.technical_details?.processing_time_seconds?.toFixed(2) || '0.0'}s
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Case ID and Timestamp */}
+            <div className="mt-6 pt-6 border-t border-gray-700">
+              <div className="flex justify-between items-center text-sm text-gray-400">
+                <span>Case ID: {analysisResult.case_id}</span>
+                <span>Analyzed: {new Date(analysisResult.analysis_date).toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Analysis Options */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-[#2a2e39] border border-gray-700/50 rounded-xl p-6 hover:border-purple-400/50 transition-colors">
@@ -162,13 +327,13 @@ export default function VideoAnalysis() {
             <p className="text-gray-400 text-sm mb-4">Fast detection using core models</p>
             <div className="text-3xl font-bold text-purple-400">~2min</div>
           </div>
-          
+
           <div className="bg-[#2a2e39] border border-gray-700/50 rounded-xl p-6 hover:border-purple-400/50 transition-colors">
             <h3 className="text-lg font-semibold text-white mb-2">Comprehensive</h3>
             <p className="text-gray-400 text-sm mb-4">Deep analysis with all models</p>
             <div className="text-3xl font-bold text-purple-400">~5min</div>
           </div>
-          
+
           <div className="bg-[#2a2e39] border border-gray-700/50 rounded-xl p-6 hover:border-purple-400/50 transition-colors">
             <h3 className="text-lg font-semibold text-white mb-2">Forensic Grade</h3>
             <p className="text-gray-400 text-sm mb-4">Maximum accuracy analysis</p>

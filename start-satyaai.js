@@ -2,289 +2,175 @@
 
 /**
  * SatyaAI Startup Script
- * Starts both Node.js and Python servers with proper coordination
+ * Starts all required services in the correct order
  */
 
 import { spawn } from 'child_process';
-import path from 'path';
-import fs from 'fs';
+import chalk from 'chalk';
 import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
-// Get __dirname equivalent in ES modules
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = dirname(__filename);
 
-// Configuration
-const config = {
-  nodePort: process.env.PORT || 3000,
-  pythonPort: process.env.PYTHON_SERVER_PORT || 5001,
-  nodeEnv: process.env.NODE_ENV || 'development'
+const processes = [];
+let isShuttingDown = false;
+
+// Service configurations
+const services = [
+  {
+    name: 'Node Server',
+    command: 'npm',
+    args: ['run', 'dev'],
+    color: 'blue',
+    port: 3000,
+    healthCheck: 'http://localhost:3000/api/health'
+  },
+  {
+    name: 'Python AI Service',
+    command: 'npm',
+    args: ['run', 'dev:python'],
+    color: 'green',
+    port: 5001,
+    healthCheck: 'http://localhost:5001/health',
+    delay: 2000 // Wait 2s after Node server
+  },
+  {
+    name: 'React Client',
+    command: 'npm',
+    args: ['run', 'dev:client'],
+    color: 'yellow',
+    port: 5173,
+    delay: 4000 // Wait 4s after Node server
+  }
+];
+
+// Utility functions
+const log = (service, message, type = 'info') => {
+  const colors = {
+    blue: chalk.blue,
+    green: chalk.green,
+    yellow: chalk.yellow,
+    red: chalk.red
+  };
+  
+  const color = colors[service.color] || chalk.white;
+  const prefix = color(`[${service.name}]`);
+  
+  if (type === 'error') {
+    console.error(`${prefix} ${chalk.red(message)}`);
+  } else {
+    console.log(`${prefix} ${message}`);
+  }
 };
 
-console.log('🚀 Starting SatyaAI Detection System...');
-console.log('='.repeat(60));
-console.log(`Environment: ${config.nodeEnv}`);
-console.log(`Node.js Server Port: ${config.nodePort}`);
-console.log(`Python Server Port: ${config.pythonPort}`);
-console.log('='.repeat(60));
+const startService = (service) => {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      log(service, `Starting on port ${service.port}...`);
+      
+      const proc = spawn(service.command, service.args, {
+        stdio: 'pipe',
+        shell: true,
+        cwd: __dirname
+      });
 
-// Track running processes
-let nodeProcess = null;
-let pythonProcess = null;
-let clientProcess = null;
+      proc.stdout.on('data', (data) => {
+        const output = data.toString().trim();
+        if (output) {
+          log(service, output);
+        }
+      });
 
-// Cleanup function
-function cleanup() {
-  console.log('\n🛑 Shutting down SatyaAI...');
+      proc.stderr.on('data', (data) => {
+        const output = data.toString().trim();
+        if (output && !output.includes('ExperimentalWarning')) {
+          log(service, output, 'error');
+        }
+      });
 
-  if (nodeProcess) {
-    console.log('Stopping Node.js server...');
-    nodeProcess.kill('SIGTERM');
-  }
+      proc.on('error', (error) => {
+        log(service, `Failed to start: ${error.message}`, 'error');
+      });
 
-  if (pythonProcess) {
-    console.log('Stopping Python server...');
-    pythonProcess.kill('SIGTERM');
-  }
+      proc.on('exit', (code) => {
+        if (!isShuttingDown) {
+          log(service, `Exited with code ${code}`, code === 0 ? 'info' : 'error');
+          if (code !== 0) {
+            shutdown();
+          }
+        }
+      });
 
-  if (clientProcess) {
-    console.log('Stopping client development server...');
-    clientProcess.kill('SIGTERM');
-  }
+      processes.push({ service, proc });
+      log(service, chalk.green('✓ Started successfully'));
+      resolve();
+    }, service.delay || 0);
+  });
+};
+
+const shutdown = () => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  console.log(chalk.yellow('\n🛑 Shutting down all services...\n'));
+
+  processes.forEach(({ service, proc }) => {
+    try {
+      log(service, 'Stopping...');
+      proc.kill('SIGTERM');
+      
+      setTimeout(() => {
+        if (!proc.killed) {
+          proc.kill('SIGKILL');
+        }
+      }, 5000);
+    } catch (error) {
+      log(service, `Error stopping: ${error.message}`, 'error');
+    }
+  });
 
   setTimeout(() => {
-    console.log('✅ SatyaAI shutdown complete');
+    console.log(chalk.green('\n✓ All services stopped\n'));
     process.exit(0);
-  }, 2000);
-}
-
-// Handle shutdown signals
-process.on('SIGINT', cleanup);
-process.on('SIGTERM', cleanup);
-process.on('exit', cleanup);
-
-// Start Python server
-function startPythonServer() {
-  return new Promise((resolve, reject) => {
-    console.log('🐍 Starting Python AI server...');
-
-    const pythonScript = path.join(__dirname, 'run_satyaai.py');
-
-    if (!fs.existsSync(pythonScript)) {
-      console.error('❌ Python startup script not found:', pythonScript);
-      reject(new Error('Python script not found'));
-      return;
-    }
-
-    pythonProcess = spawn('python', [pythonScript], {
-      stdio: 'pipe',
-      env: {
-        ...process.env,
-        PORT: config.pythonPort,
-        NODE_ENV: config.nodeEnv,
-        PYTHON_SERVER_PORT: config.pythonPort
-      }
-    });
-
-    pythonProcess.stdout.on('data', (data) => {
-      const output = data.toString().trim();
-      if (output) {
-        console.log(`[Python] ${output}`);
-
-        // Check if server is ready
-        if (output.includes('Running on') || output.includes('Server running')) {
-          resolve();
-        }
-      }
-    });
-
-    pythonProcess.stderr.on('data', (data) => {
-      const error = data.toString().trim();
-      if (error && !error.includes('WARNING')) {
-        console.error(`[Python Error] ${error}`);
-      }
-    });
-
-    pythonProcess.on('exit', (code) => {
-      console.log(`Python server exited with code: ${code}`);
-      pythonProcess = null;
-    });
-
-    pythonProcess.on('error', (err) => {
-      console.error('Failed to start Python server:', err.message);
-      reject(err);
-    });
-
-    // Timeout after 30 seconds
-    setTimeout(() => {
-      if (pythonProcess && !pythonProcess.killed) {
-        console.log('✅ Python server started (timeout reached, assuming success)');
-        resolve();
-      }
-    }, 30000);
-  });
-}
-
-// Start Node.js server
-function startNodeServer() {
-  return new Promise((resolve, reject) => {
-    console.log('🟢 Starting Node.js server...');
-
-    const nodeScript = config.nodeEnv === 'production' ? 'start' : 'dev';
-
-    nodeProcess = spawn('npm', ['run', nodeScript], {
-      stdio: 'pipe',
-      shell: true,
-      env: { ...process.env, PORT: config.nodePort }
-    });
-
-    nodeProcess.stdout.on('data', (data) => {
-      const output = data.toString().trim();
-      if (output) {
-        console.log(`[Node.js] ${output}`);
-
-        // Check if server is ready
-        if (output.includes('Server running') || output.includes('ready')) {
-          resolve();
-        }
-      }
-    });
-
-    nodeProcess.stderr.on('data', (data) => {
-      const error = data.toString().trim();
-      if (error && !error.includes('WARNING')) {
-        console.error(`[Node.js Error] ${error}`);
-      }
-    });
-
-    nodeProcess.on('exit', (code) => {
-      console.log(`Node.js server exited with code: ${code}`);
-      nodeProcess = null;
-    });
-
-    nodeProcess.on('error', (err) => {
-      console.error('Failed to start Node.js server:', err.message);
-      reject(err);
-    });
-
-    // Timeout after 30 seconds
-    setTimeout(() => {
-      if (nodeProcess && !nodeProcess.killed) {
-        console.log('✅ Node.js server started');
-        resolve();
-      }
-    }, 30000);
-  });
-}
-
-// Start client development server (only in development)
-function startClientServer() {
-  if (config.nodeEnv === 'production') {
-    console.log('📦 Production mode: Client will be served by Node.js server');
-    return Promise.resolve();
-  }
-
-  return new Promise((resolve, reject) => {
-    console.log('⚛️  Starting React development server...');
-
-    clientProcess = spawn('npm', ['run', 'dev:client'], {
-      stdio: 'pipe',
-      shell: true
-    });
-
-    clientProcess.stdout.on('data', (data) => {
-      const output = data.toString().trim();
-      if (output) {
-        console.log(`[React] ${output}`);
-
-        // Check if server is ready
-        if (output.includes('Local:') || output.includes('ready')) {
-          resolve();
-        }
-      }
-    });
-
-    clientProcess.stderr.on('data', (data) => {
-      const error = data.toString().trim();
-      if (error && !error.includes('WARNING')) {
-        console.error(`[React Error] ${error}`);
-      }
-    });
-
-    clientProcess.on('exit', (code) => {
-      console.log(`React server exited with code: ${code}`);
-      clientProcess = null;
-    });
-
-    clientProcess.on('error', (err) => {
-      console.error('Failed to start React server:', err.message);
-      reject(err);
-    });
-
-    // Timeout after 30 seconds
-    setTimeout(() => {
-      if (clientProcess && !clientProcess.killed) {
-        console.log('✅ React development server started');
-        resolve();
-      }
-    }, 30000);
-  });
-}
+  }, 6000);
+};
 
 // Main startup sequence
-async function startSatyaAI() {
+const main = async () => {
+  console.log(chalk.cyan.bold('\n🚀 Starting SatyaAI Platform...\n'));
+  console.log(chalk.gray('Press Ctrl+C to stop all services\n'));
+
   try {
-    // Start Python server first
-    await startPythonServer();
-
-    // Start Node.js server
-    await startNodeServer();
-
-    // Start client server (development only)
-    await startClientServer();
-
-    console.log('\n🎉 SatyaAI is now running!');
-    console.log('='.repeat(60));
-
-    if (config.nodeEnv === 'development') {
-      console.log(`🌐 Frontend: http://localhost:5173`);
-      console.log(`🔧 Backend API: http://localhost:${config.nodePort}`);
-      console.log(`🐍 Python AI: http://localhost:${config.pythonPort}`);
-    } else {
-      console.log(`🌐 Application: http://localhost:${config.nodePort}`);
+    // Start services sequentially
+    for (const service of services) {
+      await startService(service);
     }
 
-    console.log('='.repeat(60));
-    console.log('Press Ctrl+C to stop all servers');
-
-    // Keep the process alive
-    process.stdin.resume();
+    console.log(chalk.green.bold('\n✓ All services started successfully!\n'));
+    console.log(chalk.cyan('📊 Access points:'));
+    console.log(chalk.white('  • Frontend:  ') + chalk.blue('http://localhost:5173'));
+    console.log(chalk.white('  • Backend:   ') + chalk.blue('http://localhost:3000'));
+    console.log(chalk.white('  • AI Service:') + chalk.blue('http://localhost:5001'));
+    console.log(chalk.white('  • API Docs:  ') + chalk.blue('http://localhost:3000/api-docs'));
+    console.log('');
 
   } catch (error) {
-    console.error('❌ Failed to start SatyaAI:', error.message);
-    cleanup();
-    process.exit(1);
+    console.error(chalk.red(`\n❌ Startup failed: ${error.message}\n`));
+    shutdown();
   }
-}
+};
 
-// Check if required files exist
-function checkRequirements() {
-  const requiredFiles = [
-    'package.json',
-    'server/index.ts',
-    'run_satyaai.py'
-  ];
-
-  for (const file of requiredFiles) {
-    if (!fs.existsSync(file)) {
-      console.error(`❌ Required file not found: ${file}`);
-      process.exit(1);
-    }
-  }
-
-  console.log('✅ All required files found');
-}
+// Handle shutdown signals
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
+process.on('uncaughtException', (error) => {
+  console.error(chalk.red(`\n❌ Uncaught exception: ${error.message}\n`));
+  shutdown();
+});
 
 // Start the application
-checkRequirements();
-startSatyaAI();
+main().catch((error) => {
+  console.error(chalk.red(`\n❌ Fatal error: ${error.message}\n`));
+  process.exit(1);
+});

@@ -1,15 +1,20 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { FiAlertTriangle, FiRefreshCw, FiHome, FiCopy, FiExternalLink } from 'react-icons/fi';
 import { toast } from '@/components/ui/use-toast';
+import logger from '@/lib/logger';
+import { handleError, classifyError } from '@/lib/errorHandler';
 
 interface Props {
   children: ReactNode;
-  fallback?: ReactNode;
+  fallback?: ReactNode | ((error: Error, reset: () => void) => ReactNode);
+  onError?: (error: Error, errorInfo: ErrorInfo) => void;
+  level?: 'app' | 'page' | 'component';
 }
 
 interface State {
   hasError: boolean;
   error?: Error;
+  errorInfo?: ErrorInfo;
 }
 
 class ErrorBoundary extends Component<Props, State> {
@@ -22,15 +27,29 @@ class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
+    const level = this.props.level || 'component';
     
-    // Log error to error tracking service (e.g., Sentry, LogRocket)
-    if (window.gtag) {
-      window.gtag('event', 'exception', {
-        description: error.message,
-        fatal: true,
-      });
+    // Log error using centralized logger
+    logger.error(`ErrorBoundary (${level}) caught an error`, error, {
+      componentStack: errorInfo.componentStack,
+      level,
+    });
+    
+    // Classify and handle error
+    const classified = classifyError(error);
+    handleError(error, {
+      showToast: level !== 'app', // Don't show toast for app-level errors (full page error)
+      logToConsole: true,
+      reportToService: classified.severity === 'high' || classified.severity === 'critical',
+    });
+    
+    // Call custom error handler if provided
+    if (this.props.onError) {
+      this.props.onError(error, errorInfo);
     }
+    
+    // Store error info in state
+    this.setState({ errorInfo });
   }
 
   private handleRetry = () => {
@@ -64,7 +83,11 @@ class ErrorBoundary extends Component<Props, State> {
 
   public render() {
     if (this.state.hasError) {
+      // Use custom fallback if provided
       if (this.props.fallback) {
+        if (typeof this.props.fallback === 'function') {
+          return this.props.fallback(this.state.error!, this.handleRetry);
+        }
         return this.props.fallback;
       }
 

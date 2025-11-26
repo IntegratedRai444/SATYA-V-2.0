@@ -1,68 +1,75 @@
-from fastapi import APIRouter, File, UploadFile, HTTPException
-from fastapi.responses import JSONResponse
-from backend.utils.image_utils import preprocess_image
-from backend.utils.report_utils import generate_webcam_report, export_report_json, export_report_pdf
-from backend.models.webcam_model import predict_webcam_liveness
-import os
+"""
+Webcam Capture and Analysis Route
+Dedicated route for webcam/real-time capture
+"""
+
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
+from datetime import datetime
+import base64
+import uuid
+from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-@router.post("/")
-async def detect_webcam_frame(file: UploadFile = File(...)) -> JSONResponse:
+
+class WebcamCapture(BaseModel):
+    image_data: str  # Base64 encoded image
+    format: str = "jpeg"
+
+
+@router.post("/capture")
+async def capture_and_analyze(
+    request: Request,
+    capture: WebcamCapture
+):
     """
-    Endpoint for webcam frame liveness analysis. Accepts an image upload, runs preprocessing, liveness detection,
-    and report generation. Returns analysis results and report paths.
+    Analyze webcam capture
+    
+    - **image_data**: Base64 encoded image data
+    - **format**: Image format (jpeg, png)
     """
-    if file.content_type not in ["image/jpeg", "image/png", "image/webp"]:
-        raise HTTPException(status_code=400, detail="Unsupported image format.")
     try:
-        contents = await file.read()
-        arr = preprocess_image(contents)
-        # Use real liveness, blink, pose, spoof detection
-        label, confidence, explanation = predict_webcam_liveness(arr)
-        # For blink, pose, spoof, parse from explanation or set as best effort
-        blink = {"detected": any('Blink detected' in exp for exp in explanation), "count": 1 if any('Blink detected' in exp for exp in explanation) else 0}
-        # Parse pose from explanation if present
-        pose_vals = next((exp for exp in explanation if exp.startswith('Pose')), None)
-        if pose_vals:
-            try:
-                pose_parts = pose_vals.split(':')[1].split(',')
-                yaw = float(pose_parts[0])
-                pitch = float(pose_parts[1])
-                roll = float(pose_parts[2])
-            except Exception:
-                yaw = pitch = roll = 0.0
-        else:
-            yaw = pitch = roll = 0.0
-        pose = {"yaw": yaw, "pitch": pitch, "roll": roll}
-        spoof = {"gan_replay": (label == 'FAKE')}
-        liveness = {"score": confidence / 100.0, "decision": label}
-        session_report = {"timeline": ["blink"] if blink["detected"] else [], "summary": explanation[-1] if explanation else ""}
-        red_flags = [exp for exp in explanation if 'spoof' in exp.lower() or 'no face' in exp.lower()]
-        result = {
-            "label": label,
-            "confidence": confidence,
-            "explanation": explanation,
-            "red_flags": red_flags,
-            "liveness": liveness,
-            "blink": blink,
-            "pose": pose,
-            "spoof": spoof,
-            "session_report": session_report
-        }
-        report = generate_webcam_report(file.filename, result, arr)
-        os.makedirs("reports", exist_ok=True)
-        json_path = f"reports/{file.filename}.json"
-        pdf_path = f"reports/{file.filename}.pdf"
-        export_report_json(report, json_path)
-        export_report_pdf(report, pdf_path)
-        return JSONResponse(content={
-            "success": True,
-            "result": result,
-            "report": report,
-            "report_json": json_path,
-            "report_pdf": pdf_path
-        })
+        # Decode base64 image
+        image_bytes = base64.b64decode(capture.image_data)
+        
+        # Save temp file
+        temp_path = Path(f"temp_webcam_{uuid.uuid4()}.{capture.format}")
+        with temp_path.open("wb") as f:
+            f.write(image_bytes)
+        
+        try:
+            # Analyze if detector available
+            analysis_result = None
+            if hasattr(request.app.state, 'image_detector'):
+                detector = request.app.state.image_detector
+                analysis_result = detector.detect(str(temp_path))
+            
+            return {
+                "success": True,
+                "timestamp": datetime.utcnow().isoformat(),
+                "analysis": analysis_result
+            }
+        finally:
+            # Clean up temp file
+            if temp_path.exists():
+                temp_path.unlink()
+        
     except Exception as e:
-        print(f"Webcam frame processing failed: {e}")
-        return JSONResponse(content={"success": False, "message": f"Webcam frame processing failed: {str(e)}"}, status_code=500) 
+        logger.error(f"Webcam capture analysis failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+
+@router.get("/status")
+async def webcam_status():
+    """
+    Check webcam capture status
+    """
+    return {
+        "success": True,
+        "status": "ready",
+        "timestamp": datetime.utcnow().isoformat()
+    }

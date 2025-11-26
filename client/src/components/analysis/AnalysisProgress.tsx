@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, CheckCircle, AlertCircle, Loader2, Clock } from 'lucide-react';
+import { X } from 'lucide-react';
 import { ProgressTracker } from './ProgressTracker';
 
 interface AnalysisProgress {

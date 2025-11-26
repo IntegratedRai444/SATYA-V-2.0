@@ -5,12 +5,16 @@ import { ThemeProvider } from 'next-themes';
 import { HelmetProvider } from 'react-helmet-async';
 import { AuthProvider } from './contexts/AuthContext';
 import { AppProvider } from './contexts/AppContext';
-import { WebSocketProvider } from './contexts/WebSocketContext';
 import { RealtimeProvider } from './contexts/RealtimeContext';
 import { BatchProcessingProvider } from './contexts/BatchProcessingContext';
 import { RouterProvider } from 'react-router-dom';
 import { router } from './utils/router';
+import { PerformanceMonitor, MemoryMonitor } from './utils/performanceOptimizer';
+import logger from './lib/logger';
 import './index.css';
+
+// Start performance monitoring
+PerformanceMonitor.mark('app-init-start');
 
 // Create a client
 const queryClient = new QueryClient({
@@ -38,9 +42,9 @@ const root = createRoot(container);
 // 3. ThemeProvider - Theme management
 // 4. AuthProvider - Authentication state
 // 5. AppProvider - Global app state (notifications, preferences)
-// 6. WebSocketProvider - WebSocket connection management
-// 7. RealtimeProvider - Real-time updates and notifications
-// 8. BatchProcessingProvider - Batch upload/processing state
+// 6. RealtimeProvider - Real-time updates and WebSocket management
+// 7. BatchProcessingProvider - Batch processing state
+// 8. Router - Application routing
 root.render(
   <StrictMode>
     <HelmetProvider>
@@ -48,13 +52,14 @@ root.render(
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <AuthProvider>
             <AppProvider>
-              <WebSocketProvider>
-                <RealtimeProvider>
-                  <BatchProcessingProvider>
-                    <RouterProvider router={router} />
-                  </BatchProcessingProvider>
-                </RealtimeProvider>
-              </WebSocketProvider>
+              {/* 6. RealtimeProvider - Real-time updates and WebSocket management */}
+              <RealtimeProvider>
+                {/* 7. BatchProcessingProvider - Batch processing state */}
+                <BatchProcessingProvider>
+                  {/* 8. Router - Application routing */}
+                  <RouterProvider router={router} />
+                </BatchProcessingProvider>
+              </RealtimeProvider>
             </AppProvider>
           </AuthProvider>
         </ThemeProvider>
@@ -62,3 +67,15 @@ root.render(
     </HelmetProvider>
   </StrictMode>
 );
+
+// End performance monitoring
+PerformanceMonitor.mark('app-init-end');
+PerformanceMonitor.measure('app-initialization', 'app-init-start', 'app-init-end');
+
+// Log memory usage in development
+if (import.meta.env.DEV) {
+  setTimeout(() => {
+    MemoryMonitor.logMemoryUsage('Initial Load');
+    logger.debug('Performance Metrics', PerformanceMonitor.getMetrics());
+  }, 2000);
+}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { FiUser, FiBot, FiLoader, FiAlertCircle, FiCheck } from 'react-icons/fi';
+import { FiUser, FiCpu, FiLoader, FiAlertCircle, FiCheck } from 'react-icons/fi';
 
 export type MessageStatus = 'sending' | 'sent' | 'error';
 
@@ -40,7 +40,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             isUser ? 'bg-purple-600 ml-3' : 'bg-gray-700 mr-3'
           }`}
         >
-          {isUser ? <FiUser className="text-white" /> : <FiBot className="text-white" />}
+          {isUser ? <FiUser className="text-white" /> : <FiCpu className="text-white" />}
         </div>
         <div 
           className={`px-4 py-3 rounded-2xl relative ${

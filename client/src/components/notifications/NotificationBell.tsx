@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useRealtime } from '@/contexts/RealtimeContext';
-import { useNotifications } from '@/hooks/useNotifications';
+import { useNotifications } from '@/contexts/NotificationContext';
 
 const NotificationIcon = ({ type }: { type: string }) => {
   switch (type) {
@@ -23,16 +23,16 @@ export const NotificationBell = () => {
   const [isOpen, setIsOpen] = useState(false);
   const { notifications: realtimeNotifications, unreadCount: realtimeUnreadCount, markAsRead: realtimeMarkAsRead, clearAll: realtimeClearAll } = useRealtime();
   const { notifications: localNotifications, unreadCount: localUnreadCount, markAsRead: localMarkAsRead, clearAll: localClearAll } = useNotifications();
-  
+
   // Merge notifications from both sources
   const notifications = [...realtimeNotifications, ...localNotifications];
   const unreadCount = realtimeUnreadCount + localUnreadCount;
-  
+
   const markAsRead = (id: string) => {
     realtimeMarkAsRead(id);
     localMarkAsRead(id);
   };
-  
+
   const clearAll = () => {
     realtimeClearAll();
     localClearAll();

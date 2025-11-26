@@ -1,5 +1,5 @@
-import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 
 interface PageTransitionProps {
   children: React.ReactNode;
@@ -8,20 +8,22 @@ interface PageTransitionProps {
 
 export const PageTransition = ({ children, className }: PageTransitionProps) => {
   const location = useLocation();
+  const [isAnimating, setIsAnimating] = useState(false);
+
+  useEffect(() => {
+    setIsAnimating(true);
+    const timer = setTimeout(() => setIsAnimating(false), 300);
+    return () => clearTimeout(timer);
+  }, [location.pathname]);
 
   return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key={location.pathname}
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -20 }}
-        transition={{ duration: 0.3, ease: 'easeInOut' }}
-        className={className}
-      >
-        {children}
-      </motion.div>
-    </AnimatePresence>
+    <div
+      className={`transition-all duration-300 ease-in-out ${
+        isAnimating ? 'opacity-0 translate-y-5' : 'opacity-100 translate-y-0'
+      } ${className || ''}`}
+    >
+      {children}
+    </div>
   );
 };
 

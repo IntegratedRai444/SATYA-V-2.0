@@ -1,43 +1,100 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
-import cv2
-import numpy as np
-from deepface import DeepFace
-import torch
-import torchvision
-from torchvision.transforms import functional as F
+"""
+Face Detection and Analysis Route
+Dedicated route for face-specific processing
+"""
+
+from fastapi import APIRouter, UploadFile, File, HTTPException, Request
+from pathlib import Path
+import uuid
+from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Load torchvision face detection model once
-face_model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True)
-face_model.eval()
 
-@router.post("/analyze/face")
-async def analyze_face(file: UploadFile = File(...)):
-    contents = await file.read()
-    nparr = np.frombuffer(contents, np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    if img is None:
-        raise HTTPException(status_code=400, detail="Invalid image file")
+@router.post("/detect")
+async def detect_faces(
+    request: Request,
+    file: UploadFile = File(...)
+):
+    """
+    Detect faces in an image
+    
+    - **file**: Image file containing faces
+    """
     try:
-        result = DeepFace.analyze(img, actions=['age', 'gender', 'emotion', 'race'])
-        return {"success": True, "result": result}
+        # Use image detector's face analysis
+        if hasattr(request.app.state, 'image_detector'):
+            # Save temp file
+            temp_path = Path(f"temp_{uuid.uuid4()}.jpg")
+            content = await file.read()
+            with temp_path.open("wb") as f:
+                f.write(content)
+            
+            try:
+                detector = request.app.state.image_detector
+                result = detector.detect(str(temp_path))
+                
+                # Extract face-specific info
+                face_info = result.get('details', {}).get('face_analysis', {})
+                
+                return {
+                    "success": True,
+                    "faces_detected": face_info.get('faces_detected', 0),
+                    "face_details": face_info,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            finally:
+                # Clean up temp file
+                if temp_path.exists():
+                    temp_path.unlink()
+        else:
+            raise HTTPException(status_code=503, detail="Face detector not available")
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"DeepFace error: {str(e)}")
+        logger.error(f"Face detection failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Detection failed: {str(e)}")
 
-@router.post("/detect/face")
-async def detect_face(file: UploadFile = File(...)):
-    contents = await file.read()
-    nparr = np.frombuffer(contents, np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    if img is None:
-        raise HTTPException(status_code=400, detail="Invalid image file")
-    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    img_tensor = F.to_tensor(img_rgb)
-    with torch.no_grad():
-        prediction = face_model([img_tensor])[0]
-    faces = []
-    for box, score in zip(prediction['boxes'], prediction['scores']):
-        if score > 0.8:
-            faces.append({"box": [float(x) for x in box.numpy()], "score": float(score)})
-    return {"success": True, "faces": faces} 
+
+@router.post("/analyze")
+async def analyze_face(
+    request: Request,
+    file: UploadFile = File(...)
+):
+    """
+    Analyze face for deepfake manipulation
+    
+    - **file**: Image file with face to analyze
+    """
+    try:
+        if hasattr(request.app.state, 'image_detector'):
+            # Save temp file
+            temp_path = Path(f"temp_{uuid.uuid4()}.jpg")
+            content = await file.read()
+            with temp_path.open("wb") as f:
+                f.write(content)
+            
+            try:
+                detector = request.app.state.image_detector
+                result = detector.detect(str(temp_path))
+                
+                return {
+                    "success": True,
+                    "analysis": result,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            finally:
+                if temp_path.exists():
+                    temp_path.unlink()
+        else:
+            raise HTTPException(status_code=503, detail="Face analyzer not available")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Face analysis failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")

@@ -1,4 +1,5 @@
 import apiClient from '@/lib/api';
+import logger from '@/lib/logger';
 
 // Extend the Window interface to include the apiClient
 declare global {
@@ -33,7 +34,7 @@ class UserService {
 
   public async getCurrentUser(): Promise<User> {
     if (this.currentUser) return this.currentUser;
-    
+
     try {
       const response = await apiClient.getProfile();
       if (response.success && response.data) {
@@ -49,74 +50,63 @@ class UserService {
       }
       throw new Error(response.error || 'Failed to fetch user profile');
     } catch (error) {
-      console.error('Failed to fetch current user:', error);
+      logger.error('Failed to fetch current user', error as Error);
       throw error;
     }
   }
 
   public async getTeamMembers(): Promise<TeamMember[]> {
     try {
-      // In a real app, you would have a dedicated endpoint for team members
-      // For now, we'll return the current user as a placeholder
-      const currentUser = await this.getCurrentUser();
-      return [{
-        ...currentUser,
-        joinDate: new Date().toISOString(),
-        status: 'active' as const
-      }];
+      const response = await apiClient.client.get<TeamMember[]>('/api/team/members');
+      this.teamMembers = response.data;
+      return this.teamMembers;
     } catch (error) {
-      console.error('Failed to fetch team members:', error);
+      logger.error('Failed to fetch team members', error as Error);
       return [];
     }
   }
 
   public async inviteUser(email: string, role: User['role']): Promise<void> {
     try {
-      // In a real app, you would call the invite endpoint
-      console.log(`Inviting ${email} with role ${role}`);
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await apiClient.client.post('/api/team/invite', { email, role });
+      logger.info('User invited successfully', { email, role });
     } catch (error) {
-      console.error('Failed to invite user:', error);
+      logger.error('Failed to invite user', error as Error);
       throw error;
     }
   }
 
   public async updateUserRole(userId: string, role: User['role']): Promise<void> {
     try {
-      // In a real app, you would call the update role endpoint
-      console.log(`Updating user ${userId} role to ${role}`);
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
+      await apiClient.client.put(`/api/team/members/${userId}/role`, { role });
+      logger.info('User role updated successfully', { userId, role });
+
       // Update local cache
       const user = this.teamMembers.find(m => m.id === userId);
       if (user) user.role = role;
     } catch (error) {
-      console.error('Failed to update user role:', error);
+      logger.error('Failed to update user role', error as Error);
       throw error;
     }
   }
 
   public async removeTeamMember(userId: string): Promise<void> {
     try {
-      // In a real app, you would call the delete endpoint
-      console.log(`Removing team member ${userId}`);
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
+      await apiClient.client.delete(`/api/team/members/${userId}`);
+      logger.info('Team member removed successfully', { userId });
+
       // Update local cache
       this.teamMembers = this.teamMembers.filter(m => m.id !== userId);
     } catch (error) {
-      console.error('Failed to remove team member:', error);
+      logger.error('Failed to remove team member', error as Error);
       throw error;
     }
   }
 
   public hasPermission(permission: string): boolean {
     if (!this.currentUser) return false;
-    return this.currentUser.permissions.includes(permission) || 
-           this.currentUser.role === 'admin';
+    return this.currentUser.permissions.includes(permission) ||
+      this.currentUser.role === 'admin';
   }
 }
 

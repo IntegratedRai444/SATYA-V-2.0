@@ -1,5 +1,6 @@
 import apiClient from '../lib/api';
 import { v4 as uuidv4 } from 'uuid';
+import logger from '../lib/logger';
 
 export interface Message {
   id: string;
@@ -55,7 +56,7 @@ export const sendMessage = async (
   try {
     const formData = new FormData();
     formData.append('message', message);
-    
+
     if (conversationId) {
       formData.append('conversationId', conversationId);
     }
@@ -86,13 +87,13 @@ export const sendMessage = async (
 
     return {
       response: response.data.data?.response || '',
-      conversationId: response.data.data?.conversationId || uuidv4(),
+      conversationId: (response.data.data as any)?.conversationId || conversationId || uuidv4(),
       messageId: uuidv4(),
       sources: response.data.data?.sources,
       suggestions: response.data.data?.suggestions,
     };
   } catch (error) {
-    console.error('Error sending message:', error);
+    logger.error('Error sending message', error as Error);
     throw error;
   }
 };
@@ -113,7 +114,7 @@ export const getChatHistory = async (): Promise<ChatHistoryItem[]> => {
 
     return response.data.data;
   } catch (error) {
-    console.error('Error fetching chat history:', error);
+    logger.error('Error fetching chat history', error as Error);
     return [];
   }
 };
@@ -139,7 +140,7 @@ export const getConversation = async (
       timestamp: new Date(msg.timestamp),
     }));
   } catch (error) {
-    console.error('Error fetching conversation:', error);
+    logger.error('Error fetching conversation', error as Error);
     return [];
   }
 };
@@ -158,7 +159,7 @@ export const deleteConversation = async (
 
     return response.data.success;
   } catch (error) {
-    console.error('Error deleting conversation:', error);
+    logger.error('Error deleting conversation', error as Error);
     return false;
   }
 };
@@ -185,7 +186,7 @@ export const getSuggestedResponses = async (
 
     return response.data.data;
   } catch (error) {
-    console.error('Error getting suggested responses:', error);
+    logger.error('Error getting suggested responses', error as Error);
     return [];
   }
 };

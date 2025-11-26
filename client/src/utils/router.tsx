@@ -1,7 +1,7 @@
-import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router-dom';
+import { createBrowserRouter, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Suspense, lazy, useEffect } from 'react';
-import LoadingState, { SkeletonLoader } from '@/components/ui/LoadingState';
+import LoadingState from '@/components/ui/LoadingState';
 import ErrorBoundary from '@/components/ui/ErrorBoundary';
 import { PageTransition } from '@/components/ui/PageTransition';
 
@@ -36,16 +36,17 @@ const Dashboard = lazyWithRetry(() => import('@/pages/Dashboard'));
 const Login = lazyWithRetry(() => import('@/pages/Login'));
 const Analytics = lazyWithRetry(() => import('@/pages/Analytics'));
 const DetectionTools = lazyWithRetry(() => import('@/pages/DetectionTools'));
-const UploadAnalysis = lazyWithRetry(() => import('@/pages/UploadAnalysis'));
-const Scan = lazyWithRetry(() => import('@/pages/Scan'));
-const ImageAnalysis = lazyWithRetry(() => import('@/pages/ImageAnalysis'));
-const VideoAnalysis = lazyWithRetry(() => import('@/pages/VideoAnalysis'));
-const AudioAnalysis = lazyWithRetry(() => import('@/pages/AudioAnalysis'));
+const SmartAnalysis = lazyWithRetry(() => import('../pages/SmartAnalysis'));
 const History = lazyWithRetry(() => import('@/pages/History'));
 const Settings = lazyWithRetry(() => import('@/pages/Settings'));
 const Help = lazyWithRetry(() => import('@/pages/Help'));
-const WebcamLive = lazyWithRetry(() => import('@/pages/WebcamLive'));
-const LandingPage = lazyWithRetry(() => import('@/pages/LandingPage'));
+
+const AIAssistant = lazyWithRetry(() => import('@/pages/AIAssistant'));
+const BatchAnalysis = lazyWithRetry(() => import('@/pages/BatchAnalysis'));
+const ImageAnalysis = lazyWithRetry(() => import('@/pages/ImageAnalysis'));
+const VideoAnalysis = lazyWithRetry(() => import('@/pages/VideoAnalysis'));
+const AudioAnalysis = lazyWithRetry(() => import('@/pages/AudioAnalysis'));
+const WiringVerification = lazyWithRetry(() => import('@/pages/dev/WiringVerification'));
 const NotFound = lazyWithRetry(() => import('@/pages/NotFound'));
 
 // Layout components
@@ -71,31 +72,32 @@ const ScrollToTop = () => {
 // Main app layout wrapper with transitions and error boundaries
 const AppLayout = () => {
   return (
-    <MainLayout>
+    <>
       <ScrollToTop />
       <ErrorBoundary>
         <PageTransition>
-          <Suspense 
+          <Suspense
             fallback={
               <div className="flex-1 flex items-center justify-center">
                 <LoadingState variant="section" message="Loading application..." />
               </div>
             }
           >
-            <Outlet />
+            <MainLayout />
           </Suspense>
         </PageTransition>
         <Toaster />
       </ErrorBoundary>
-    </MainLayout>
+    </>
   );
 };
 
 // Protected route component with better loading state
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const location = useLocation();
 
+  // Show loading state while checking authentication
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -104,7 +106,9 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
     );
   }
 
-  if (!isAuthenticated) {
+  // Only redirect if definitely not authenticated
+  // Check both isAuthenticated and user to avoid race conditions
+  if (!isAuthenticated && !user) {
     // Store the attempted URL for redirecting after login
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
@@ -133,14 +137,6 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
 // Create and export the router
 export const router = createBrowserRouter([
   // Public routes
-  {
-    path: '/',
-    element: (
-      <PublicRoute>
-        <LandingPage />
-      </PublicRoute>
-    ),
-  },
   {
     path: '/login',
     element: (
@@ -184,6 +180,7 @@ export const router = createBrowserRouter([
 
   // Protected routes with MainLayout
   {
+    path: '/',
     element: (
       <ProtectedRoute>
         <AppLayout />
@@ -192,7 +189,7 @@ export const router = createBrowserRouter([
     children: [
       // Dashboard - now with MainLayout (DEFAULT HOME PAGE)
       {
-        path: '/',
+        index: true,
         element: (
           <Suspense fallback={<LoadingState message="Loading dashboard..." isLoading={true} />}>
             <Dashboard />
@@ -200,7 +197,7 @@ export const router = createBrowserRouter([
         ),
       },
       {
-        path: '/dashboard',
+        path: 'dashboard',
         element: (
           <Suspense fallback={<LoadingState message="Loading dashboard..." isLoading={true} />}>
             <Dashboard />
@@ -208,7 +205,7 @@ export const router = createBrowserRouter([
         ),
       },
       {
-        path: '/home',
+        path: 'home',
         element: (
           <Suspense fallback={<LoadingState message="Loading..." isLoading={true} />}>
             <Home />
@@ -216,7 +213,7 @@ export const router = createBrowserRouter([
         ),
       },
       {
-        path: '/analytics',
+        path: 'analytics',
         element: (
           <Suspense fallback={<LoadingState message="Loading analytics..." isLoading={true} />}>
             <Analytics />
@@ -224,7 +221,7 @@ export const router = createBrowserRouter([
         ),
       },
       {
-        path: '/detection-tools',
+        path: 'detection-tools',
         element: (
           <Suspense fallback={<LoadingState message="Loading tools..." isLoading={true} />}>
             <DetectionTools />
@@ -232,47 +229,23 @@ export const router = createBrowserRouter([
         ),
       },
       {
-        path: '/upload',
+        path: 'smart-analysis',
         element: (
-          <Suspense fallback={<LoadingState message="Preparing upload..." isLoading={true} />}>
-            <UploadAnalysis />
+          <Suspense fallback={<LoadingState message="Loading Smart Analysis..." isLoading={true} />}>
+            <SmartAnalysis />
           </Suspense>
         ),
       },
       {
-        path: '/scan/:id',
-        element: (
-          <Suspense fallback={<LoadingState message="Loading scan..." isLoading={true} />}>
-            <Scan />
-          </Suspense>
-        ),
+        path: 'scan',
+        element: <Navigate to="/smart-analysis" replace />,
       },
       {
-        path: '/image-analysis',
-        element: (
-          <Suspense fallback={<LoadingState message="Loading image analysis..." isLoading={true} />}>
-            <ImageAnalysis />
-          </Suspense>
-        ),
+        path: 'scan/:id',
+        element: <Navigate to="/smart-analysis" replace />,
       },
       {
-        path: '/video-analysis',
-        element: (
-          <Suspense fallback={<LoadingState message="Loading video analysis..." isLoading={true} />}>
-            <VideoAnalysis />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/audio-analysis',
-        element: (
-          <Suspense fallback={<LoadingState message="Loading audio analysis..." isLoading={true} />}>
-            <AudioAnalysis />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/history',
+        path: 'history',
         element: (
           <Suspense fallback={<LoadingState message="Loading history..." isLoading={true} />}>
             <History />
@@ -280,7 +253,7 @@ export const router = createBrowserRouter([
         ),
       },
       {
-        path: '/settings',
+        path: 'settings',
         element: (
           <Suspense fallback={<LoadingState message="Loading settings..." isLoading={true} />}>
             <Settings />
@@ -288,7 +261,7 @@ export const router = createBrowserRouter([
         ),
       },
       {
-        path: '/help',
+        path: 'help',
         element: (
           <Suspense fallback={<LoadingState message="Loading help..." isLoading={true} />}>
             <Help />
@@ -296,30 +269,74 @@ export const router = createBrowserRouter([
         ),
       },
       {
-        path: '/webcam',
-        element: (
-          <Suspense fallback={<LoadingState message="Loading webcam..." isLoading={true} />}>
-            <WebcamLive />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/webcam-live',
-        element: (
-          <Suspense fallback={<LoadingState message="Loading webcam..." isLoading={true} />}>
-            <WebcamLive />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/scan-history',
+        path: 'scan-history',
         element: (
           <Suspense fallback={<LoadingState message="Loading scan history..." isLoading={true} />}>
             <History />
           </Suspense>
         ),
       },
+      {
+        path: 'ai-assistant',
+        element: (
+          <Suspense fallback={<LoadingState message="Loading AI Assistant..." isLoading={true} />}>
+            <AIAssistant />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'batch-analysis',
+        element: (
+          <Suspense fallback={<LoadingState message="Loading batch analysis..." isLoading={true} />}>
+            <BatchAnalysis />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'image-analysis',
+        element: (
+          <Suspense fallback={<LoadingState message="Loading image analysis..." isLoading={true} />}>
+            <ImageAnalysis />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'video-analysis',
+        element: (
+          <Suspense fallback={<LoadingState message="Loading video analysis..." isLoading={true} />}>
+            <VideoAnalysis />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'audio-analysis',
+        element: (
+          <Suspense fallback={<LoadingState message="Loading audio analysis..." isLoading={true} />}>
+            <AudioAnalysis />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'webcam-live',
+        element: <Navigate to="/smart-analysis" replace />,
+      },
+      {
+        path: 'multimodal-analysis',
+        element: <Navigate to="/smart-analysis" replace />,
+      },
     ],
+  },
+
+  // Dev Verification Route
+  {
+    path: '/dev-wiring',
+    element: (
+      <PublicRoute>
+        <Suspense fallback={<LoadingState variant="page" message="Loading verification..." />}>
+          <WiringVerification />
+        </Suspense>
+      </PublicRoute>
+    ),
   },
 
   // 404 route - must be last

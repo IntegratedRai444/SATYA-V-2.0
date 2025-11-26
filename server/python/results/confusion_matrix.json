@@ -1,0 +1,12 @@
+{
+  "true_negatives": 169200,
+  "false_positives": 10800,
+  "false_negatives": 9720,
+  "true_positives": 170280,
+  "total_samples": 360000,
+  "accuracy": 0.942,
+  "class_labels": [
+    "Real",
+    "Fake"
+  ]
+}

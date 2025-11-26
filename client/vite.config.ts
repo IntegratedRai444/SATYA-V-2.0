@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { stripConsolePlugin } from './vite-plugin-strip-console';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -26,6 +27,10 @@ export default defineConfig({
       },
     }),
     nodePolyfills,
+    stripConsolePlugin({
+      include: ['console.log', 'console.debug'],
+      exclude: ['console.warn', 'console.error', 'console.info'],
+    }),
   ],
   define: {
     'process.env': {},
@@ -50,7 +55,7 @@ export default defineConfig({
     open: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:5001',
         changeOrigin: true,
         secure: false,
       },
@@ -78,7 +83,26 @@ export default defineConfig({
       transformMixedEsModules: true,
     },
     minify: 'esbuild',
+    target: 'es2015',
+    // Enable code splitting and tree shaking
     rollupOptions: {
+      output: {
+        // Manual chunks for better code splitting
+        manualChunks: {
+          // Vendor chunks
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'ui-vendor': ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu', '@radix-ui/react-toast'],
+          'query-vendor': ['@tanstack/react-query'],
+          // Route-based chunks
+          'dashboard': ['./src/pages/Dashboard.tsx'],
+          'analysis': ['./src/pages/ImageAnalysis.tsx', './src/pages/VideoAnalysis.tsx', './src/pages/AudioAnalysis.tsx'],
+          'history': ['./src/pages/History.tsx'],
+        },
+        // Optimize chunk size
+        chunkFileNames: 'assets/[name]-[hash].js',
+        entryFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash].[ext]',
+      },
       plugins: [
         {
           name: 'replace-node-polyfills',
@@ -97,5 +121,9 @@ export default defineConfig({
         },
       ],
     },
+    // Warn on large chunks
+    chunkSizeWarningLimit: 1000, // 1MB warning
+    // Enable source maps for production debugging (optional)
+    sourcemap: false,
   }
 });

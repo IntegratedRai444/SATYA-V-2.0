@@ -12,29 +12,24 @@ from PIL import Image
 from typing import Dict, Any, List, Tuple, Optional
 import time
 
-from .base_detector import BaseDetector
-from ..utils.error_handler import (
-    error_handler, timeout, memory_monitor, retry, 
-    create_fallback_result, validate_input_file, ModelLoadError, AnalysisError
-)
-
+# Configure logging
 logger = logging.getLogger(__name__)
 
-# Import advanced face detector
+# Import forensic analysis
 try:
-    from .advanced_face_detector import AdvancedFaceDetector
-    ADVANCED_FACE_DETECTOR_AVAILABLE = True
+    from .forensic_analysis import analyze_ela, analyze_prnu
+    FORENSIC_ANALYSIS_AVAILABLE = True
 except ImportError:
-    ADVANCED_FACE_DETECTOR_AVAILABLE = False
-    logger.warning("Advanced face detector not available")
+    FORENSIC_ANALYSIS_AVAILABLE = False
+    logger.warning("Forensic analysis not available")
 
 
-class ImageDetector(BaseDetector):
+class ImageDetector:
     """
-    Image deepfake detector using MTCNN face detection and CNN classification.
+    Image Deepfake Detector with advanced multi-modal capabilities
     """
     
-    def __init__(self, model_path: str, enable_gpu: bool = False):
+    def __init__(self, model_path: str = None, enable_gpu: bool = False):
         """
         Initialize the image detector with advanced multi-modal capabilities.
         
@@ -42,17 +37,31 @@ class ImageDetector(BaseDetector):
             model_path: Path to model files
             enable_gpu: Whether to use GPU acceleration
         """
-        super().__init__(model_path, enable_gpu)
+        self.model_path = model_path
+        self.enable_gpu = enable_gpu
+        
+        # CRITICAL FIX: Initialize device attribute before use
+        try:
+            import torch
+            self.device = 'cuda' if torch.cuda.is_available() and enable_gpu else 'cpu'
+        except ImportError:
+            self.device = 'cpu'
+        
+        # CRITICAL FIX: Initialize models_loaded before checking it
+        self.models_loaded = False
+        
         self.face_detector = None
         self.embedding_model = None
         self.classifier_model = None
         self._models_loading = False
-        self._lazy_load = True  # Enable lazy loading by default
+        self._lazy_load = False  # Load models eagerly (default)
         
         # Initialize advanced face detector
         self.advanced_face_detector = None
+        ADVANCED_FACE_DETECTOR_AVAILABLE = False  # Placeholder
         if ADVANCED_FACE_DETECTOR_AVAILABLE:
             try:
+                from .advanced_face_detector import AdvancedFaceDetector
                 self.advanced_face_detector = AdvancedFaceDetector(enable_gpu=enable_gpu)
                 logger.info("✓ Advanced face detector initialized (MediaPipe, DeepFace, dlib)")
             except Exception as e:
@@ -570,39 +579,16 @@ class ImageDetector(BaseDetector):
         # Fill embedding with real image features
         embeddings[0:64] = mean_intensity / 255.0  # Normalized intensity
         embeddings[64:128] = std_intensity / 128.0  # Normalized variance
-        
-        # Add texture features
-        try:
-            from skimage.feature import local_binary_pattern
-            # Convert to grayscale for LBP
-            gray_face = np.mean(face_region, axis=2) if len(face_region.shape) == 3 else face_region
-            
-            # Calculate Local Binary Pattern features
-            lbp = local_binary_pattern(gray_face, P=8, R=1, method='uniform')
-            lbp_hist, _ = np.histogram(lbp.ravel(), bins=10, range=(0, 10))
-            lbp_features = lbp_hist / np.sum(lbp_hist)  # Normalize
-            
-            # Add LBP features to embedding
-            embeddings[128:138] = lbp_features.astype(np.float32)
-            
-        except ImportError:
-            # Fallback: use simple gradient features
-            if len(face_region.shape) == 3:
-                gray_face = np.mean(face_region, axis=2)
-            else:
-                gray_face = face_region
-                
-            # Calculate gradients
-            grad_x = np.gradient(gray_face, axis=1)
-            grad_y = np.gradient(gray_face, axis=0)
-            
-            # Gradient statistics
-            embeddings[128:132] = [
-                np.mean(np.abs(grad_x)) / 255.0,
-                np.mean(np.abs(grad_y)) / 255.0,
-                np.std(grad_x) / 128.0,
-                np.std(grad_y) / 128.0
-            ]
+        # Compute texture features using gradients
+        gray_face = np.mean(face, axis=2) if face.ndim == 3 else face
+        grad_x = np.gradient(gray_face, axis=1)
+        grad_y = np.gradient(gray_face, axis=0)
+        embeddings[128:132] = [
+            np.mean(np.abs(grad_x)) / 255.0,
+            np.mean(np.abs(grad_y)) / 255.0,
+            np.std(grad_x) / 128.0,
+            np.std(grad_y) / 128.0,
+        ]
         
         # Modify based on face characteristics
         embeddings[:50] *= (mean_intensity / 128.0)  # Brightness features
@@ -1282,9 +1268,6 @@ class ImageDetector(BaseDetector):
         
         return edges.astype(np.float32)
     
-    @timeout(180)  # 3 minute timeout
-    @memory_monitor(1024)  # 1GB memory limit
-    @retry(max_retries=2, delay=1.0)
     def analyze(self, image_buffer: bytes, **kwargs) -> Dict[str, Any]:
         """
         Analyze an image for deepfake manipulation with comprehensive error handling.

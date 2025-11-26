@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { performance } from 'perf_hooks';
 
 interface MetricValue {
@@ -148,16 +148,16 @@ class PrometheusMetrics {
 
       // Add metric values
       for (const [labelKey, metricValue] of Array.from(metric.values)) {
-        const labelsStr = metricValue.labels 
+        const labelsStr = metricValue.labels
           ? Object.entries(metricValue.labels)
-              .map(([key, value]) => `${key}="${value}"`)
-              .join(',')
+            .map(([key, value]) => `${key}="${value}"`)
+            .join(',')
           : '';
-        
-        const metricLine = labelsStr 
+
+        const metricLine = labelsStr
           ? `${metric.name}{${labelsStr}} ${metricValue.value}`
           : `${metric.name} ${metricValue.value}`;
-        
+
         output += `${metricLine}\n`;
       }
       output += '\n';
@@ -168,72 +168,41 @@ class PrometheusMetrics {
 
   // Express middleware for HTTP metrics
   httpMetricsMiddleware() {
-    return (req: Request, res: Response, next: Function) => {
-      const startTime = performance.now();
-      
-      // Increment in-flight requests
-      this.incrementGauge('http_requests_in_flight');
+    // Analysis metrics helpers
+    recordAnalysisStart(type: string): () => void {
+      this.incrementCounter('analysis_requests_total', { type });
+      this.incrementGauge('analysis_queue_length');
 
-      // Override res.end to capture metrics
-      const originalEnd = res.end;
-      const originalEndFn = originalEnd;
-      res.end = function(this: Response, ...args: any[]) {
-        const duration = (performance.now() - startTime) / 1000;
-        
-        // Record metrics
-        const labels = {
-          method: req.method,
-          route: req.route?.path || req.path,
-          status_code: res.statusCode.toString()
-        };
-
-        metrics.incrementCounter('http_requests_total', labels);
-        metrics.recordHistogram('http_request_duration_seconds', duration, labels);
-        metrics.decrementGauge('http_requests_in_flight');
-
-        // Call original end
-        return originalEndFn.apply(this, args);
-      } as any;
-
-      next();
-    };
-  }
-
-  // Analysis metrics helpers
-  recordAnalysisStart(type: string): () => void {
-    this.incrementCounter('analysis_requests_total', { type });
-    this.incrementGauge('analysis_queue_length');
-    
-    return this.startTimer('analysis_duration_seconds', { type });
-  }
-
-  recordAnalysisComplete(type: string): void {
-    this.decrementGauge('analysis_queue_length');
-  }
-
-  recordAnalysisError(type: string, error: string): void {
-    this.incrementCounter('analysis_errors_total', { type, error });
-    this.decrementGauge('analysis_queue_length');
-  }
-
-  // Health status updates
-  updateHealthStatus(component: string, status: boolean): void {
-    this.setGauge('health_check_status', status ? 1 : 0, { component });
-  }
-
-  // WebSocket metrics
-  recordWebSocketConnection(connected: boolean): void {
-    if (connected) {
-      this.incrementGauge('active_websocket_connections');
-    } else {
-      this.decrementGauge('active_websocket_connections');
+      return this.startTimer('analysis_duration_seconds', { type });
     }
-  }
 
-  // Session metrics
-  updateActiveSessionsCount(count: number): void {
-    this.setGauge('active_sessions', count);
-  }
+    recordAnalysisComplete(type: string): void {
+      this.decrementGauge('analysis_queue_length');
+    }
+
+    recordAnalysisError(type: string, error: string): void {
+      this.incrementCounter('analysis_errors_total', { type, error });
+      this.decrementGauge('analysis_queue_length');
+    }
+
+    // Health status updates
+    updateHealthStatus(component: string, status: boolean): void {
+      this.setGauge('health_check_status', status ? 1 : 0, { component });
+    }
+
+    // WebSocket metrics
+    recordWebSocketConnection(connected: boolean): void {
+      if(connected) {
+        this.incrementGauge('active_websocket_connections');
+      } else {
+        this.decrementGauge('active_websocket_connections');
+      }
+    }
+
+    // Session metrics
+    updateActiveSessionsCount(count: number): void {
+      this.setGauge('active_sessions', count);
+    }
 
   private getLabelKey(labels?: Record<string, string>): string {
     if (!labels) return '';
