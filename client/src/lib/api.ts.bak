@@ -1,0 +1,924 @@
+/**
+ * SatyaAI API Client
+ * Handles all communication with the backend API
+ */
+
+import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
+import type { 
+  ApiResponse, 
+  AuthResponse, 
+  AnalysisResult, 
+  HealthStatus, 
+  DashboardStats
+} from '../types/api';
+import { classifyError } from './errorHandler';
+import { createErrorInterceptor } from '../utils/apiErrorHandler';
+
+// Re-export types for backward compatibility
+export type { 
+  ApiResponse, 
+  AuthResponse, 
+  AnalysisResult, 
+  HealthStatus, 
+  DashboardStats,
+  User
+} from '../types/api';
+
+// API Configuration
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+const API_TIMEOUT = 300000; // 5 minutes for analysis endpoints
+
+// Log the API base URL for debugging
+console.log('API Base URL:', API_BASE_URL);
+
+// Validate environment variables
+if (!API_BASE_URL) {
+  console.warn('VITE_API_URL is not set. Using default API URL:', API_BASE_URL);
+}
+
+// Simple logger implementation
+const logger = {
+  debug: (message: string, ...args: any[]) => {
+    if (process.env.NODE_ENV !== 'production') {
+      console.debug(`[DEBUG] ${message}`, ...args);
+    }
+  },
+  info: (message: string, ...args: any[]) => {
+    console.log(`[INFO] ${message}`, ...args);
+  },
+  warn: (message: string, ...args: any[]) => {
+    console.warn(`[WARN] ${message}`, ...args);
+  },
+  error: (message: string, ...args: any[]) => {
+    console.error(`[ERROR] ${message}`, ...args);
+  }
+};
+
+// Types for our enhanced API client
+interface FallbackResponse<T = any> {
+  isFallback?: boolean;
+  timestamp: string;
+  error?: string;
+  data?: T;
+}
+
+interface RequestConfig extends AxiosRequestConfig {
+  useFallback?: boolean;
+  cacheResponse?: boolean;
+  retryCount?: number;
+  timeoutMs?: number;
+}
+
+// Cache for storing responses
+const responseCache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// Class to handle API requests
+class ApiClient {
+  // Offline state
+  private isOffline = false;
+  private lastOnlineCheck = 0;
+  private readonly OFFLINE_CHECK_INTERVAL = 30000; // 30 seconds
+  public client: AxiosInstance;
+  public authToken: string | null = null;
+  private connectionStatus = {
+    backend: false,
+    lastChecked: null as Date | null,
+    retryCount: 0
+  };
+
+  constructor() {
+    // Validate API base URL
+    if (!API_BASE_URL) {
+      console.error('API_BASE_URL is not set. Please check your environment configuration.');
+      throw new Error('API_BASE_URL is not configured');
+    }
+
+    // Initialize Axios instance with proper TypeScript types
+    this.client = axios.create({
+      baseURL: API_BASE_URL,
+      timeout: API_TIMEOUT,
+      withCredentials: false, // No need for cookies or CORS credentials
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-Request-Source': 'satyaai-web-client',
+        'X-Client-Version': '1.0.0'
+      }
+    });
+
+    // Add response interceptors
+    this.client.interceptors.response.use(
+      (response) => {
+        // Transform response format for consistency
+        if (response.data && response.data.result && !response.data.data) {
+          response.data.data = response.data.result;
+        }
+
+        // Enhanced logging in development
+        logger.debug(`API Response: ${response.config.method?.toUpperCase()} ${response.config.url}`, {
+          status: response.status,
+          statusText: response.statusText,
+          hasData: !!response.data
+        });
+        return response;
+      },
+      (error) => {
+        // Enhanced error logging
+        const classified = classifyError(error);
+        logger.error(`API Error: ${error.config?.method?.toUpperCase()} ${error.config?.url}`, error, {
+          type: classified.type,
+          status: error.response?.status,
+          code: error.code,
+          url: error.config?.url
+        });
+
+        // Handle CORS errors
+        if (error.message?.includes('Network Error') && !error.response) {
+          error.isCorsError = true;
+        }
+
+        // Handle rate limiting
+        if (error.response?.status === 429) {
+          logger.warn('Rate limit exceeded');
+        }
+
+        // Use centralized error handler for consistent error handling
+        createErrorInterceptor('API Request')(error);
+
+        return Promise.reject(error);
+      }
+    );
+
+    // Request interceptor
+    this.client.interceptors.request.use(
+      (config) => {
+        // Add auth token if available
+        if (this.authToken) {
+          config.headers.Authorization = `Bearer ${this.authToken}`;
+        }
+
+        // Enhanced logging in development
+        logger.debug(`API Request: ${config.method?.toUpperCase()} ${config.url}`, {
+          url: config.url,
+          method: config.method,
+          timeout: config.timeout,
+          baseURL: config.baseURL,
+          hasData: !!config.data
+        });
+
+        return config;
+      },
+      (error) => {
+        logger.error('Request interceptor error', error, {
+          hasResponse: !!error.response,
+          hasRequest: !!error.request,
+          status: error.response?.status
+        });
+        return Promise.reject(error);
+      }
+    );
+  }
+
+  // Private method to check connectivity
+  private async checkConnectivity(): Promise<boolean> {
+    const now = Date.now();
+    if (now - this.lastOnlineCheck < this.OFFLINE_CHECK_INTERVAL) {
+      return !this.isOffline;
+    }
+    
+    let timeoutId: NodeJS.Timeout | null = null;
+    
+    try {
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), 5000);
+      
+      const response = await fetch(`${API_BASE_URL}/api/health`, {
+        method: 'HEAD',
+        signal: controller.signal,
+        cache: 'no-store'
+      });
+      
+      this.isOffline = !response.ok;
+      this.lastOnlineCheck = now;
+      return response.ok;
+    } catch (error: unknown) {
+      this.isOffline = true;
+      this.lastOnlineCheck = now;
+      return false;
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }
+  }
+
+  // Create fallback responses
+  private createFallbackResponse<T>(
+    endpoint: string,
+    error: Error = new Error('Service unavailable')
+  ): T {
+    const timestamp = new Date().toISOString();
+    const fallbackResponses: Record<string, any> = {
+      '/health': {
+        status: 'degraded',
+        version: '1.0.0',
+        timestamp,
+        environment: 'fallback',
+        message: 'Using fallback health check',
+        error: error.message
+      },
+      '/analyze/image': {
+        success: false,
+        authenticity: 'UNCERTAIN',
+        confidence: 0,
+        analysis_date: timestamp,
+        key_findings: [
+          'Backend processing unavailable',
+          'Using fallback analysis',
+          'Results may be less accurate'
+        ],
+        is_fallback: true,
+        error: error.message
+      },
+      '/analyze/video': {
+        success: false,
+        authenticity: 'UNCERTAIN',
+        confidence: 0,
+        analysis_date: timestamp,
+        key_findings: [
+          'Video processing unavailable',
+          'Please try again later',
+          'For now, try image analysis instead'
+        ],
+        is_fallback: true,
+        error: 'Video analysis service unavailable'
+      },
+      '/analyze/audio': {
+        success: false,
+        authenticity: 'UNCERTAIN',
+        confidence: 0,
+        analysis_date: timestamp,
+        key_findings: [
+          'Audio processing unavailable',
+          'Please try again later',
+          'For now, try image analysis instead'
+        ],
+        is_fallback: true,
+        error: 'Audio analysis service unavailable'
+      },
+      '/api/upload/image': {
+        success: false,
+        is_fallback: true,
+        error: 'Upload service unavailable',
+        data: { url: '' }
+      },
+      '/api/upload/video': {
+        success: false,
+        is_fallback: true,
+        error: 'Upload service unavailable',
+        data: { url: '' }
+      }
+    };
+
+    const defaultResponse = {
+      success: false,
+      error: 'Service unavailable',
+      message: 'The requested service is currently unavailable',
+      is_fallback: true,
+      timestamp
+    };
+    
+    return {
+      ...defaultResponse,
+      ...(fallbackResponses[endpoint] || {})
+    } as unknown as T;
+  }
+
+// All types are now imported from '../types/api'
+  // Auth methods
+  async login(credentials: { username: string; password: string }): Promise<AuthResponse> {
+    const response = await this.client.post<AuthResponse>('/auth/login', credentials);
+    if (response.data.token) {
+      this.authToken = response.data.token;
+      this.client.defaults.headers.common['Authorization'] = `Bearer ${this.authToken}`;
+    }
+    return response.data;
+  }
+
+  async register(userData: {
+    username: string;
+    email: string;
+    password: string;
+    fullName?: string;
+  }): Promise<AuthResponse> {
+    const response = await this.client.post<AuthResponse>('/auth/register', userData);
+    return response.data;
+  }
+
+  logout(): void {
+    this.authToken = null;
+    delete this.client.defaults.headers.common['Authorization'];
+  }
+
+  async validateSession(): Promise<AuthResponse> {
+    const response = await this.client.get<AuthResponse>('/auth/validate');
+    return response.data;
+  }
+
+  async changePassword(passwords: {
+    currentPassword: string;
+    newPassword: string;
+  }): Promise<ApiResponse> {
+    const response = await this.client.put<ApiResponse>('/auth/change-password', passwords);
+    return response.data;
+  }
+
+  async getProfile(): Promise<AuthResponse> {
+    const response = await this.client.get<AuthResponse>('/auth/profile');
+    return response.data;
+  }
+
+  isAuthenticated(): boolean {
+    return !!this.authToken;
+  }
+
+
+
+  // Health and status endpoints
+  async getHealth(): Promise<HealthStatus> {
+    const response = await this.client.get<HealthStatus>('/api/health');
+    return response.data;
+  }
+
+  async getDetailedHealth(): Promise<any> {
+    const response = await this.client.get('/api/health/detailed');
+    return response.data;
+  }
+
+  async checkPythonHealth(): Promise<{ healthy: boolean; message?: string }> {
+    try {
+      const response = await this.client.get('/api/health');
+      return { 
+        healthy: response.data.status === 'healthy', 
+        message: 'Backend server is running' 
+      };
+    } catch (error) {
+      return { 
+        healthy: false, 
+        message: 'Backend server not responding. Please make sure the backend server is running.' 
+      };
+    }
+  }
+
+  // Analysis endpoints
+  async analyzeImage(imageFile: File | string, options?: {
+    sensitivity?: 'low' | 'medium' | 'high';
+    includeDetails?: boolean;
+    async?: boolean;
+  }): Promise<AnalysisResult> {
+    if (typeof imageFile === 'string') {
+      // Webcam analysis
+      const response = await this.client.post<AnalysisResult>('/analyze/image', {
+        image_path: imageFile,
+        ...options
+      });
+      return response.data;
+    } else {
+      // File upload
+      const formData = new FormData();
+      formData.append('file', imageFile);
+      if (options) {
+        formData.append('model_name', options.sensitivity || 'default_ensemble');
+        formData.append('confidence_threshold', '0.7');
+      }
+
+      const response = await this.client.post<AnalysisResult>('/analyze/image', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+        timeout: 120000, // 2 minutes for image analysis
+      });
+      return response.data;
+    }
+  }
+
+  async analyzeVideo(videoFile: File, options?: {
+    sensitivity?: 'low' | 'medium' | 'high';
+    includeDetails?: boolean;
+    async?: boolean;
+  }): Promise<AnalysisResult> {
+    const formData = new FormData();
+    formData.append('video', videoFile);
+    if (options) {
+      formData.append('options', JSON.stringify(options));
+    }
+
+    const response = await this.client.post<AnalysisResult>('/api/analysis/video', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 300000, // 5 minutes for video analysis
+    });
+    return response.data;
+  }
+
+  async analyzeAudio(audioFile: File, options?: {
+    sensitivity?: 'low' | 'medium' | 'high';
+    includeDetails?: boolean;
+    async?: boolean;
+  }): Promise<AnalysisResult> {
+    const formData = new FormData();
+    formData.append('audio', audioFile);
+    if (options) {
+      formData.append('options', JSON.stringify(options));
+    }
+
+    const response = await this.client.post<AnalysisResult>('/api/analysis/audio', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 180000, // 3 minutes for audio analysis
+    });
+    return response.data;
+  }
+
+  async analyzeMultimodal(files: {
+    image?: File;
+    video?: File;
+    audio?: File;
+  }, options?: {
+    sensitivity?: 'low' | 'medium' | 'high';
+    includeDetails?: boolean;
+    async?: boolean;
+  }): Promise<AnalysisResult> {
+    const formData = new FormData();
+
+    if (files.image) formData.append('image', files.image);
+    if (files.video) formData.append('video', files.video);
+    if (files.audio) formData.append('audio', files.audio);
+    if (options) {
+      formData.append('options', JSON.stringify(options));
+    }
+
+    const response = await this.client.post<AnalysisResult>('/api/analysis/multimodal', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 300000, // 5 minutes for multimodal analysis
+    });
+    return response.data;
+  }
+
+  async analyzeWebcam(imageData: string, options?: {
+    sensitivity?: 'low' | 'medium' | 'high';
+    includeDetails?: boolean;
+  }): Promise<AnalysisResult> {
+    const response = await this.client.post<AnalysisResult>('/api/analysis/webcam', {
+      imageData: imageData,
+      options,
+    });
+    return response.data;
+  }
+
+  // Job management for async analysis
+  async getAnalysisResult(jobId: string): Promise<ApiResponse> {
+    const response = await this.client.get(`/api/analysis/result/${jobId}`);
+    return response.data;
+  }
+
+  async getAnalysisHistory(params?: {
+    limit?: number;
+    offset?: number;
+    type?: string;
+    status?: string;
+  }): Promise<ApiResponse> {
+    const response = await this.client.get('/api/analysis/history', { params });
+    return response.data;
+  }
+
+  // Dashboard endpoints
+  async getDashboardStats(): Promise<ApiResponse<DashboardStats>> {
+    const response = await this.client.get('/api/dashboard/stats');
+    return response.data;
+  }
+
+  async getUserAnalytics(): Promise<ApiResponse> {
+    const response = await this.client.get('/api/dashboard/analytics');
+    return response.data;
+  }
+
+  async getScans(params?: {
+    limit?: number;
+    offset?: number;
+    type?: string;
+    result?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    sortBy?: string;
+    sortOrder?: string;
+  }): Promise<ApiResponse> {
+    const response = await this.client.get('/api/dashboard/scans', { params });
+    return response.data;
+  }
+
+  async getScan(id: number): Promise<ApiResponse> {
+    const response = await this.client.get(`/api/dashboard/scans/${id}`);
+    return response.data;
+  }
+
+  async getRecentActivity(): Promise<ApiResponse> {
+    const response = await this.client.get('/api/dashboard/recent-activity');
+    return response.data;
+  }
+
+  async getSystemStats(): Promise<ApiResponse> {
+    const response = await this.client.get('/api/dashboard/system-stats');
+    return response.data;
+  }
+
+  // Upload endpoints
+  public uploadImage = async (imageFile: File): Promise<ApiResponse<{ url: string }>> => {
+    try {
+      const formData = new FormData();
+      formData.append('image', imageFile);
+
+      const response = await this.client.post<Omit<ApiResponse<{ url: string }>, 'success'>>(
+        '/api/upload/image',
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        }
+      );
+
+      return {
+        success: true,
+        ...response.data,
+        data: response.data.data || { url: '' }
+      };
+    } catch (error) {
+      return this.handleError<ApiResponse<{ url: string }>>(error);
+    }
+  }
+
+  public uploadVideo = async (videoFile: File): Promise<ApiResponse<{ url: string }>> => {
+    try {
+      const formData = new FormData();
+      formData.append('video', videoFile);
+
+      const response = await this.client.post<Omit<ApiResponse<{ url: string }>, 'success'>>(
+        '/api/upload/video',
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        }
+      );
+
+      return {
+        success: true,
+        ...response.data,
+        data: response.data.data || { url: '' }
+      };
+    } catch (error) {
+      return this.handleError(error);
+    }
+  }
+
+  async uploadAudio(audioFile: File): Promise<ApiResponse> {
+    const formData = new FormData();
+    formData.append('audio', audioFile);
+
+    const response = await this.client.post('/api/upload/audio', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  }
+
+  async deleteFile(filename: string): Promise<ApiResponse> {
+    const response = await this.client.delete(`/api/upload/${filename}`);
+    return response.data;
+  }
+
+  async getFileInfo(filename: string): Promise<ApiResponse> {
+    const response = await this.client.get(`/api/upload/info/${filename}`);
+    return response.data;
+  }
+
+  // Handle API errors consistently
+  private handleError = <T extends ApiResponse>(error: unknown): T => {
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        logger.error('API Error Response', error, {
+          status: error.response.status,
+          statusText: error.response.statusText
+        });
+
+        const errorData = error.response.data as Record<string, any>;
+        const errorMessage = errorData?.message || error.message || 'An unknown error occurred';
+        
+        // Create a properly typed error response based on the expected return type
+        const errorResponse: ApiResponse<any> = {
+          success: false,
+          error: errorMessage,
+          statusCode: error.response.status,
+          ...(errorData || {})
+        };
+
+        // For upload endpoints, ensure the response has the correct shape
+        if (error.config?.url?.includes('/upload/')) {
+          (errorResponse as any).data = { url: '' };
+        }
+
+        return errorResponse as T;
+      } else if (error.request) {
+        logger.error('No response received from server', error);
+        const errorResponse: ApiResponse = {
+          success: false,
+          error: 'No response from server. Please check your network connection.',
+          statusCode: 0
+        };
+        return errorResponse as T;
+      }
+    }
+
+    // Handle non-Axios errors
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+    logger.error('API Error', error as Error);
+    const errorResponse: ApiResponse = {
+      success: false,
+      error: errorMessage,
+      statusCode: 0
+    };
+    
+    // For upload endpoints, ensure the response has the correct shape
+    if (typeof window !== 'undefined' && window.location.pathname.includes('/upload/')) {
+      (errorResponse as any).data = { url: '' };
+    }
+    
+    return errorResponse as T;
+  };
+
+  // Enhanced connection health checking with offline detection
+  public async checkBackendHealth(forceCheck = false): Promise<{
+    connected: boolean;
+    responseTime?: number;
+    error?: string;
+    isFallback?: boolean;
+    timestamp?: string;
+  }> {
+    // If we're in the middle of a check and it hasn't been long enough, return cached status
+    const now = Date.now();
+    if (!forceCheck && this.connectionStatus.lastChecked && 
+        (now - this.connectionStatus.lastChecked.getTime()) < 30000) {
+      return {
+        connected: this.connectionStatus.backend,
+        responseTime: now - this.connectionStatus.lastChecked.getTime(),
+        timestamp: this.connectionStatus.lastChecked.toISOString()
+      };
+    }
+
+    this.connectionStatus.lastChecked = new Date();
+    
+    try {
+      const startTime = performance.now();
+      const isOnline = await this.checkConnectivity();
+      const responseTime = performance.now() - startTime;
+      
+      this.connectionStatus.backend = isOnline;
+      this.connectionStatus.retryCount = 0;
+      
+      return {
+        connected: isOnline,
+        responseTime,
+        timestamp: this.connectionStatus.lastChecked.toISOString()
+      };
+    } catch (error) {
+      this.connectionStatus.retryCount++;
+      this.connectionStatus.backend = false;
+      
+      return {
+        connected: false,
+        error: error instanceof Error ? error.message : 'Unknown error checking connectivity',
+        timestamp: this.connectionStatus.lastChecked.toISOString()
+      };
+    }
+  }
+
+  async retryConnection(maxRetries: number = 3): Promise<boolean> {
+    logger.info(`Retrying connection (attempt ${this.connectionStatus.retryCount + 1}/${maxRetries})`);
+
+    for (let i = 0; i < maxRetries; i++) {
+      const health = await this.checkBackendHealth();
+      if (health.connected) {
+        return true;
+      }
+
+      const delay = Math.pow(2, i) * 1000;
+      logger.debug(`Waiting ${delay}ms before next retry`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+
+    return false;
+  }
+
+  getConnectionStatus() {
+    return { ...this.connectionStatus };
+  }
+
+  // Enhanced request method with offline support and fallbacks
+  public async request<T extends object>(
+    config: RequestConfig & {
+      method: 'get' | 'post' | 'put' | 'delete' | 'patch';
+      url: string;
+      data?: any;
+    }
+  ): Promise<{ data: T }> {
+    const {
+      url,
+      useFallback = true,
+      cacheResponse = true,
+      retryCount = 2,
+      timeoutMs = 15000,
+      ...requestConfig
+    } = config;
+
+    // Check cache first for GET requests
+    if (config.method === 'get' && responseCache.has(url)) {
+      const cached = responseCache.get(url)!;
+      if (Date.now() - cached.timestamp < CACHE_TTL) {
+        return { data: cached.data };
+      }
+      responseCache.delete(url);
+    }
+
+    // Check connectivity
+    const isOnline = await this.checkConnectivity();
+    if (!isOnline && useFallback) {
+      return { 
+        data: this.createFallbackResponse<T>(url, new Error('Offline mode')) as unknown as T 
+      };
+    }
+
+    try {
+      // Implement retry logic
+      const makeRequest = async (attempt = 1): Promise<{ data: T }> => {
+        try {
+          const response = await this.client.request<T>({
+            ...requestConfig,
+            url,
+            timeout: timeoutMs
+          });
+          return { data: response.data };
+        } catch (error) {
+          if (attempt >= retryCount) throw error;
+          const delay = attempt * 1000;
+          await new Promise(resolve => setTimeout(resolve, delay));
+          return makeRequest(attempt + 1);
+        }
+      };
+      
+      const response = await makeRequest();
+      const responseData = response.data;
+
+      // Cache successful responses
+      if (cacheResponse && config.method === 'get') {
+        responseCache.set(url, {
+          data: responseData,
+          timestamp: Date.now(),
+        });
+      }
+
+      return { data: responseData };
+    } catch (error) {
+      // Return cached response if available and fallback is enabled
+      if (useFallback && config.method === 'get' && responseCache.has(url)) {
+        return { data: responseCache.get(url)!.data };
+      }
+
+      // Return fallback response if configured
+      if (useFallback) {
+        // Cast to any to handle the fallback response type
+        return { 
+          data: this.createFallbackResponse<T>(
+            url, 
+            error instanceof Error ? error : new Error('Request failed')
+          ) as unknown as T
+        };
+      }
+
+      // Re-throw the error if no fallback is available
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('An unknown error occurred');
+    }
+  }
+
+  // Utility methods
+  getAuthToken(): string | null {
+    return this.authToken;
+  }
+
+  // Get base URL for external use
+  getBaseURL(): string {
+    return API_BASE_URL;
+  }
+
+  // Development configuration diagnostics
+  validateConfiguration(): { valid: boolean; issues: string[] } {
+    const issues: string[] = [];
+
+    if (!API_BASE_URL) {
+      issues.push('VITE_API_URL is not set');
+    }
+
+    if (API_BASE_URL === 'http://localhost:8000' && import.meta.env.DEV) {
+      // This is expected in development
+    } else if (API_BASE_URL.includes('localhost') && !import.meta.env.DEV) {
+      issues.push('Using localhost URL in production build');
+    }
+
+    if (API_TIMEOUT < 5000) {
+      issues.push('API timeout is very low (< 5 seconds)');
+    }
+
+    return {
+      valid: issues.length === 0,
+      issues
+    };
+  }
+
+  // Development diagnostics
+  async runDiagnostics(): Promise<void> {
+    if (!import.meta.env.DEV) return;
+
+    console.group('🔧 SatyaAI API Client Diagnostics');
+
+    const config = this.validateConfiguration();
+    logger.debug('API Configuration', {
+      baseURL: API_BASE_URL,
+      timeout: API_TIMEOUT,
+      valid: config.valid,
+      issues: config.issues
+    });
+
+    logger.debug('Environment', {
+      NODE_ENV: import.meta.env.MODE,
+      DEV: import.meta.env.DEV
+    });
+
+    const health = await this.checkBackendHealth();
+    logger.debug('Backend health check', health);
+
+    logger.debug('Authentication status', {
+      hasToken: !!this.authToken
+    });
+
+    console.groupEnd();
+  }
+}
+
+// Create a singleton instance
+const apiClient = new ApiClient();
+
+// Export the singleton instance as default
+export default apiClient;
+
+// Export convenience methods
+export const {
+  login,
+  register,
+  logout,
+  validateSession,
+  changePassword,
+  getProfile,
+  getHealth,
+  getDetailedHealth,
+  analyzeImage,
+  analyzeVideo,
+  analyzeAudio,
+  analyzeMultimodal,
+  analyzeWebcam,
+  getAnalysisResult,
+  getAnalysisHistory,
+  getDashboardStats,
+  getUserAnalytics,
+  getScans,
+  getScan,
+  getRecentActivity,
+  getSystemStats,
+  uploadImage,
+  uploadVideo,
+  uploadAudio,
+  deleteFile,
+  getFileInfo,
+  isAuthenticated,
+  getAuthToken,
+  getBaseURL,
+} = apiClient;

@@ -1,118 +1,141 @@
-/**
- * Real Authentication Service
- * Handles secure token management and authentication operations
- */
-
+import { apiClient } from '@/lib/api/apiClient';
 import logger from '../lib/logger';
 
-const TOKEN_KEY = 'satyaai_auth_token';
-const TOKEN_EXPIRY_KEY = 'satyaai_token_expiry';
-const REFRESH_THRESHOLD = 5 * 60 * 1000; // 5 minutes before expiry
+const ACCESS_TOKEN_KEY = 'satya_access_token';
+const REFRESH_TOKEN_KEY = 'satya_refresh_token';
+const USER_KEY = 'satya_user';
 
-export type AuthToken = string | null;
+export interface User {
+  id: string;
+  username: string;
+  email: string;
+  role: string;
+  full_name?: string;
+}
 
-/**
- * Securely get authentication token from storage
- */
-export const getAuthToken = (): Promise<string> => {
-  try {
-    const token = localStorage.getItem(TOKEN_KEY);
-    const expiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
-    
-    if (!token) {
-      return Promise.reject(new Error('No authentication token found'));
-    }
-    
-    // Check if token is expired
-    if (expiry && Date.now() > parseInt(expiry)) {
-      removeAuthToken();
-      return Promise.reject(new Error('Authentication token expired'));
-    }
-    
-    return Promise.resolve(token);
-  } catch (error) {
-    logger.error('Error retrieving auth token', error as Error);
-    return Promise.reject(error);
-  }
+export interface AuthResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  user: User;
+}
+
+// Token Management
+export const getAuthToken = (): string | null => {
+  return localStorage.getItem(ACCESS_TOKEN_KEY);
 };
 
-/**
- * Securely set authentication token with expiry
- */
-export const setAuthToken = (token: string, expiresIn: number = 24 * 60 * 60 * 1000): void => {
+export const getRefreshToken = (): string | null => {
+  return localStorage.getItem(REFRESH_TOKEN_KEY);
+};
+
+export const setAuthToken = (token: string): void => {
+  localStorage.setItem(ACCESS_TOKEN_KEY, token);};
+
+export const setRefreshToken = (token: string): void => {
+  localStorage.setItem(REFRESH_TOKEN_KEY, token);
+};
+
+export const removeAuthToken = (): void => {
+  localStorage.removeItem(ACCESS_TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+};
+
+// User Management
+export const getCurrentUser = (): User | null => {
+  const user = localStorage.getItem(USER_KEY);
+  return user ? JSON.parse(user) : null;
+};
+
+const setCurrentUser = (user: User): void => {
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+};
+
+// Auth Operations
+export const login = async (username: string, password: string, role?: 'user' | 'admin'): Promise<AuthResponse> => {
   try {
-    localStorage.setItem(TOKEN_KEY, token);
-    const expiryTime = Date.now() + expiresIn;
-    localStorage.setItem(TOKEN_EXPIRY_KEY, expiryTime.toString());
-    logger.info('Auth token set successfully');
+    const response = await apiClient.post<AuthResponse>('/api/auth/login', {
+      username,
+      password,
+      role
+    });
+
+    // Save tokens and user data
+    setAuthToken(response.access_token);
+    setRefreshToken(response.refresh_token);
+    setCurrentUser(response.user);
+    
+    logger.info('Login successful', { username, role });
+    return response;
   } catch (error) {
-    logger.error('Error setting auth token', error as Error);
+    logger.error('Login failed', { error, username });
     throw error;
   }
 };
 
-/**
- * Remove authentication token and cleanup
- */
-export const removeAuthToken = (): void => {
+export const logout = async (): Promise<void> => {
   try {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(TOKEN_EXPIRY_KEY);
-    logger.info('Auth token removed');
+    await apiClient.post('/api/auth/logout', {});
   } catch (error) {
-    logger.error('Error removing auth token', error as Error);
+    logger.warn('Logout request failed', { error });
+  } finally {
+    // Always clear local auth data
+    removeAuthToken();
   }
 };
 
-/**
- * Check if user is authenticated with valid token
- */
-export const isAuthenticated = async (): Promise<boolean> => {
-  try {
-    await getAuthToken();
-    return true;
-  } catch (error) {
-    return false;
+export const refreshToken = async (): Promise<{ access_token: string }> => {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) {
+    throw new Error('No refresh token available');
   }
-};
 
-/**
- * Check if token needs refresh
- */
-export const shouldRefreshToken = (): boolean => {
   try {
-    const expiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
-    if (!expiry) return false;
+    const response = await apiClient.post<{ access_token: string }>(
+      '/api/auth/refresh',
+      { refresh_token: refreshToken }
+    );
     
-    const timeUntilExpiry = parseInt(expiry) - Date.now();
-    return timeUntilExpiry < REFRESH_THRESHOLD && timeUntilExpiry > 0;
+    setAuthToken(response.access_token);
+    return response;
   } catch (error) {
-    return false;
+    logger.error('Token refresh failed', { error });
+    removeAuthToken();
+    throw error;
   }
 };
 
-/**
- * Get token expiry time
- */
-export const getTokenExpiry = (): Date | null => {
-  try {
-    const expiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
-    return expiry ? new Date(parseInt(expiry)) : null;
-  } catch (error) {
-    return null;
-  }
+export const getCurrentUserProfile = async (): Promise<User> => {
+  const response = await apiClient.get<User>('/api/auth/me');
+  setCurrentUser(response);
+  return response;
 };
 
-/**
- * Clear all authentication data
- */
-export const clearAuthData = (): void => {
-  removeAuthToken();
-  // Clear any other auth-related data
-  try {
-    localStorage.removeItem('user_data');
-    localStorage.removeItem('user_preferences');
-  } catch (error) {
-    logger.error('Error clearing auth data', error as Error);
-  }
+export const updateProfile = async (updates: Partial<User>): Promise<User> => {
+  const response = await apiClient.put<User>('/api/auth/me', updates);
+  setCurrentUser(response);
+  return response;
+};
+
+export const isAuthenticated = (): boolean => {
+  return !!getAuthToken();
+};
+
+export const hasRole = (requiredRole: string): boolean => {
+  const user = getCurrentUser();
+  return user?.role === requiredRole;
+};
+
+export const authService = {
+  login,
+  logout,
+  refreshToken,
+  getCurrentUser,
+  getCurrentUserProfile,
+  updateProfile,
+  isAuthenticated,
+  hasRole,
+  getAuthToken,
+  removeAuthToken
 };
