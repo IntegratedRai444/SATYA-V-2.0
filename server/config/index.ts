@@ -80,7 +80,11 @@ export async function validateConfiguration(): Promise<boolean> {
     if (error instanceof ConfigurationError) {
       logger.error('Configuration validation failed', {
         message: error.message,
-        errors: error.errors?.errors
+        errors: error.errors?.issues?.map(issue => ({
+          path: issue.path.join('.'),
+          message: issue.message,
+          code: issue.code
+        }))
       });
     } else {
       logError(error as Error, { context: 'configuration_validation' });

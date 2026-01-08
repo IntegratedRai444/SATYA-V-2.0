@@ -1,10 +1,12 @@
 import type { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 
+type CSPDirectiveValue = string | ((req: Request) => string);
+
 interface SecurityConfig {
   contentSecurityPolicy?: {
     enabled: boolean;
-    directives?: Record<string, string[]>;
+    directives?: Record<string, (string | ((req: Request) => string))[]>;
     reportUri?: string;
   };
   hsts?: {
@@ -27,18 +29,19 @@ const defaultSecurityConfig: SecurityConfig = {
     enabled: true,
     directives: {
       'default-src': ["'self'"],
-      'script-src': ["'self'", "'unsafe-inline'"],
-      'style-src': ["'self'", "'unsafe-inline'"],
-      'img-src': ["'self'", 'data:', 'https:'],
-      'font-src': ["'self'", 'https:'],
-      'connect-src': ["'self'", 'ws:', 'wss:'],
-      'media-src': ["'self'"],
+      'script-src': ["'self'", (req: Request) => `'nonce-${req.nonce}'`],
+      'style-src': ["'self'", (req: Request) => `'nonce-${req.nonce}'`],
+      'img-src': ["'self'", 'data:', 'https:', 'blob:'],
+      'font-src': ["'self'", 'https:', 'data:'],
+      'connect-src': ["'self'", 'ws:', 'wss:', 'https:'],
+      'media-src': ["'self'", 'blob:', 'data:'],
       'object-src': ["'none'"],
-      'frame-src': ["'none'"],
+      'frame-src': ["'self'"],
       'base-uri': ["'self'"],
       'form-action': ["'self'"],
-      'frame-ancestors': ["'none'"],
-      'upgrade-insecure-requests': []
+      'frame-ancestors': ["'self'"],
+      'upgrade-insecure-requests': [],
+      'block-all-mixed-content': []
     }
   },
   hsts: {
@@ -79,7 +82,7 @@ class SecurityHeaders {
   }
 
   // Build CSP header value
-  private buildCSPHeader(nonce?: string): string {
+  private buildCSPHeader(nonce: string): string {
     if (!this.config.contentSecurityPolicy?.enabled || !this.config.contentSecurityPolicy.directives) {
       return '';
     }
@@ -90,16 +93,21 @@ class SecurityHeaders {
     for (const [directive, values] of Object.entries(directives)) {
       if (values.length === 0) {
         cspParts.push(directive);
-      } else {
-        let directiveValues = values.join(' ');
-        
-        // Add nonce to script-src and style-src if provided
-        if (nonce && (directive === 'script-src' || directive === 'style-src')) {
-          directiveValues += ` 'nonce-${nonce}'`;
-        }
-        
-        cspParts.push(`${directive} ${directiveValues}`);
+        continue;
       }
+
+      const processedValues = values.map(value => 
+        typeof value === 'function' ? value({} as Request) : value
+      );
+
+      let directiveValues = processedValues.join(' ');
+      
+      // Add nonce to script-src and style-src if provided
+      if (nonce && (directive === 'script-src' || directive === 'style-src')) {
+        directiveValues += ` 'nonce-${nonce}'`;
+      }
+      
+      cspParts.push(`${directive} ${directiveValues}`.trim());
     }
 
     // Add report-uri if configured
@@ -131,10 +139,12 @@ class SecurityHeaders {
     return (req: Request, res: Response, next: NextFunction) => {
       // Generate nonce for this request
       const nonce = this.generateNonce();
-      this.nonces.set(req.ip || 'unknown', nonce);
+      const ip = req.ip || req.socket.remoteAddress || 'unknown';
+      this.nonces.set(ip, nonce);
 
-      // Store nonce in response locals for use in templates
+      // Store nonce in response locals and request for use in templates and CSP
       res.locals.nonce = nonce;
+      (req as any).nonce = nonce; // Add nonce to request for CSP functions
 
       // Content Security Policy
       if (this.config.contentSecurityPolicy?.enabled) {

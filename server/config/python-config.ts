@@ -9,14 +9,16 @@ export const pythonConfig = {
   // API Key for authenticating with the Python service
   apiKey: process.env.PYTHON_SERVICE_API_KEY || 'your-secret-api-key',
   
-  // Timeout for API requests (in milliseconds)
-  requestTimeout: parseInt(process.env.PYTHON_SERVICE_TIMEOUT || '60000', 10),
+  // Timeout for API requests (in milliseconds) - increased for ML operations
+  requestTimeout: parseInt(process.env.PYTHON_SERVICE_TIMEOUT || '300000', 10), // 5 minutes
   
   // Maximum retry attempts for failed requests
   maxRetries: parseInt(process.env.PYTHON_SERVICE_MAX_RETRIES || '3', 10),
   
-  // Retry delay (in milliseconds)
-  retryDelay: parseInt(process.env.PYTHON_SERVICE_RETRY_DELAY || '1000', 10),
+  // Exponential backoff for retries (in milliseconds)
+  retryDelay: 1000, // Start with 1 second
+  maxRetryDelay: 30000, // Max 30 seconds
+  retryBackoffFactor: 2, // Double the delay on each retry
   
   // Enable/disable Python service (for maintenance or debugging)
   enabled: process.env.PYTHON_SERVICE_ENABLED !== 'false',

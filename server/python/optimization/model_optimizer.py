@@ -2,22 +2,23 @@
 Model Optimization Module
 Handles model quantization, pruning, and optimization for edge deployment.
 """
-import os
-import torch
-import torch.nn as nn
-import torch.quantization
-import torch.nn.utils.prune as prune
-from torch.quantization import quantize_dynamic, QuantStub, DeQuantStub
-from torch.quantization import fuse_modules
-from torch.jit import script, trace
-from pathlib import Path
-from typing import Dict, Any, Optional, Tuple, Union, List
 import logging
-import numpy as np
+import os
 from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+import numpy as np
 import onnx
 import onnxruntime as ort
+import torch
+import torch.nn as nn
+import torch.nn.utils.prune as prune
+import torch.quantization
 from onnxruntime.quantization import quantize_dynamic as onnx_quantize
+from torch.jit import script, trace
+from torch.quantization import (DeQuantStub, QuantStub, fuse_modules,
+                                quantize_dynamic)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

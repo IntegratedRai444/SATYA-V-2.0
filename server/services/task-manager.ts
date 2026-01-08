@@ -3,13 +3,6 @@ import { tasks, type Task, type InsertTask } from '@shared/schema';
 import { eq, and, desc } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../config';
-import { logger } from '../config';
-import { logger } from '../config';
-import { logger } from '../config';
-import { logger } from '../config';
-import { logger } from '../config';
-import { logger } from '../config';
-import { logger } from '../config';
 
 /**
  * Task Manager Service

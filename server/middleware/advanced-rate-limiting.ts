@@ -9,6 +9,10 @@ interface RateLimitRule {
   skipFailedRequests?: boolean;
   keyGenerator?: (req: Request) => string;
   onLimitReached?: (req: Request, res: Response) => void;
+  blockDuration?: number; // Duration to block after limit is reached (ms)
+  trustProxy?: boolean; // Whether to trust X-Forwarded-For header
+  message?: string; // Custom rate limit message
+  statusCode?: number; // Custom status code for rate limited responses
 }
 
 interface RateLimitEntry {
@@ -19,39 +23,106 @@ interface RateLimitEntry {
 
 class AdvancedRateLimiter {
   private store: Map<string, RateLimitEntry> = new Map();
+  private blockedIPs: Map<string, number> = new Map();
   private cleanupInterval: NodeJS.Timeout;
+  private blockCleanupInterval: NodeJS.Timeout;
 
   constructor() {
-    // Clean up expired entries every 5 minutes
+    // Clean up expired rate limit entries every 5 minutes
     this.cleanupInterval = setInterval(() => {
       this.cleanup();
     }, 5 * 60 * 1000);
+
+    // Clean up blocked IPs every minute
+    this.blockCleanupInterval = setInterval(() => {
+      this.cleanupBlockedIPs();
+    }, 60 * 1000);
   }
 
   private cleanup(): void {
     const now = Date.now();
+    // Clean up expired rate limit entries
+    const expiredKeys: string[] = [];
     for (const [key, entry] of this.store.entries()) {
       if (now > entry.resetTime) {
-        this.store.delete(key);
+        expiredKeys.push(key);
+      }
+    }
+    expiredKeys.forEach(key => this.store.delete(key));
+  }
+
+  private cleanupBlockedIPs(): void {
+    const now = Date.now();
+    // Clean up expired blocked IPs
+    for (const [ip, expiry] of this.blockedIPs.entries()) {
+      if (now > expiry) {
+        this.blockedIPs.delete(ip);
       }
     }
   }
 
-  private getKey(req: Request, keyGenerator?: (req: Request) => string): string {
-    if (keyGenerator) {
-      return keyGenerator(req);
+  private isIPBlocked(ip: string): boolean {
+    const expiry = this.blockedIPs.get(ip);
+    if (!expiry) return false;
+    if (Date.now() > expiry) {
+      this.blockedIPs.delete(ip);
+      return false;
+    }
+    return true;
+  }
+
+  private getIP(req: Request): string {
+    // Get client IP, considering proxy headers if trustProxy is true
+    const xForwardedFor = req.headers['x-forwarded-for'];
+    const xForwardedForIp = Array.isArray(xForwardedFor) 
+      ? xForwardedFor[0]?.trim()
+      : typeof xForwardedFor === 'string'
+        ? xForwardedFor.split(',')[0]?.trim()
+        : null;
+        
+    const ip = xForwardedForIp || 
+              req.socket.remoteAddress || 
+              'unknown';
+    
+    // Basic IP validation and normalization
+    if (ip === '::1') return '127.0.0.1';
+    if (ip.startsWith('::ffff:')) return ip.substring(7);
+    return ip;
+  }
+
+  private getKey(req: Request, rule: RateLimitRule): string {
+    // Check for custom key generator first
+    if (rule.keyGenerator) {
+      return rule.keyGenerator(req);
     }
     
-    // Default key: IP + User ID (if authenticated)
-    const ip = req.ip || req.connection.remoteAddress || 'unknown';
+    // Default key: IP + User ID (if authenticated) + path
+    const ip = this.getIP(req);
     const userId = (req as any).user?.user_id || 'anonymous';
-    return `${ip}:${userId}`;
+    const path = req.path;
+    
+    return `${ip}:${userId}:${path}`;
   }
 
   createMiddleware(rule: RateLimitRule) {
     return async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const key = this.getKey(req, rule.keyGenerator);
+        const ip = this.getIP(req);
+        
+        // Check if IP is blocked
+        if (this.isIPBlocked(ip)) {
+          const retryAfter = Math.ceil((this.blockedIPs.get(ip)! - Date.now()) / 1000);
+          res.set('Retry-After', String(retryAfter));
+          return res.status(429).json({
+            success: false,
+            error: 'Too many requests',
+            message: rule.message || 'Rate limit exceeded. Please try again later.',
+            retryAfter,
+            code: 'RATE_LIMIT_EXCEEDED'
+          });
+        }
+        
+        const key = this.getKey(req, rule);
         const now = Date.now();
         
         let entry = this.store.get(key);
@@ -67,53 +138,92 @@ class AdvancedRateLimiter {
         }
 
         // Check if request should be counted
-        const shouldCount = !rule.skipSuccessfulRequests && !rule.skipFailedRequests;
+        const shouldCount = !rule.skipSuccessfulRequests || 
+                          (rule.skipSuccessfulRequests && !(res.statusCode >= 200 && res.statusCode < 300)) ||
+                          (rule.skipFailedRequests && res.statusCode >= 400);
         
         if (shouldCount) {
           entry.count++;
         }
 
+        // Calculate rate limit values
+        const remaining = Math.max(0, rule.maxRequests - entry.count);
+        const resetTime = Math.ceil((entry.resetTime - now) / 1000);
+        
+        // Set rate limit headers
+        const headers: Record<string, string> = {
+          'X-RateLimit-Limit': rule.maxRequests.toString(),
+          'X-RateLimit-Remaining': remaining.toString(),
+          'X-RateLimit-Reset': entry.resetTime.toString()
+        };
+        
+        // Only set Retry-After if we're close to the limit
+        if (remaining < Math.ceil(rule.maxRequests * 0.2)) { // 20% of limit remaining
+          headers['Retry-After'] = resetTime.toString();
+        }
+        
+        res.set(headers);
+
         // Check if limit exceeded
         if (entry.count > rule.maxRequests) {
+          // Block IP if blockDuration is set
+          if (rule.blockDuration) {
+            this.blockedIPs.set(ip, now + rule.blockDuration);
+          }
           // Log rate limit violation
-          await auditLogger.logRateLimitViolation(
-            req.ip || 'unknown',
-            req.path,
-            {
-              method: req.method,
-              userAgent: req.get('User-Agent'),
-              count: entry.count,
-              limit: rule.maxRequests,
-              windowMs: rule.windowMs
-            },
-            req
-          );
+          const clientInfo = {
+            ip,
+            method: req.method,
+            path: req.path,
+            userAgent: req.get('User-Agent'),
+            userId: (req as any).user?.user_id,
+            count: entry.count,
+            limit: rule.maxRequests,
+            windowMs: rule.windowMs,
+            resetTime: entry.resetTime,
+            retryAfter: Math.ceil((entry.resetTime - now) / 1000)
+          };
+
+          logger.warn('Rate limit exceeded', clientInfo);
+          
+          try {
+            await auditLogger.logRateLimitViolation(
+              ip,
+              req.path,
+              clientInfo,
+              req
+            );
+          } catch (logError) {
+            logger.error('Failed to log rate limit violation', { error: logError });
+          }
 
           // Call custom handler if provided
           if (rule.onLimitReached) {
-            rule.onLimitReached(req, res);
+            try {
+              rule.onLimitReached(req, res);
+            } catch (handlerError) {
+              logger.error('Error in rate limit handler', { error: handlerError });
+            }
             return;
           }
 
           // Default response
-          const resetTime = Math.ceil((entry.resetTime - now) / 1000);
-          
-          res.status(429).json({
+          res.status(rule.statusCode || 429).json({
+            success: false,
             error: 'Too Many Requests',
-            message: 'Rate limit exceeded. Please try again later.',
-            code: 'rate_limit_exceeded',
-            retryAfter: resetTime,
+            message: rule.message || 'Rate limit exceeded. Please try again later.',
+            code: 'RATE_LIMIT_EXCEEDED',
+            retryAfter: clientInfo.retryAfter,
             limit: rule.maxRequests,
-            windowMs: rule.windowMs
+            windowMs: rule.windowMs,
+            ...(rule.blockDuration ? { blockDuration: rule.blockDuration } : {})
           });
           
           return;
         }
 
-        // Add rate limit headers
-        const remaining = Math.max(0, rule.maxRequests - entry.count);
-        const resetTime = Math.ceil((entry.resetTime - now) / 1000);
-        
+        // Rate limit headers already set above
+        // No need to set them again
         res.set({
           'X-RateLimit-Limit': rule.maxRequests.toString(),
           'X-RateLimit-Remaining': remaining.toString(),
@@ -159,7 +269,11 @@ class AdvancedRateLimiter {
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
     }
+    if (this.blockCleanupInterval) {
+      clearInterval(this.blockCleanupInterval);
+    }
     this.store.clear();
+    this.blockedIPs.clear();
   }
 }
 
@@ -168,21 +282,22 @@ const rateLimiter = new AdvancedRateLimiter();
 
 // Predefined rate limiting rules
 export const rateLimitRules = {
-  // General API rate limiting
+  // Default API rate limiting
   api: {
     windowMs: 15 * 60 * 1000, // 15 minutes
     maxRequests: 100,
-    keyGenerator: (req: Request) => {
-      const ip = req.ip || 'unknown';
-      const userId = (req as any).user?.user_id || 'anonymous';
-      return `api:${ip}:${userId}`;
-    }
+    skipFailedRequests: true,
+    message: 'Too many requests from this IP, please try again after 15 minutes',
+    blockDuration: 15 * 60 * 1000, // 15 minutes block
+    statusCode: 429
   },
-
   // Authentication endpoints (stricter)
   auth: {
     windowMs: 15 * 60 * 1000, // 15 minutes
     maxRequests: 5,
+    message: 'Too many login attempts. Please try again later.',
+    blockDuration: 30 * 60 * 1000, // 30 minutes block for repeated auth failures
+    statusCode: 429,
     keyGenerator: (req: Request) => {
       const ip = req.ip || 'unknown';
       return `auth:${ip}`;
@@ -201,21 +316,25 @@ export const rateLimitRules = {
       );
     }
   },
-
   // Analysis endpoints (resource intensive)
   analysis: {
     windowMs: 60 * 1000, // 1 minute
-    maxRequests: 3,
+    maxRequests: 10,
+    message: 'Too many analysis requests. Please wait before trying again.',
+    blockDuration: 5 * 60 * 1000, // 5 minutes block
+    statusCode: 429,
     keyGenerator: (req: Request) => {
       const userId = (req as any).user?.user_id || 'anonymous';
       return `analysis:${userId}`;
     }
   },
-
   // File upload endpoints
   upload: {
     windowMs: 60 * 1000, // 1 minute
     maxRequests: 5,
+    message: 'Too many uploads. Please wait before trying again.',
+    blockDuration: 15 * 60 * 1000, // 15 minutes block
+    statusCode: 429,
     keyGenerator: (req: Request) => {
       const userId = (req as any).user?.user_id || 'anonymous';
       return `upload:${userId}`;
@@ -226,6 +345,9 @@ export const rateLimitRules = {
   websocket: {
     windowMs: 60 * 1000, // 1 minute
     maxRequests: 30, // 30 connection attempts per minute per IP
+    message: 'Too many connection attempts. Please try again later.',
+    blockDuration: 5 * 60 * 1000, // 5 minutes block
+    statusCode: 429,
     skipSuccessfulRequests: false, // Count all connection attempts
     skipFailedRequests: false, // Count failed attempts too
     keyGenerator: (req: Request) => {

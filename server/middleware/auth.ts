@@ -1,167 +1,117 @@
 import { Request, Response, NextFunction } from 'express';
-import jwt, { JwtPayload, VerifyErrors } from 'jsonwebtoken';
+import jwt from 'jsonwebtoken';
+import { unauthorizedResponse } from '../utils/apiResponse';
 import { logger } from '../config/logger';
-import { rateLimit } from 'express-rate-limit';
-import { redis } from '../db';
 
-// Rate limiting configuration
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: 'Too many requests from this IP, please try again after 15 minutes',
-  skip: (req) => {
-    // Skip rate limiting for health checks and static assets
-    return req.path === '/health' || req.path.startsWith('/static');
-  }
-});
-
-// Token blacklist check
-async function isTokenBlacklisted(token: string): Promise<boolean> {
-  if (!redis) return false;
-  try {
-    const result = await redis.get(`blacklist:${token}`);
-    return result !== null;
-  } catch (error) {
-    logger.error('Redis blacklist check failed', { error });
-    return false;
-  }
+// Define the user type that will be attached to the request
+export interface AuthUser {
+  id: string;
+  email: string;
+  role: string;
+  user_metadata?: Record<string, any>;
+  [key: string]: any; // Allow additional properties
 }
 
-// Add token to blacklist
-export async function blacklistToken(token: string, expiresIn: number): Promise<void> {
-  if (!redis) return;
-  try {
-    await redis.set(`blacklist:${token}`, '1', 'EX', expiresIn);
-  } catch (error) {
-    logger.error('Failed to blacklist token', { error });
-  }
-}
-
+// Extend the Express Request type to include user information
 declare global {
   namespace Express {
     interface Request {
-      user?: {
-        id: string;
-        email: string;
-        role: string;
-        exp: number;
-        iat: number;
-      };
+      user?: AuthUser;
     }
   }
 }
 
-export const authenticateJWT = async (req: Request, res: Response, next: NextFunction) => {
-  // Apply rate limiting
-  authLimiter(req, res, async () => {
-    try {
-      const authHeader = req.headers.authorization;
-      
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        logger.warn('Missing or invalid Authorization header');
-        return res.status(401).json({ 
-          error: 'Unauthorized',
-          message: 'Authentication token is required' 
-        });
-      }
-
-      const token = authHeader.split(' ')[1];
-      
-      // Check token blacklist
-      if (await isTokenBlacklisted(token)) {
-        logger.warn('Attempt to use blacklisted token');
-        return res.status(401).json({ 
-          error: 'Unauthorized',
-          message: 'Token has been revoked' 
-        });
-      }
-
-      // Verify JWT
-      jwt.verify(token, process.env.JWT_SECRET!, 
-        async (err: VerifyErrors | null, decoded: any) => {
-          if (err) {
-            const errorMessage = err.name === 'TokenExpiredError' 
-              ? 'Token has expired' 
-              : 'Invalid token';
-            
-            logger.warn('JWT verification failed', { 
-              error: err.message,
-              path: req.path,
-              ip: req.ip 
-            });
-            
-            return res.status(401).json({ 
-              error: 'Unauthorized',
-              message: errorMessage 
-            });
-          }
-
-          // Check token expiration
-          const now = Math.floor(Date.now() / 1000);
-          if (decoded.exp && decoded.exp < now) {
-            return res.status(401).json({ 
-              error: 'Unauthorized',
-              message: 'Token has expired' 
-            });
-          }
-
-          // Set user in request
-          req.user = {
-            id: decoded.id,
-            email: decoded.email,
-            role: decoded.role,
-            exp: decoded.exp,
-            iat: decoded.iat
-          };
-
-          // Add token to request for potential rate limiting or logging
-          (req as any).token = token;
-          
-          next();
-        }
-      );
-    } catch (error) {
-      logger.error('Authentication error', { 
-        error: (error as Error).message,
-        path: req.path,
-        ip: req.ip 
-      });
-      
-      return res.status(500).json({ 
-        error: 'Internal Server Error',
-        message: 'An error occurred during authentication' 
-      });
-    }
-  });
-};
-
-export const requireRole = (role: string) => {
-  return (req: Request, res: Response, next: NextFunction) => {
-    if (req.user?.role === role) {
-      next();
-    } else {
-      res.status(403).json({ error: 'Insufficient permissions' });
-    }
-  };
-};
-
-export const errorHandler = (
-  err: Error,
+/**
+ * Verify JWT token from Authorization header
+ */
+export const authenticateToken = (
   req: Request,
   res: Response,
   next: NextFunction
 ) => {
-  logger.error('API Error', {
-    error: err.message,
-    stack: err.stack,
-    path: req.path,
-    method: req.method,
-  });
+  try {
+    // Get token from Authorization header
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.split(' ')[1]; // Bearer <token>
 
-  res.status(500).json({
-    error: 'Internal Server Error',
-    message: process.env.NODE_ENV === 'development' ? err.message : undefined,
-  });
+    if (!token) {
+      return unauthorizedResponse(res, 'No token provided');
+    }
+
+    // Verify token and cast to our AuthUser type
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as AuthUser;
+    
+    // Add user to request object with required properties
+    if (!decoded.id || !decoded.email || !decoded.role) {
+      throw new Error('Invalid token payload: missing required fields');
+    }
+    
+    req.user = {
+      ...decoded, // Spread all properties first
+      // Explicitly set required fields to ensure correct types
+      id: decoded.id,
+      email: decoded.email,
+      role: decoded.role,
+      user_metadata: decoded.user_metadata
+    };
+    
+    // Continue to the next middleware/route handler
+    next();
+  } catch (error) {
+    logger.error('Authentication error:', { 
+      error: error instanceof Error ? error.message : 'Unknown error',
+      path: req.path,
+      method: req.method,
+    });
+    
+    if (error instanceof jwt.TokenExpiredError) {
+      return unauthorizedResponse(res, 'Token has expired');
+    }
+    
+    if (error instanceof jwt.JsonWebTokenError) {
+      return unauthorizedResponse(res, 'Invalid token');
+    }
+    
+    return unauthorizedResponse(res, 'Authentication failed');
+  }
+};
+
+/**
+ * Role-based access control middleware
+ */
+export const authorize = (roles: string | string[]) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return unauthorizedResponse(res, 'User not authenticated');
+      }
+
+      const userRoles = Array.isArray(req.user.role) ? req.user.role : [req.user.role];
+      const requiredRoles = Array.isArray(roles) ? roles : [roles];
+      
+      const hasPermission = requiredRoles.some(role => userRoles.includes(role));
+      
+      if (!hasPermission) {
+        return unauthorizedResponse(res, 'Insufficient permissions');
+      }
+      
+      next();
+    } catch (error) {
+      logger.error('Authorization error:', { 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        path: req.path,
+        method: req.method,
+      });
+      return unauthorizedResponse(res, 'Authorization failed');
+    }
+  };
+};
+
+/**
+ * Rate limiting middleware for authentication endpoints
+ */
+export const authRateLimiter = (req: Request, res: Response, next: NextFunction) => {
+  // Implement rate limiting logic here
+  // Example: Limit to 5 requests per 15 minutes per IP
+  next();
 };

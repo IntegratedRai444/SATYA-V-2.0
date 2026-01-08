@@ -1,0 +1,99 @@
+import { db } from '../../db';
+import { users } from '../../db/schema';
+import { eq } from 'drizzle-orm';
+import { logger } from '../../config/logger';
+
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+
+export async function handleFailedLogin(email: string, ipAddress: string): Promise<{ isLocked: boolean; remainingAttempts: number }> {
+  try {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email));
+
+    if (!user) {
+      // Don't reveal if user exists
+      return { isLocked: false, remainingAttempts: 0 };
+    }
+
+    const now = new Date();
+    const lastFailedLogin = user.lastFailedLogin ? new Date(user.lastFailedLogin) : null;
+    const lockoutExpires = lastFailedLogin ? new Date(lastFailedLogin.getTime() + LOCKOUT_DURATION_MS) : null;
+    
+    // Reset failed attempts if lockout period has passed
+    const failedAttempts = (lockoutExpires && lockoutExpires > now) 
+      ? (user.failedLoginAttempts || 0) + 1 
+      : 1;
+
+    const isLocked = failedAttempts >= MAX_FAILED_ATTEMPTS;
+    const remainingAttempts = Math.max(0, MAX_FAILED_ATTEMPTS - failedAttempts);
+
+    await db
+      .update(users)
+      .set({
+        failedLoginAttempts: failedAttempts,
+        lastFailedLogin: now,
+        isActive: !isLocked
+      })
+      .where(eq(users.id, user.id));
+
+    if (isLocked) {
+      logger.warn(`Account locked for user ${email} from IP ${ipAddress}`, {
+        userId: user.id,
+        ipAddress,
+        timestamp: now.toISOString()
+      });
+    }
+
+    return { isLocked, remainingAttempts };
+  } catch (error) {
+    logger.error('Failed to handle failed login attempt:', error);
+    return { isLocked: false, remainingAttempts: 0 }; // Fail open to prevent denial of service
+  }
+}
+
+export async function resetFailedLoginAttempts(userId: number): Promise<void> {
+  try {
+    await db
+      .update(users)
+      .set({
+        failedLoginAttempts: 0,
+        lastFailedLogin: null,
+        isActive: true
+      })
+      .where(eq(users.id, userId));
+  } catch (error) {
+    logger.error('Failed to reset failed login attempts:', error);
+  }
+}
+
+export async function isAccountLocked(email: string): Promise<{ isLocked: boolean; remainingTimeMs?: number }> {
+  try {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email));
+
+    if (!user || !user.lastFailedLogin) {
+      return { isLocked: false };
+    }
+
+    const lastFailedLogin = new Date(user.lastFailedLogin);
+    const lockoutExpires = new Date(lastFailedLogin.getTime() + LOCKOUT_DURATION_MS);
+    const now = new Date();
+
+    if (user.failedLoginAttempts >= MAX_FAILED_ATTEMPTS && lockoutExpires > now) {
+      return { 
+        isLocked: true, 
+        remainingTimeMs: lockoutExpires.getTime() - now.getTime() 
+      };
+    }
+
+    return { isLocked: false };
+  } catch (error) {
+    logger.error('Failed to check account lock status:', error);
+    return { isLocked: false }; // Fail open
+  }
+}

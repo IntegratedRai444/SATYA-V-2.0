@@ -1,0 +1,11 @@
+{
+  "version": "2024.01.07",
+  "entries": [
+    {
+      "idx": 0,
+      "when": 1704660000000,
+      "tag": "0000_initial_migration",
+      "breakpoints": true
+    }
+  ]
+}

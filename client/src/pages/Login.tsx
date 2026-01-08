@@ -19,7 +19,7 @@ export default function Login() {
     // Check if already authenticated
     const checkAuth = async () => {
       try {
-        const token = await getAuthToken().catch(() => null);
+        const token = await getAuthToken();
         console.log('Current auth token exists:', !!token);
       } catch (err) {
         console.error('Auth check error:', err);
@@ -74,6 +74,17 @@ export default function Login() {
   // Add a simple error boundary wrapper
   const ErrorBoundary = ({ children }: { children: React.ReactNode }) => {
     const [hasError, setHasError] = useState(false);
+
+    // Add error boundary functionality
+    useEffect(() => {
+      const handleError = (error: ErrorEvent) => {
+        console.error('Error caught by error boundary:', error);
+        setHasError(true);
+      };
+
+      window.addEventListener('error', handleError);
+      return () => window.removeEventListener('error', handleError);
+    }, []);
 
     if (hasError) {
       return (

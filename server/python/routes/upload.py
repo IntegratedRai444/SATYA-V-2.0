@@ -3,15 +3,17 @@ Upload Routes
 Handle file uploads with direct ML integration and database storage
 """
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, Request, Form, Depends
-from fastapi.responses import JSONResponse
-from pathlib import Path
-import shutil
-import uuid
-from typing import Optional
-from datetime import datetime
 import logging
+import shutil
 import sys
+import uuid
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+from fastapi import (APIRouter, Depends, File, Form, HTTPException, Request,
+                     UploadFile)
+from fastapi.responses import JSONResponse
 
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
@@ -38,104 +40,22 @@ ALLOWED_AUDIO_TYPES = {"audio/mp3", "audio/wav", "audio/mpeg", "audio/ogg"}
 
 
 @router.post("/image")
-async def upload_image(
-    request: Request,
-    file: UploadFile = File(...),
-    analyze: bool = Form(True)
-):
+async def upload_image(request: Request, file: UploadFile = File(...)):
     """
-    Upload and analyze an image
+    Legacy image upload endpoint - redirects to /api/analysis/image
     """
-    try:
-        # Validate file type
-        if file.content_type not in ALLOWED_IMAGE_TYPES:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid file type. Allowed types: {', '.join(ALLOWED_IMAGE_TYPES)}"
-            )
-        
-        # Read file content
-        content = await file.read()
-        file_size = len(content)
-        
-        # Validate file size
-        if file_size > MAX_IMAGE_SIZE:
-            raise HTTPException(
-                status_code=400,
-                detail=f"File too large. Maximum size: {MAX_IMAGE_SIZE / (1024*1024):.1f} MB"
-            )
-        
-        # Generate unique filename
-        file_id = str(uuid.uuid4())
-        file_extension = Path(file.filename).suffix
-        filename = f"{file_id}{file_extension}"
-        
-        # Save file
-        upload_path = UPLOAD_DIR / "images"
-        upload_path.mkdir(exist_ok=True)
-        file_path = upload_path / filename
-        
-        with file_path.open("wb") as f:
-            f.write(content)
-        
-        logger.info(f"Image uploaded: {filename} ({file_size} bytes)")
-        
-        # Database integration
-        db = get_db_manager()
-        
-        # Save file metadata
-        db.save_file_metadata(
-            file_id=file_id,
-            original_filename=file.filename,
-            stored_filename=filename,
-            file_path=str(file_path),
-            file_type="image",
-            file_size=file_size
-        )
-        
-        # Analyze if requested
-        analysis_result = None
-        if analyze and hasattr(request.app.state, 'image_detector'):
-            logger.info(f"Analyzing image: {filename}")
-            detector = request.app.state.image_detector
-            analysis_result = detector.detect(str(file_path))
-            
-            # Save analysis result
-            if analysis_result:
-                db.save_analysis_result(
-                    file_id=file_id,
-                    file_name=file.filename,
-                    file_type="image",
-                    authenticity_score=analysis_result.get('score', 0.0),
-                    label=analysis_result.get('label', 'unknown'),
-                    confidence=analysis_result.get('confidence', 0.0),
-                    details=analysis_result
-                )
-        
-        return {
-            "success": True,
-            "file_id": file_id,
-            "filename": file.filename,
-            "saved_as": filename,
-            "size": file_size,
-            "content_type": file.content_type,
-            "path": str(file_path),
-            "timestamp": datetime.utcnow().isoformat(),
-            "analysis": analysis_result
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Image upload failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+    from urllib.parse import urlencode
+
+    from fastapi.responses import RedirectResponse
+
+    # Redirect to the main analysis endpoint
+    redirect_url = request.url_for("upload_image_v2")
+    return await upload_image_v2(request, file)
 
 
 @router.post("/video")
 async def upload_video(
-    request: Request,
-    file: UploadFile = File(...),
-    analyze: bool = Form(True)
+    request: Request, file: UploadFile = File(...), analyze: bool = Form(True)
 ):
     """
     Upload and analyze a video
@@ -145,38 +65,38 @@ async def upload_video(
         if file.content_type not in ALLOWED_VIDEO_TYPES:
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid file type. Allowed types: {', '.join(ALLOWED_VIDEO_TYPES)}"
+                detail=f"Invalid file type. Allowed types: {', '.join(ALLOWED_VIDEO_TYPES)}",
             )
-        
+
         # Read file content
         content = await file.read()
         file_size = len(content)
-        
+
         # Validate file size
         if file_size > MAX_VIDEO_SIZE:
             raise HTTPException(
                 status_code=400,
-                detail=f"File too large. Maximum size: {MAX_VIDEO_SIZE / (1024*1024):.1f} MB"
+                detail=f"File too large. Maximum size: {MAX_VIDEO_SIZE / (1024*1024):.1f} MB",
             )
-        
+
         # Generate unique filename
         file_id = str(uuid.uuid4())
         file_extension = Path(file.filename).suffix
         filename = f"{file_id}{file_extension}"
-        
+
         # Save file
         upload_path = UPLOAD_DIR / "videos"
         upload_path.mkdir(exist_ok=True)
         file_path = upload_path / filename
-        
+
         with file_path.open("wb") as f:
             f.write(content)
-        
+
         logger.info(f"Video uploaded: {filename} ({file_size} bytes)")
-        
+
         # Database integration
         db = get_db_manager()
-        
+
         # Save file metadata
         db.save_file_metadata(
             file_id=file_id,
@@ -184,28 +104,28 @@ async def upload_video(
             stored_filename=filename,
             file_path=str(file_path),
             file_type="video",
-            file_size=file_size
+            file_size=file_size,
         )
-        
+
         # Analyze if requested
         analysis_result = None
-        if analyze and hasattr(request.app.state, 'video_detector'):
+        if analyze and hasattr(request.app.state, "video_detector"):
             logger.info(f"Analyzing video: {filename}")
             detector = request.app.state.video_detector
             analysis_result = detector.detect(str(file_path))
-            
+
             # Save analysis result
             if analysis_result:
                 db.save_analysis_result(
                     file_id=file_id,
                     file_name=file.filename,
                     file_type="video",
-                    authenticity_score=analysis_result.get('score', 0.0),
-                    label=analysis_result.get('label', 'unknown'),
-                    confidence=analysis_result.get('confidence', 0.0),
-                    details=analysis_result
+                    authenticity_score=analysis_result.get("score", 0.0),
+                    label=analysis_result.get("label", "unknown"),
+                    confidence=analysis_result.get("confidence", 0.0),
+                    details=analysis_result,
                 )
-        
+
         return {
             "success": True,
             "file_id": file_id,
@@ -215,9 +135,9 @@ async def upload_video(
             "content_type": file.content_type,
             "path": str(file_path),
             "timestamp": datetime.utcnow().isoformat(),
-            "analysis": analysis_result
+            "analysis": analysis_result,
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -227,9 +147,7 @@ async def upload_video(
 
 @router.post("/audio")
 async def upload_audio(
-    request: Request,
-    file: UploadFile = File(...),
-    analyze: bool = Form(True)
+    request: Request, file: UploadFile = File(...), analyze: bool = Form(True)
 ):
     """
     Upload and analyze audio
@@ -239,38 +157,38 @@ async def upload_audio(
         if file.content_type not in ALLOWED_AUDIO_TYPES:
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid file type. Allowed types: {', '.join(ALLOWED_AUDIO_TYPES)}"
+                detail=f"Invalid file type. Allowed types: {', '.join(ALLOWED_AUDIO_TYPES)}",
             )
-        
+
         # Read file content
         content = await file.read()
         file_size = len(content)
-        
+
         # Validate file size
         if file_size > MAX_AUDIO_SIZE:
             raise HTTPException(
                 status_code=400,
-                detail=f"File too large. Maximum size: {MAX_AUDIO_SIZE / (1024*1024):.1f} MB"
+                detail=f"File too large. Maximum size: {MAX_AUDIO_SIZE / (1024*1024):.1f} MB",
             )
-        
+
         # Generate unique filename
         file_id = str(uuid.uuid4())
         file_extension = Path(file.filename).suffix
         filename = f"{file_id}{file_extension}"
-        
+
         # Save file
         upload_path = UPLOAD_DIR / "audio"
         upload_path.mkdir(exist_ok=True)
         file_path = upload_path / filename
-        
+
         with file_path.open("wb") as f:
             f.write(content)
-        
+
         logger.info(f"Audio uploaded: {filename} ({file_size} bytes)")
-        
+
         # Database integration
         db = get_db_manager()
-        
+
         # Save file metadata
         db.save_file_metadata(
             file_id=file_id,
@@ -278,28 +196,28 @@ async def upload_audio(
             stored_filename=filename,
             file_path=str(file_path),
             file_type="audio",
-            file_size=file_size
+            file_size=file_size,
         )
-        
+
         # Analyze if requested
         analysis_result = None
-        if analyze and hasattr(request.app.state, 'audio_detector'):
+        if analyze and hasattr(request.app.state, "audio_detector"):
             logger.info(f"Analyzing audio: {filename}")
             detector = request.app.state.audio_detector
             analysis_result = detector.detect(str(file_path))
-            
+
             # Save analysis result
             if analysis_result:
                 db.save_analysis_result(
                     file_id=file_id,
                     file_name=file.filename,
                     file_type="audio",
-                    authenticity_score=analysis_result.get('score', 0.0),
-                    label=analysis_result.get('label', 'unknown'),
-                    confidence=analysis_result.get('confidence', 0.0),
-                    details=analysis_result
+                    authenticity_score=analysis_result.get("score", 0.0),
+                    label=analysis_result.get("label", "unknown"),
+                    confidence=analysis_result.get("confidence", 0.0),
+                    details=analysis_result,
                 )
-        
+
         return {
             "success": True,
             "file_id": file_id,
@@ -309,9 +227,9 @@ async def upload_audio(
             "content_type": file.content_type,
             "path": str(file_path),
             "timestamp": datetime.utcnow().isoformat(),
-            "analysis": analysis_result
+            "analysis": analysis_result,
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -321,9 +239,7 @@ async def upload_audio(
 
 @router.post("/text")
 async def upload_text(
-    request: Request,
-    text: str = Form(...),
-    analyze: bool = Form(True)
+    request: Request, text: str = Form(...), analyze: bool = Form(True)
 ):
     """
     Analyze text for AI-generated content
@@ -331,37 +247,37 @@ async def upload_text(
     try:
         # Analyze if requested
         analysis_result = None
-        if analyze and hasattr(request.app.state, 'text_nlp_detector'):
+        if analyze and hasattr(request.app.state, "text_nlp_detector"):
             logger.info(f"Analyzing text ({len(text)} characters)")
             detector = request.app.state.text_nlp_detector
             analysis_result = detector.detect(text)
-            
+
             # Database integration
             db = get_db_manager()
-            
+
             # Generate ID for text analysis
             file_id = str(uuid.uuid4())
-            
+
             # Save analysis result
             if analysis_result:
                 db.save_analysis_result(
                     file_id=file_id,
                     file_name="text_input",
                     file_type="text",
-                    authenticity_score=analysis_result.get('score', 0.0),
-                    label=analysis_result.get('label', 'unknown'),
-                    confidence=analysis_result.get('confidence', 0.0),
-                    details=analysis_result
+                    authenticity_score=analysis_result.get("score", 0.0),
+                    label=analysis_result.get("label", "unknown"),
+                    confidence=analysis_result.get("confidence", 0.0),
+                    details=analysis_result,
                 )
-        
+
         return {
             "success": True,
             "text_length": len(text),
             "word_count": len(text.split()),
             "timestamp": datetime.utcnow().isoformat(),
-            "analysis": analysis_result
+            "analysis": analysis_result,
         }
-        
+
     except Exception as e:
         logger.error(f"Text analysis failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")

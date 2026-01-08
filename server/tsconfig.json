@@ -1,12 +1,13 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ESNext",
+    "module": "commonjs",
     "lib": ["ES2022"],
-    "moduleResolution": "bundler",
+    "moduleResolution": "node",
     "resolveJsonModule": true,
     "allowJs": true,
-    "noEmit": true,
+    "outDir": "./dist",
+    "rootDir": "..",
     "strict": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
@@ -16,20 +17,31 @@
     "types": ["node"],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"],
+      "@/*": ["./src/*"],
       "@shared/*": ["../shared/*"]
-    }
+    },
+    "typeRoots": [
+      "./node_modules/@types",
+      "./src/types"
+    ]
   },
   "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    "../shared/**/*.ts"
+    "src/**/*.ts",
+    "config/**/*.ts",
+    "../shared/**/*.ts",
+    "../shared/**/*.ts",
+    "services/**/*.ts",
+    "middleware/**/*.ts",
+    "routes/**/*.ts",
+    "api/**/*.ts",
+    "utils/**/*.ts",
+    "index.ts"
   ],
   "exclude": [
     "node_modules",
     "dist",
-    "python",
     "**/*.test.ts",
-    "**/__tests__"
+    "**/__tests__/**",
+    "**/__mocks__/**"
   ]
 }

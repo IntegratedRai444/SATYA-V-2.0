@@ -3,7 +3,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "lib": ["ES2022"],
-    "moduleResolution": "bundler",
+    "moduleResolution": "node",
     "resolveJsonModule": true,
     "allowJs": true,
     "strict": true,
@@ -12,12 +12,30 @@
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
+    "outDir": "./dist",
+    "rootDir": ".",
+    "baseUrl": ".",
     "paths": {
       "@shared/*": ["./shared/*"],
+      "@server/*": ["./server/*"],
       "@/*": ["./*"]
     },
-    "types": ["node"]
+    "typeRoots": [
+      "./node_modules/@types",
+      "./server/types"
+    ]
   },
-  "include": ["server/**/*", "shared/**/*"],
-  "exclude": ["node_modules", "dist", "client", "server/tests/**/*", "**/*.test.ts", "**/*.spec.ts"]
+  "include": [
+    "server/**/*", 
+    "shared/**/*",
+    "server/types/**/*.d.ts"
+  ],
+  "exclude": [
+    "node_modules", 
+    "dist", 
+    "client", 
+    "server/tests/**/*", 
+    "**/*.test.ts", 
+    "**/*.spec.ts"
+  ]
 }

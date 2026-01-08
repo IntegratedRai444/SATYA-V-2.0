@@ -1,96 +1,66 @@
 import { db } from './db';
-import { users, scans, userPreferences } from '@shared/schema';
+import { users, scans, userPreferences } from '../shared/schema';
 import * as bcrypt from 'bcrypt';
-import { sql } from 'drizzle-orm';
+import { sql, eq, and } from 'drizzle-orm';
+import { migrate } from 'drizzle-orm/postgres-js/migrator';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
+import path from 'path';
+import * as fs from 'fs';
+import { logger } from './config/logger';
 
+// Initialize database connection and run migrations
 export async function initializeDatabase(): Promise<boolean> {
   try {
-    console.log('🗄️  Initializing SatyaAI database...');
+    logger.info('🗄️  Initializing SatyaAI database...');
+    
+    // Create migrations folder if it doesn't exist
+    const migrationsFolder = path.join(process.cwd(), 'drizzle');
+    
+    // Run migrations
 
-    // Create tables if they don't exist (SQLite with WAL mode)
-    await db.run(sql`PRAGMA journal_mode = WAL`);
-    await db.run(sql`PRAGMA synchronous = NORMAL`);
-    await db.run(sql`PRAGMA cache_size = -64000`); // 64MB cache
-    await db.run(sql`PRAGMA foreign_keys = ON`);
+    // Set timezone to UTC
+    await db.execute(sql`SET TIME ZONE 'UTC'`);
+    logger.info('✓ Database timezone set to UTC');
 
-    console.log('✓ Database configuration applied');
-
-    // Check if tables exist and create them if needed
-    await createTablesIfNotExist();
-
-    // Seed initial data if database is empty
+    // Seed initial data if needed
     await seedInitialData();
-
-    console.log('✅ Database initialization completed successfully');
+    
+    logger.info('✅ Database initialization completed successfully');
     return true;
-  } catch (error) {
-    console.error('❌ Database initialization failed:', error);
-    return false;
-  }
-}
-
-async function createTablesIfNotExist(): Promise<void> {
-  try {
-    // Create users table
-    await db.run(sql`
-      CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT NOT NULL UNIQUE,
-        password TEXT NOT NULL,
-        email TEXT,
-        full_name TEXT,
-        role TEXT NOT NULL DEFAULT 'user',
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      )
-    `);
-
-    // Create scans table
-    await db.run(sql`
-      CREATE TABLE IF NOT EXISTS scans (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        filename TEXT NOT NULL,
-        type TEXT NOT NULL,
-        result TEXT NOT NULL,
-        confidence_score INTEGER NOT NULL,
-        detection_details TEXT,
-        metadata TEXT,
-        created_at INTEGER NOT NULL,
-        FOREIGN KEY (user_id) REFERENCES users(id)
-      )
-    `);
-
-    // Create user_preferences table
-    await db.run(sql`
-      CREATE TABLE IF NOT EXISTS user_preferences (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL UNIQUE,
-        theme TEXT DEFAULT 'dark',
-        language TEXT DEFAULT 'english',
-        confidence_threshold INTEGER DEFAULT 75,
-        enable_notifications INTEGER DEFAULT 1,
-        auto_analyze INTEGER DEFAULT 1,
-        sensitivity_level TEXT DEFAULT 'medium',
-        FOREIGN KEY (user_id) REFERENCES users(id)
-      )
-    `);
-
-    // Create indexes for better performance
-    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`);
-    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`);
-    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_scans_user_id ON scans(user_id)`);
-    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_scans_created_at ON scans(created_at)`);
-    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_scans_type ON scans(type)`);
-    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_scans_result ON scans(result)`);
-
-    console.log('✓ Database tables and indexes created/verified');
-  } catch (error) {
-    console.error('Error creating tables:', error);
+    
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error during database initialization';
+    logger.error('❌ Database initialization failed:', { error: errorMessage });
+    
+    // Check if the error is due to missing migration files
+    if (error instanceof Error && error.message.includes('no such file or directory')) {
+      logger.warn('⚠️  Migration files not found. Creating initial migration...');
+      try {
+        // Create initial migration if it doesn't exist
+        const initialMigrationPath = path.join(__dirname, 'drizzle', '0000_initial_migration.sql');
+        if (!fs.existsSync(initialMigrationPath)) {
+          logger.info('Creating initial migration file...');
+          fs.writeFileSync(initialMigrationPath, '-- Initial database schema');
+          logger.info('✅ Created initial migration file');
+          
+          // Retry migration after creating the initial file
+          logger.info('Retrying migration...');
+          await migrate(db, { migrationsFolder: path.join(__dirname, 'drizzle') });
+          logger.info('✅ Initial migration completed successfully');
+          return true;
+        }
+      } catch (retryError) {
+        const retryErrorMsg = retryError instanceof Error ? retryError.message : 'Unknown error';
+        logger.error('❌ Failed to create initial migration:', { error: retryErrorMsg });
+      }
+    }
+    
     throw error;
   }
 }
 
+// Seed initial data if the database is empty
 async function seedInitialData(): Promise<void> {
   try {
     // Check if we already have users
@@ -131,7 +101,7 @@ async function seedInitialData(): Promise<void> {
           type: 'image',
           result: 'authentic',
           confidenceScore: 98,
-          detectionDetails: JSON.stringify([
+          detectionDetails: [
             {
               name: 'Facial Landmark Analysis',
               category: 'face',
@@ -144,13 +114,13 @@ async function seedInitialData(): Promise<void> {
               confidence: 96,
               description: 'Natural compression artifacts consistent with camera capture.'
             }
-          ]),
-          metadata: JSON.stringify({ 
+          ],
+          metadata: { 
             size: '1.2 MB',
             resolution: '1920x1080',
             format: 'JPEG',
             camera: 'iPhone 13 Pro'
-          })
+          }
         },
         {
           userId: newUser.id,
@@ -158,7 +128,7 @@ async function seedInitialData(): Promise<void> {
           type: 'video',
           result: 'deepfake',
           confidenceScore: 87,
-          detectionDetails: JSON.stringify([
+          detectionDetails: [
             {
               name: 'Temporal Consistency Analysis',
               category: 'video',
@@ -171,14 +141,14 @@ async function seedInitialData(): Promise<void> {
               confidence: 85,
               description: 'Slight misalignment between lip movements and audio detected.'
             }
-          ]),
-          metadata: JSON.stringify({ 
+          ],
+          metadata: { 
             resolution: '720p', 
             duration: '2:34 min', 
             size: '24.7 MB',
             fps: 30,
             codec: 'H.264'
-          })
+          }
         },
         {
           userId: newUser.id,
@@ -186,7 +156,7 @@ async function seedInitialData(): Promise<void> {
           type: 'audio',
           result: 'authentic',
           confidenceScore: 94,
-          detectionDetails: JSON.stringify([
+          detectionDetails: [
             {
               name: 'Voice Pattern Analysis',
               category: 'audio',
@@ -199,42 +169,52 @@ async function seedInitialData(): Promise<void> {
               confidence: 92,
               description: 'Frequency spectrum consistent with human vocal tract.'
             }
-          ]),
-          metadata: JSON.stringify({ 
+          ],
+          metadata: { 
             duration: '45 seconds',
             sample_rate: '44.1 kHz',
             bit_depth: '16-bit',
             size: '3.8 MB'
-          })
+          }
         }
       ];
       
-      for (const scan of sampleScans) {
-        await db.insert(scans).values(scan);
-      }
+      // Insert sample scans in a transaction
+      await db.transaction(async (tx) => {
+        for (const scan of sampleScans) {
+          await tx.insert(scans).values({
+            ...scan,
+            detectionDetails: JSON.stringify(scan.detectionDetails),
+            metadata: JSON.stringify(scan.metadata)
+          });
+        }
+      });
       
       console.log('✓ Sample scans created');
       
-      // Add user preferences for demo user
-      await db.insert(userPreferences).values({
-        userId: newUser.id,
-        theme: 'dark',
-        language: 'english',
-        confidenceThreshold: 80,
-        enableNotifications: true,
-        autoAnalyze: true,
-        sensitivityLevel: 'medium'
-      });
-      
-      // Add user preferences for admin user
-      await db.insert(userPreferences).values({
-        userId: adminUser.id,
-        theme: 'dark',
-        language: 'english',
-        confidenceThreshold: 85,
-        enableNotifications: true,
-        autoAnalyze: false,
-        sensitivityLevel: 'high'
+      // Add user preferences in a transaction
+      await db.transaction(async (tx) => {
+        // Demo user preferences
+        await tx.insert(userPreferences).values({
+          userId: newUser.id,
+          theme: 'dark',
+          language: 'english',
+          confidenceThreshold: 80,
+          enableNotifications: true,
+          autoAnalyze: true,
+          sensitivityLevel: 'medium'
+        });
+        
+        // Admin user preferences
+        await tx.insert(userPreferences).values({
+          userId: adminUser.id,
+          theme: 'dark',
+          language: 'english',
+          confidenceThreshold: 85,
+          enableNotifications: true,
+          autoAnalyze: false,
+          sensitivityLevel: 'high'
+        });
       });
       
       console.log('✓ User preferences created');
@@ -248,25 +228,38 @@ async function seedInitialData(): Promise<void> {
   }
 }
 
+// Reset the database by dropping and recreating all tables
 export async function resetDatabase(): Promise<boolean> {
   try {
-    console.log('🗑️  Resetting database...');
+    console.warn('⚠️  Resetting database! This will drop all data!');
+    
+    // Get all table names
+    const result = await db.execute(sql`
+      SELECT tablename 
+      FROM pg_tables 
+      WHERE schemaname = 'public'
+    `);
+    
+    const tables = (result as any[]).map((r: any) => r.tablename);
+    
+    // Disable foreign key checks temporarily
+    await db.execute(sql`SET session_replication_role = 'replica'`);
     
     // Drop all tables
-    await db.run(sql`DROP TABLE IF EXISTS user_preferences`);
-    await db.run(sql`DROP TABLE IF EXISTS scans`);
-    await db.run(sql`DROP TABLE IF EXISTS users`);
-    
-    console.log('✓ Tables dropped');
-    
-    // Recreate database
-    const success = await initializeDatabase();
-    
-    if (success) {
-      console.log('✅ Database reset completed successfully');
+    for (const table of tables) {
+      await db.execute(sql.raw(`DROP TABLE IF EXISTS "${table}" CASCADE`));
+      console.log(`Dropped table: ${table}`);
     }
     
-    return success;
+    // Re-enable foreign key checks
+    await db.execute(sql`SET session_replication_role = 'origin'`);
+    
+    console.log('✓ All tables dropped');
+    
+    // Re-run migrations to recreate schema
+    await initializeDatabase();
+    
+    return true;
   } catch (error) {
     console.error('❌ Database reset failed:', error);
     return false;
@@ -282,9 +275,10 @@ export async function checkDatabaseHealth(): Promise<{
 }> {
   try {
     // Check if tables exist
-    const tables = await db.run(sql`
-      SELECT name FROM sqlite_master 
-      WHERE type='table' AND name NOT LIKE 'sqlite_%'
+    const tablesResult = await db.execute(sql`
+      SELECT tablename as name 
+      FROM pg_tables 
+      WHERE schemaname = 'public'
     `);
     
     // Count users and scans
@@ -293,7 +287,7 @@ export async function checkDatabaseHealth(): Promise<{
     
     return {
       healthy: true,
-      tables: tables.map((t: any) => t.name),
+      tables: (tablesResult as any[]).map((t: any) => t.name),
       userCount,
       scanCount
     };

@@ -1,16 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
+import { config } from '../config/environment';
 import { logger } from '../config';
 
-// Validate required environment variables
-if (!process.env.SUPABASE_URL) {
-  throw new Error('SUPABASE_URL environment variable is required');
-}
-if (!process.env.SUPABASE_ANON_KEY) {
-  throw new Error('SUPABASE_ANON_KEY environment variable is required');
-}
-
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_ANON_KEY;
+// Use the centralized configuration
+const supabaseUrl = config.SUPABASE_URL;
+const supabaseKey = config.SUPABASE_ANON_KEY;
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
 

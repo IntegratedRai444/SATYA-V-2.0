@@ -1,8 +1,19 @@
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction, RequestHandler } from 'express';
 import { pythonBridge } from '../services/python-bridge';
-import { authenticateJWT } from '../middleware/auth';
+import { supabaseAuth } from '../middleware/supabase-auth';
 import { v4 as uuidv4 } from 'uuid';
 import multer from 'multer';
+import { SupabaseUser } from '../types/supabase';
+
+// Type for authenticated requests
+type AuthenticatedRequest = Request & {
+  user: {
+    id: string;
+    email: string;
+    role: string;
+    user_metadata?: Record<string, any>;
+  };
+};
 import path from 'path';
 import fs from 'fs';
 import { promisify } from 'util';
@@ -23,9 +34,14 @@ const getFileType = (mimetype: string): 'image' | 'video' | 'audio' => {
 // Submit file for analysis
 router.post(
   '/analyze',
-  authenticateJWT,
+  supabaseAuth as RequestHandler,
   upload.single('file'),
-  async (req, res, next) => {
+  async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as unknown as AuthenticatedRequest;
+    
+    if (!authReq.user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
     try {
       if (!req.file) {
         return res.status(400).json({ error: 'No file uploaded' });
@@ -42,7 +58,7 @@ router.post(
         const analysisResult = await pythonBridge.analyzeMedia({
           filePath,
           fileType,
-          userId: req.user.id,
+          userId: authReq.user.id,
           metadata: {
             originalName: req.file.originalname,
             mimeType: req.file.mimetype,
@@ -77,7 +93,7 @@ router.post(
 );
 
 // Get analysis status
-router.get('/analysis/status/:id', authenticateJWT, async (req, res, next) => {
+router.get('/analysis/status/:id', supabaseAuth, async (req, res, next) => {
   try {
     const { id } = req.params;
     const status = await pythonBridge.getAnalysisStatus(id);
@@ -88,7 +104,7 @@ router.get('/analysis/status/:id', authenticateJWT, async (req, res, next) => {
 });
 
 // Get analysis history for the authenticated user
-router.get('/analysis/history', authenticateJWT, async (req, res, next) => {
+router.get('/analysis/history', supabaseAuth, async (req, res, next) => {
   try {
     // In a real implementation, you would fetch this from your database
     res.json({

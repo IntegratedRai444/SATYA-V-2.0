@@ -1,25 +1,37 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { stripConsolePlugin } from './vite-plugin-strip-console';
+import { sentryVitePlugin } from '@sentry/vite-plugin';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 // Polyfill for Node.js globals
 const nodePolyfills = {
   name: 'polyfill-node',
-  setup(build) {
-    build.onResolve({ filter: /^node:/ }, (args) => ({
+  setup(build: any) {
+    build.onResolve({ filter: /^node:/ }, (args: any) => ({
       path: args.path.replace(/^node:/, ''),
       namespace: 'node',
     }));
   },
 };
 
-export default defineConfig({
-  base: '/',
-  plugins: [
+export default defineConfig(({ mode }) => {
+  // Load env variables based on the current mode
+  const env = loadEnv(mode, process.cwd(), '');
+  
+  // Validate required environment variables
+  const requiredVars = ['VITE_AUTH_API_URL', 'VITE_ANALYSIS_API_URL'];
+  const missingVars = requiredVars.filter(varName => !env[varName]);
+  
+  if (missingVars.length > 0) {
+    throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
+  }
+  
+  // Only include Sentry in production
+  const plugins = [
     react({
       jsxImportSource: '@emotion/react',
       babel: {
@@ -31,99 +43,119 @@ export default defineConfig({
       include: ['console.log', 'console.debug'],
       exclude: ['console.warn', 'console.error', 'console.info'],
     }),
-  ],
-  define: {
-    'process.env': {},
-    global: 'globalThis',
-    __dirname: JSON.stringify(''),
-    __filename: JSON.stringify(''),
-  },
-  resolve: {
-    alias: {
-      '@': resolve(__dirname, 'src'),
-      'react': resolve(__dirname, 'node_modules/react'),
-      'react-dom': resolve(__dirname, 'node_modules/react-dom'),
-      'next/router': resolve(__dirname, 'src/utils/router'),
-      'next/head': resolve(__dirname, 'src/utils/head'),
-    },
-    extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json'],
-  },
-  server: {
-    port: 5173,
-    strictPort: true,
-    host: '0.0.0.0',
-    open: true,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:5001',
-        changeOrigin: true,
-        secure: false,
-      },
-    },
-    hmr: {
-      host: 'localhost',
-      port: 3001
-    }
-  },
-  optimizeDeps: {
-    include: ['react', 'react-dom', 'react-router-dom'],
-    esbuildOptions: {
-      loader: {
-        '.js': 'jsx',
-      },
-      // Node.js global to browser globalThis
-      define: {
-        global: 'globalThis',
-      },
-    },
-  },
-  build: {
-    commonjsOptions: {
-      include: [/node_modules/],
-      transformMixedEsModules: true,
-    },
-    minify: 'esbuild',
-    target: 'es2015',
-    // Enable code splitting and tree shaking
-    rollupOptions: {
-      output: {
-        // Manual chunks for better code splitting
-        manualChunks: {
-          // Vendor chunks
-          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          'ui-vendor': ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu', '@radix-ui/react-toast'],
-          'query-vendor': ['@tanstack/react-query'],
-          // Route-based chunks
-          'dashboard': ['./src/pages/Dashboard.tsx'],
-          'analysis': ['./src/pages/ImageAnalysis.tsx', './src/pages/VideoAnalysis.tsx', './src/pages/AudioAnalysis.tsx'],
-          'history': ['./src/pages/History.tsx'],
+  ];
+
+  if (mode === 'production') {
+    plugins.push(
+      sentryVitePlugin({
+        org: 'your-org-name',
+        project: 'your-project-name',
+        authToken: env.SENTRY_AUTH_TOKEN,
+        sourcemaps: {
+          ignore: ['node_modules'],
         },
-        // Optimize chunk size
-        chunkFileNames: 'assets/[name]-[hash].js',
-        entryFileNames: 'assets/[name]-[hash].js',
-        assetFileNames: 'assets/[name]-[hash].[ext]',
-      },
-      plugins: [
-        {
-          name: 'replace-node-polyfills',
-          resolveId(source) {
-            if (source === 'node:process') {
-              return { id: 'process/browser', external: true };
-            }
-            if (source === 'node:buffer') {
-              return { id: 'buffer', external: true };
-            }
-            if (source === 'node:events') {
-              return { id: 'events', external: true };
-            }
-            return null;
-          },
-        },
-      ],
-    },
-    // Warn on large chunks
-    chunkSizeWarningLimit: 1000, // 1MB warning
-    // Enable source maps for production debugging (optional)
-    sourcemap: false,
+      })
+    );
   }
+  
+  return {
+    base: '/',
+    plugins,
+    define: {
+      'process.env': {},
+      global: 'globalThis',
+      __dirname: JSON.stringify(''),
+      __filename: JSON.stringify(''),
+      __APP_VERSION__: JSON.stringify(process.env.npm_package_version),
+    },
+    resolve: {
+      alias: {
+        '@': resolve(__dirname, 'src'),
+        'react': resolve(__dirname, 'node_modules/react'),
+        'react-dom': resolve(__dirname, 'node_modules/react-dom'),
+        'next/router': resolve(__dirname, 'src/utils/router'),
+        'next/head': resolve(__dirname, 'src/utils/head'),
+      },
+      extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json'],
+    },
+    server: {
+      port: 5173,
+      strictPort: true,
+      host: '0.0.0.0',
+      open: true,
+      proxy: {
+        '/api': {
+          target: 'http://localhost:5001',
+          changeOrigin: true,
+          secure: false,
+          rewrite: (path) => path.replace(/^\/api/, ''),
+        },
+      },
+      hmr: {
+        host: 'localhost',
+        port: 3001,
+        protocol: 'ws',
+      },
+    },
+    optimizeDeps: {
+      include: [
+        'react',
+        'react-dom',
+        'react-router-dom',
+        '@tanstack/react-query',
+      ],
+      esbuildOptions: {
+        target: 'esnext',
+      },
+    },
+    build: {
+      outDir: 'dist',
+      sourcemap: mode === 'development',
+      commonjsOptions: {
+        include: [/node_modules/],
+        transformMixedEsModules: true,
+      },
+      minify: mode === 'production' ? 'esbuild' : false,
+      target: 'esnext',
+      chunkSizeWarningLimit: 1000,
+      reportCompressedSize: false,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            react: ['react', 'react-dom', 'react-router-dom'],
+            vendor: ['lodash', 'axios', 'date-fns'],
+            ui: ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu', '@radix-ui/react-toast'],
+            state: ['@tanstack/react-query', 'zustand'],
+            dashboard: ['./src/pages/Dashboard.tsx'],
+            analysis: ['./src/pages/ImageAnalysis.tsx', './src/pages/VideoAnalysis.tsx', './src/pages/AudioAnalysis.tsx'],
+            history: ['./src/pages/History.tsx'],
+          },
+          chunkFileNames: 'assets/[name]-[hash].js',
+          entryFileNames: 'assets/[name]-[hash].js',
+          assetFileNames: 'assets/[name]-[hash].[ext]',
+        },
+        plugins: [
+          {
+            name: 'replace-node-polyfills',
+            resolveId(source) {
+              if (source === 'node:process') return { id: 'process/browser', external: true };
+              if (source === 'node:buffer') return { id: 'buffer', external: true };
+              if (source === 'node:events') return { id: 'events', external: true };
+              return null;
+            },
+          },
+        ],
+      },
+    },
+    css: {
+      modules: {
+        localsConvention: 'camelCaseOnly',
+      },
+      preprocessorOptions: {
+        scss: {
+          additionalData: `@import "@/styles/variables.scss";`,
+        },
+      },
+    },
+  };
 });

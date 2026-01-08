@@ -133,8 +133,8 @@ export default function LoadingState({
               <div className="text-xs text-slate-400 mt-3 space-y-1">
                 <p><strong>Development Tips:</strong></p>
                 <ul className="list-disc list-inside space-y-1 text-left">
-                  <li>Ensure backend server is running on port 3000</li>
-                  <li>Check if Python AI server is running on port 5001</li>
+                  <li>Ensure backend server is running on port 5001</li>
+                  <li>Check if Python AI server is running on port 8000</li>
                   <li>Try running: <code className="bg-slate-700 px-1 rounded">npm run dev:all</code></li>
                   <li>Check browser console for detailed errors</li>
                 </ul>

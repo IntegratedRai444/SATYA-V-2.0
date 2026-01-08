@@ -1,0 +1,15 @@
+{
+  "name": "@shared/schema",
+  "version": "1.0.0",
+  "description": "Shared types and database schema for SATYA application",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.d.ts"
+  ],
+  "peerDependencies": {
+    "drizzle-orm": "^0.29.0",
+    "drizzle-zod": "^0.4.0",
+    "zod": "^3.0.0"
+  }
+}

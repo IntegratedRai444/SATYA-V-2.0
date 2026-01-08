@@ -1,6 +1,48 @@
+// This must be the first import to ensure environment variables are loaded
+import '../setup-env';
+
 import { z } from 'zod';
 import path from 'path';
 import fs from 'fs';
+
+// Helper function to get environment variable with fallback
+function getEnvVar(key: string, defaultValue?: string): string | undefined {
+  return process.env[key] || process.env[`VITE_${key}`] || defaultValue;
+}
+
+// Process environment variables with VITE_ prefix fallback
+const processedEnv = {
+  ...process.env,
+  SUPABASE_URL: getEnvVar('SUPABASE_URL'),
+  SUPABASE_ANON_KEY: getEnvVar('SUPABASE_ANON_KEY'),
+  SUPABASE_SERVICE_ROLE_KEY: getEnvVar('SUPABASE_SERVICE_ROLE_KEY'),
+  SUPABASE_JWT_SECRET: getEnvVar('SUPABASE_JWT_SECRET'),
+  JWT_SECRET: getEnvVar('JWT_SECRET'),
+  JWT_SECRET_KEY: getEnvVar('JWT_SECRET_KEY'),
+  SESSION_SECRET: getEnvVar('SESSION_SECRET'),
+  FLASK_SECRET_KEY: getEnvVar('FLASK_SECRET_KEY'),
+  DATABASE_URL: getEnvVar('DATABASE_URL'),
+  DATABASE_PATH: getEnvVar('DATABASE_PATH'),
+  UPLOAD_DIR: getEnvVar('UPLOAD_DIR'),
+  MAX_FILE_SIZE: getEnvVar('MAX_FILE_SIZE'),
+  CLEANUP_INTERVAL: getEnvVar('CLEANUP_INTERVAL'),
+  CORS_ORIGIN: getEnvVar('CORS_ORIGIN'),
+  RATE_LIMIT_WINDOW_MS: getEnvVar('RATE_LIMIT_WINDOW_MS'),
+  RATE_LIMIT_MAX_REQUESTS: getEnvVar('RATE_LIMIT_MAX_REQUESTS'),
+  RATE_LIMIT_SKIP_SUCCESSFUL_REQUESTS: getEnvVar('RATE_LIMIT_SKIP_SUCCESSFUL_REQUESTS'),
+  LOG_LEVEL: getEnvVar('LOG_LEVEL'),
+  LOG_FORMAT: getEnvVar('LOG_FORMAT'),
+  LOG_FILE: getEnvVar('LOG_FILE'),
+  HEALTH_CHECK_INTERVAL: getEnvVar('HEALTH_CHECK_INTERVAL'),
+  PYTHON_HEALTH_CHECK_URL: getEnvVar('PYTHON_HEALTH_CHECK_URL'),
+  ENABLE_METRICS: getEnvVar('ENABLE_METRICS'),
+  METRICS_PORT: getEnvVar('METRICS_PORT'),
+  ENABLE_DEV_TOOLS: getEnvVar('ENABLE_DEV_TOOLS'),
+  HOT_RELOAD: getEnvVar('HOT_RELOAD'),
+  PYTHON_SERVER_URL: getEnvVar('PYTHON_SERVER_URL'),
+  PYTHON_SERVER_PORT: getEnvVar('PYTHON_SERVER_PORT'),
+  PYTHON_SERVER_TIMEOUT: getEnvVar('PYTHON_SERVER_TIMEOUT'),
+};
 
 // Environment schema with validation
 const envSchema = z.object({
@@ -8,15 +50,21 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(3000),
   
-  // Security Configuration
-  JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
-  JWT_SECRET_KEY: z.string().min(32, 'JWT_SECRET_KEY must be at least 32 characters'),
-  JWT_EXPIRES_IN: z.string().default('24h'),
-  SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 characters'),
+  // Supabase Configuration
+  SUPABASE_URL: z.string().url('SUPABASE_URL must be a valid URL'),
+  SUPABASE_ANON_KEY: z.string().min(32, 'SUPABASE_ANON_KEY must be at least 32 characters'),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(32, 'SUPABASE_SERVICE_ROLE_KEY must be at least 32 characters'),
+  SUPABASE_JWT_SECRET: z.string().min(32, 'SUPABASE_JWT_SECRET must be at least 32 characters'),
+  
+  // Security Configuration (deprecated, kept for backward compatibility)
+  JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters').optional(),
+  JWT_SECRET_KEY: z.string().min(32, 'JWT_SECRET_KEY must be at least 32 characters').optional(),
+  JWT_EXPIRES_IN: z.string().default('1h'),
+  SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 characters').optional(),
   
   // Python AI Engine Configuration
-  PYTHON_SERVER_URL: z.string().url().default('http://localhost:5001'),
-  PYTHON_SERVER_PORT: z.coerce.number().default(5001),
+  PYTHON_SERVER_URL: z.string().url().default('http://localhost:8000'),
+  PYTHON_SERVER_PORT: z.coerce.number().default(8000),
   PYTHON_SERVER_TIMEOUT: z.coerce.number().default(300000), // 5 minutes
   FLASK_SECRET_KEY: z.string().min(32, 'FLASK_SECRET_KEY must be at least 32 characters'),
   
@@ -29,8 +77,8 @@ const envSchema = z.object({
   MAX_FILE_SIZE: z.coerce.number().default(104857600), // 100MB
   CLEANUP_INTERVAL: z.coerce.number().default(3600000), // 1 hour
   
-  // CORS Configuration
-  CORS_ORIGIN: z.string().default('http://localhost:3000,http://localhost:5173'),
+  // CORS Configuration - Comma-separated list of allowed origins
+  CORS_ORIGIN: z.string().default(''),
   
   // Rate Limiting Configuration
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(900000), // 15 minutes
@@ -44,11 +92,16 @@ const envSchema = z.object({
   
   // Health Check Configuration
   HEALTH_CHECK_INTERVAL: z.coerce.number().default(30000), // 30 seconds
-  PYTHON_HEALTH_CHECK_URL: z.string().url().default('http://localhost:5001/health'),
+  PYTHON_HEALTH_CHECK_URL: z.string().url().default('http://localhost:8000/health'),
   
   // Performance Configuration
   ENABLE_METRICS: z.coerce.boolean().default(true),
   METRICS_PORT: z.coerce.number().optional(),
+  
+  // Redis Configuration
+  REDIS_HOST: z.string().default('localhost'),
+  REDIS_PORT: z.coerce.number().default(6379),
+  REDIS_PASSWORD: z.string().optional(),
   
   // Development Configuration
   ENABLE_DEV_TOOLS: z.coerce.boolean().default(false),
@@ -70,7 +123,7 @@ class ConfigurationError extends Error {
 function loadEnvironment(): Environment {
   try {
     // Parse and validate environment variables
-    const parsed = envSchema.parse(process.env);
+    const parsed = envSchema.parse(processedEnv);
     
     // Additional validation for production environment
     if (parsed.NODE_ENV === 'production') {
@@ -83,8 +136,9 @@ function loadEnvironment(): Environment {
     return parsed;
   } catch (error) {
     if (error instanceof z.ZodError) {
-      const errorMessages = error.errors.map(err => 
-        `${err.path.join('.')}: ${err.message}`
+      // Handle Zod validation errors
+      const errorMessages = error.issues.map(issue => 
+        `${issue.path.join('.')}: ${issue.message}`
       ).join('\n');
       
       throw new ConfigurationError(

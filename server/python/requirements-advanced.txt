@@ -8,8 +8,6 @@
 # Advanced Face Detection & Analysis
 mediapipe>=0.10.9
 deepface>=0.0.89
-dlib>=19.24.2
-cmake>=3.25.0  # Required for dlib compilation
 
 # Face Recognition & Verification
 face-recognition>=1.3.0

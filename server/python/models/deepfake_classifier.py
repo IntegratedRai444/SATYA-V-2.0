@@ -1,534 +1,416 @@
 """
-Real Deepfake Classifier Model
-Uses EfficientNet-B4 for binary classification of real vs fake faces
+Deepfake Classifier - SINGLE SOURCE OF TRUTH for ML Inference
+
+This is the ONLY file that should load ML models and perform inference.
+All other files MUST call methods from this module for ML operations.
 """
 
+import logging
+import os
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+import numpy as np
+# PyTorch imports (only in this file!)
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision import models
-import numpy as np
-from typing import Tuple, Optional
-import logging
+from torchvision import models, transforms
 
 logger = logging.getLogger(__name__)
+
+# Constants
+MODEL_DIR = Path(__file__).parent / ".." / ".." / "models"
+DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+
+# Custom exceptions
+class ModelLoadError(Exception):
+    """Raised when a model fails to load"""
+
+    pass
+
+
+class InferenceError(Exception):
+    """Raised when inference fails"""
+
+    pass
 
 
 class DeepfakeClassifier(nn.Module):
     """
-    EfficientNet-B4 based deepfake classifier.
+    Centralized Deepfake Classifier - The SINGLE point of ML inference.
+
+    This class is responsible for ALL ML model loading and inference.
+    No other file should directly load models or perform inference.
     """
-    
-    def __init__(self, num_classes: int = 2, pretrained: bool = True):
-        """
-        Initialize the classifier.
-        
-        Args:
-            num_classes: Number of output classes (2 for binary classification)
-            pretrained: Whether to use pretrained weights
-        """
+
+    _instance = None
+    _initialized = False
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(DeepfakeClassifier, cls).__new__(cls)
+        return cls._instance
+
+    def __init__(self, model_type: str = "efficientnet", device: str = None):
+        if DeepfakeClassifier._initialized:
+            return
+
         super(DeepfakeClassifier, self).__init__()
-        
-        # Use EfficientNet-B4 as backbone
-        self.backbone = models.efficientnet_b4(pretrained=pretrained)
-        
-        # Get the number of features from the classifier
-        num_features = self.backbone.classifier[1].in_features
-        
-        # Replace the classifier with our custom head
-        self.backbone.classifier = nn.Sequential(
-            nn.Dropout(0.4),
-            nn.Linear(num_features, 512),
-            nn.ReLU(inplace=True),
-            nn.Dropout(0.3),
-            nn.Linear(512, 128),
-            nn.ReLU(inplace=True),
-            nn.Dropout(0.2),
-            nn.Linear(128, num_classes)
+        self.device = device or DEFAULT_DEVICE
+        self.model_type = model_type
+        self.model = None
+        self.transform = None
+        self._load_model(model_type)
+
+        DeepfakeClassifier._initialized = True
+        logger.info(
+            f"DeepfakeClassifier initialized with {model_type} on {self.device}"
         )
-        
-        # Add attention mechanism
-        self.attention = SpatialAttention()
-        
-        logger.info(f"DeepfakeClassifier initialized with {num_classes} classes")
-    
+
+    def _load_model(self, model_type: str) -> None:
+        """Load the specified model type"""
+        try:
+            if model_type == "efficientnet":
+                self._load_efficientnet()
+            elif model_type == "xception":
+                self._load_xception()
+            else:
+                raise ValueError(f"Unsupported model type: {model_type}")
+
+            self.model = self.model.to(self.device)
+            self.model.eval()
+
+            # Set up transforms
+            self.transform = transforms.Compose(
+                [
+                    transforms.Resize((224, 224)),
+                    transforms.ToTensor(),
+                    transforms.Normalize(
+                        mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                    ),
+                ]
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to load model {model_type}: {str(e)}")
+            raise ModelLoadError(f"Failed to load model: {str(e)}")
+
+    def _load_efficientnet(self) -> None:
+        """Load EfficientNet-B4 model"""
+        self.model = models.efficientnet_b4(pretrained=False)
+        num_features = self.model.classifier[1].in_features
+        self.model.classifier = nn.Sequential(
+            nn.Dropout(0.4), nn.Linear(num_features, 2)  # Binary classification
+        )
+
+        # Load weights if available
+        model_path = MODEL_DIR / "efficientnet_b4_deepfake.pth"
+        if model_path.exists():
+            state_dict = torch.load(model_path, map_location=self.device)
+            self.model.load_state_dict(state_dict)
+
+    def _load_xception(self) -> None:
+        """Load Xception model"""
+        self.model = models.xception(pretrained=False)
+        num_features = self.model.fc.in_features
+        self.model.fc = nn.Linear(num_features, 2)  # Binary classification
+
+        # Load weights if available
+        model_path = MODEL_DIR / "xception_deepfake.pth"
+        if model_path.exists():
+            state_dict = torch.load(model_path, map_location=self.device)
+            self.model.load_state_dict(state_dict)
+
+    @torch.no_grad()
+    def predict_image(
+        self, image: Union[Image.Image, np.ndarray, torch.Tensor]
+    ) -> Dict[str, Any]:
+        """
+        Predict if an image is real or fake.
+
+        Args:
+            image: PIL Image, numpy array, or torch.Tensor
+
+        Returns:
+            Dict containing:
+                - prediction: 'real' or 'fake'
+                - confidence: float between 0 and 1
+                - logits: raw model outputs
+                - features: extracted features (optional)
+        """
+        if not self.model or not self.transform:
+            raise InferenceError("Model not loaded. Call load_models() first.")
+
+        try:
+            # Convert input to PIL Image if needed
+            if isinstance(image, np.ndarray):
+                image = Image.fromarray(image)
+            elif torch.is_tensor(image):
+                image = transforms.ToPILImage()(image.cpu())
+
+            # Apply transforms
+            input_tensor = self.transform(image).unsqueeze(0).to(self.device)
+
+            # Run inference
+            logits = self.model(input_tensor)
+            probs = F.softmax(logits, dim=1)
+            confidence, pred = torch.max(probs, dim=1)
+
+            return {
+                "prediction": "fake" if pred.item() == 1 else "real",
+                "confidence": confidence.item(),
+                "logits": logits.cpu().numpy(),
+                "class_probs": {"real": probs[0][0].item(), "fake": probs[0][1].item()},
+            }
+
+        except Exception as e:
+            logger.error(f"Inference failed: {str(e)}")
+            raise InferenceError(f"Inference failed: {str(e)}")
+
+    @torch.no_grad()
+    def predict_batch(
+        self, images: List[Union[Image.Image, np.ndarray, torch.Tensor]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Predict on a batch of images.
+
+        Args:
+            images: List of PIL Images, numpy arrays, or torch.Tensors
+
+        Returns:
+            List of prediction dicts (same format as predict_image)
+        """
+        if not self.model or not self.transform:
+            raise InferenceError("Model not loaded. Call load_models() first.")
+
+        try:
+            # Convert all images to tensors
+            input_tensors = []
+            for img in images:
+                if isinstance(img, np.ndarray):
+                    img = Image.fromarray(img)
+                elif torch.is_tensor(img):
+                    img = transforms.ToPILImage()(img.cpu())
+                input_tensors.append(self.transform(img))
+
+            # Stack into batch
+            batch = torch.stack(input_tensors).to(self.device)
+
+            # Run batch inference
+            logits = self.model(batch)
+            probs = F.softmax(logits, dim=1)
+            confidences, preds = torch.max(probs, dim=1)
+
+            # Convert to list of dicts
+            results = []
+            for i in range(len(images)):
+                results.append(
+                    {
+                        "prediction": "fake" if preds[i].item() == 1 else "real",
+                        "confidence": confidences[i].item(),
+                        "logits": logits[i].cpu().numpy(),
+                        "class_probs": {
+                            "real": probs[i][0].item(),
+                            "fake": probs[i][1].item(),
+                        },
+                    }
+                )
+
+            return results
+
+        except Exception as e:
+            logger.error(f"Batch inference failed: {str(e)}")
+            raise InferenceError(f"Batch inference failed: {str(e)}")
+
+    def is_ready(self) -> bool:
+        """Check if the model is loaded and ready for inference"""
+        return self.model is not None and self.transform is not None
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass.
-        
+
         Args:
             x: Input tensor of shape (batch_size, 3, 224, 224)
-            
+
         Returns:
             Output logits of shape (batch_size, num_classes)
         """
-        # Extract features before the final classifier
-        features = self.backbone.features(x)
-        
-        # Apply attention
-        attended_features = self.attention(features)
-        
-        # Global average pooling
-        pooled = self.backbone.avgpool(attended_features)
-        
-        # Flatten
-        flattened = torch.flatten(pooled, 1)
-        
-        # Final classification
-        output = self.backbone.classifier(flattened)
-        
-        return output
-    
-    def predict_proba(self, x: torch.Tensor) -> torch.Tensor:
+        if not self.model:
+            raise InferenceError("Model not loaded. Call load_models() first.")
+
+        return self.model(x)
+
+    def get_model_info(self) -> Dict[str, Any]:
         """
-        Get prediction probabilities.
-        
-        Args:
-            x: Input tensor
-            
+        Get information about the loaded model.
+
         Returns:
-            Softmax probabilities
+            Dict containing model metadata
         """
-        with torch.no_grad():
-            logits = self.forward(x)
-            probabilities = F.softmax(logits, dim=1)
-        
-        return probabilities
-    
-    def predict(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Get predictions and confidence scores.
-        
-        Args:
-            x: Input tensor
-            
-        Returns:
-            Tuple of (predictions, confidence_scores)
-        """
-        probabilities = self.predict_proba(x)
-        predictions = torch.argmax(probabilities, dim=1)
-        confidence_scores = torch.max(probabilities, dim=1)[0]
-        
-        return predictions, confidence_scores
+        if not self.model:
+            return {
+                "status": "not_loaded",
+                "device": self.device,
+                "model_type": self.model_type,
+            }
+
+        return {
+            "status": "loaded",
+            "device": self.device,
+            "model_type": self.model_type,
+            "parameters": sum(
+                p.numel() for p in self.model.parameters() if p.requires_grad
+            ),
+            "device_memory": torch.cuda.memory_allocated(self.device)
+            if "cuda" in str(self.device)
+            else 0,
+        }
 
 
-def load_pretrained_classifier_advanced(model_path: str, model_type: str = 'efficientnet', device: str = 'cpu') -> Optional[nn.Module]:
+# Global instance of the classifier
+_classifier_instance = None
+
+
+def get_classifier(
+    model_type: str = "efficientnet", device: str = None
+) -> "DeepfakeClassifier":
     """
-    Load a pretrained deepfake classifier with flexible loading.
-    
+    Get or create the global classifier instance.
+
     Args:
-        model_path: Path to the model file
-        model_type: Type of model architecture
-        device: Device to load the model on
-        
+        model_type: Type of model to use ('efficientnet' or 'xception')
+        device: Device to run the model on ('cuda' or 'cpu')
+
     Returns:
-        Loaded model or None if loading fails
+        DeepfakeClassifier instance
+
+    Raises:
+        ModelLoadError: If the model fails to load
+    """
+    global _classifier_instance
+
+    if _classifier_instance is None:
+        _classifier_instance = DeepfakeClassifier(model_type=model_type, device=device)
+
+    if not _classifier_instance.is_ready():
+        raise ModelLoadError("Failed to initialize deepfake classifier")
+
+    return _classifier_instance
+
+
+def predict_image(
+    image: Union[Image.Image, np.ndarray, torch.Tensor],
+    model_type: str = "efficientnet",
+    device: str = None,
+) -> Dict[str, Any]:
+    """
+    Predict if an image is a deepfake using the centralized ML classifier.
+
+    This is the ONLY function that should be called for ML inference.
+    All other files must use this function for predictions.
+
+    Args:
+        image: Input image (PIL.Image, numpy array, or torch.Tensor)
+        images: List of input images
+        model_type: Type of model to use
+        device: Device to run inference on
+
+    Returns:
+        List of prediction dictionaries
+
+    Raises:
+        InferenceError: If prediction fails
+    """
+    classifier = get_classifier(model_type=model_type, device=device)
+    return classifier.predict_batch(images)
+
+
+def is_model_available() -> bool:
+    """
+    Check if the deepfake classification model is available.
+
+    Returns:
+        bool: True if model is available, False otherwise
     """
     try:
+        # Check if PyTorch is available
         import torch
-        import torchvision.models as models
-        from pathlib import Path
-        
-        model_file = Path(model_path)
-        if not model_file.exists():
-            logger.warning(f"Model file not found: {model_path}, creating new model")
-            return create_simple_classifier(device)
-        
-        # Try to load existing model with flexible approach
-        try:
-            state_dict = torch.load(model_path, map_location=device)
-            
-            # Check if this is a ResNet50 model (common format)
-            if any('layer1' in key for key in state_dict.keys()):
-                logger.info("Detected ResNet50 format, creating compatible model")
-                model = models.resnet50(pretrained=False)
-                model.fc = torch.nn.Linear(model.fc.in_features, 2)
-                
-                # Load with strict=False to handle minor differences
-                model.load_state_dict(state_dict, strict=False)
-                model.to(device)
-                model.eval()
-                
-                logger.info(f"Successfully loaded ResNet50 model from {model_path}")
-                return model
-            
-            # Try EfficientNet format
-            elif any('backbone.features' in key for key in state_dict.keys()):
-                logger.info("Detected EfficientNet format, creating compatible model")
-                model = DeepfakeClassifier(num_classes=2, pretrained=False)
-                
-                # Handle different state dict formats
-                if 'model_state_dict' in state_dict:
-                    model.load_state_dict(state_dict['model_state_dict'], strict=False)
-                elif 'state_dict' in state_dict:
-                    model.load_state_dict(state_dict['state_dict'], strict=False)
-                else:
-                    model.load_state_dict(state_dict, strict=False)
-                
-                model.to(device)
-                model.eval()
-                
-                logger.info(f"Successfully loaded EfficientNet model from {model_path}")
-                return model
-            
-            else:
-                logger.warning(f"Unknown model format in {model_path}, creating new model")
-                return create_simple_classifier(device)
-                
-        except Exception as e:
-            logger.warning(f"Failed to load model from {model_path}: {e}, creating new model")
-            return create_simple_classifier(device)
-            
-    except Exception as e:
-        logger.error(f"Failed to load pretrained classifier: {e}")
-        return create_simple_classifier(device)
+
+        # Check if required models exist
+        required_models = [
+            MODEL_DIR / "efficientnet_b4_deepfake.pth",
+            MODEL_DIR / "xception_deepfake.pth",
+        ]
+
+        return any(path.exists() for path in required_models)
+    except ImportError:
+        return False
 
 
-def create_simple_classifier(device: str = 'cpu') -> DeepfakeClassifier:
+def get_model_info() -> Dict[str, Any]:
     """
-    Create a simple classifier with pretrained backbone.
-    
-    Args:
-        device: Device to create the model on
-        
+    Get information about the currently loaded model.
+
     Returns:
-        Simple classifier model
+        Dict containing model metadata
+    """
+    if _classifier_instance is None:
+        return {"status": "not_initialized"}
+    return _classifier_instance.get_model_info()
+
+
+def ensure_models_downloaded() -> bool:
+    """
+    Ensure that required model files are downloaded.
+
+    Returns:
+        bool: True if all models are available, False otherwise
     """
     try:
-        model = DeepfakeClassifier(num_classes=2, pretrained=True)
-        model.to(device)
-        model.eval()
-        
-        logger.info("Created simple classifier with pretrained backbone")
-        return model
-        
+        MODEL_DIR.mkdir(parents=True, exist_ok=True)
+
+        # List of required model files and their download URLs
+        models_to_download = {
+            "efficientnet_b4_deepfake.pth": "https://example.com/models/efficientnet_b4_deepfake.pth",
+            "xception_deepfake.pth": "https://example.com/models/xception_deepfake.pth",
+        }
+
+        all_downloaded = True
+
+        for filename, url in models_to_download.items():
+            model_path = MODEL_DIR / filename
+            if not model_path.exists():
+                logger.warning(f"Model file not found: {model_path}")
+                all_downloaded = False
+
+                # Here you would implement the actual download logic
+                # For now, we'll just log a warning
+                logger.warning(
+                    f"Please download {filename} from {url} and save it to {MODEL_DIR}"
+                )
+
+        return all_downloaded
     except Exception as e:
-        logger.error(f"Failed to create simple classifier: {e}")
-        # Return a very basic model as fallback
-        return DeepfakeClassifier(num_classes=2, pretrained=False)
+        logger.error(f"Error checking/downloading models: {str(e)}")
+        return False
 
 
-def load_xception_model(model_path: str, device: str = 'cpu') -> Optional[torch.nn.Module]:
-    """
-    Load Xception model trained on FaceForensics++.
-    
-    Args:
-        model_path: Path to the Xception model file
-        device: Device to load the model on
-        
-    Returns:
-        Loaded Xception model or None
-    """
-    try:
-        import torch
-        import torch.nn as nn
-        from pathlib import Path
-        
-        if not Path(model_path).exists():
-            logger.error(f"Xception model not found: {model_path}")
-            return None
-        
-        # Create Xception architecture
-        class XceptionDeepfake(nn.Module):
-            def __init__(self, num_classes=2):
-                super(XceptionDeepfake, self).__init__()
-                
-                # Use torchvision's implementation or create custom Xception
-                try:
-                    import torchvision.models as models
-                    # Use ResNet as Xception substitute if Xception not available
-                    self.backbone = models.resnet50(pretrained=False)
-                    self.backbone.fc = nn.Linear(self.backbone.fc.in_features, num_classes)
-                except:
-                    # Fallback to simple CNN
-                    self.backbone = nn.Sequential(
-                        nn.Conv2d(3, 64, 3, padding=1),
-                        nn.ReLU(),
-                        nn.AdaptiveAvgPool2d((1, 1)),
-                        nn.Flatten(),
-                        nn.Linear(64, num_classes)
-                    )
-            
-            def forward(self, x):
-                return self.backbone(x)
-        
-        # Load model
-        model = XceptionDeepfake(num_classes=2)
-        
-        try:
-            state_dict = torch.load(model_path, map_location=device)
-            model.load_state_dict(state_dict, strict=False)  # Allow partial loading
-        except Exception as e:
-            logger.warning(f"Could not load Xception weights, using random initialization: {e}")
-        
-        model.to(device)
-        model.eval()
-        
-        logger.info(f"Loaded Xception model from {model_path}")
-        return model
-        
-    except Exception as e:
-        logger.error(f"Failed to load Xception model: {e}")
-        return None
+def _cleanup():
+    """Clean up resources when the module is unloaded"""
+    global _classifier_instance
+    if _classifier_instance is not None:
+        del _classifier_instance
+        _classifier_instance = None
+
+        # Clear CUDA cache if available
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
 
-class SpatialAttention(nn.Module):
-    """
-    Spatial attention mechanism to focus on important regions.
-    """
-    
-    def __init__(self, kernel_size: int = 7):
-        """
-        Initialize spatial attention.
-        
-        Args:
-            kernel_size: Kernel size for convolution
-        """
-        super(SpatialAttention, self).__init__()
-        
-        self.conv = nn.Conv2d(
-            2, 1, kernel_size=kernel_size, 
-            padding=kernel_size // 2, bias=False
-        )
-        self.sigmoid = nn.Sigmoid()
-    
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Apply spatial attention.
-        
-        Args:
-            x: Input feature tensor
-            
-        Returns:
-            Attention-weighted features
-        """
-        # Compute channel-wise statistics
-        avg_out = torch.mean(x, dim=1, keepdim=True)
-        max_out, _ = torch.max(x, dim=1, keepdim=True)
-        
-        # Concatenate and apply convolution
-        attention_input = torch.cat([avg_out, max_out], dim=1)
-        attention_weights = self.sigmoid(self.conv(attention_input))
-        
-        # Apply attention weights
-        return x * attention_weights
+# Register cleanup for when the module is unloaded
+import atexit
 
-
-class XceptionDeepfakeClassifier(nn.Module):
-    """
-    Alternative Xception-based classifier (commonly used in deepfake detection).
-    """
-    
-    def __init__(self, num_classes: int = 2):
-        """Initialize Xception classifier."""
-        super(XceptionDeepfakeClassifier, self).__init__()
-        
-        # Load pretrained Xception (we'll use a ResNet as substitute since Xception isn't in torchvision)
-        self.backbone = models.resnet50(pretrained=True)
-        
-        # Modify first conv layer for different input size if needed
-        # self.backbone.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
-        
-        # Replace final layer
-        num_features = self.backbone.fc.in_features
-        self.backbone.fc = nn.Sequential(
-            nn.Dropout(0.5),
-            nn.Linear(num_features, 512),
-            nn.ReLU(inplace=True),
-            nn.Dropout(0.3),
-            nn.Linear(512, num_classes)
-        )
-        
-        logger.info("XceptionDeepfakeClassifier initialized")
-    
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass."""
-        return self.backbone(x)
-    
-    def predict_proba(self, x: torch.Tensor) -> torch.Tensor:
-        """Get prediction probabilities."""
-        with torch.no_grad():
-            logits = self.forward(x)
-            probabilities = F.softmax(logits, dim=1)
-        
-        return probabilities
-
-
-def load_pretrained_classifier(model_path: str, model_type: str = 'efficientnet', device: str = 'cpu') -> Optional[nn.Module]:
-    """
-    Load a pretrained deepfake classifier.
-    
-    Args:
-        model_path: Path to the model file
-        model_type: Type of model ('efficientnet' or 'xception')
-        device: Device to load the model on
-        
-    Returns:
-        Loaded model or None if loading fails
-    """
-    try:
-        if model_type == 'efficientnet':
-            model = DeepfakeClassifier(num_classes=2, pretrained=False)
-        elif model_type == 'xception':
-            model = XceptionDeepfakeClassifier(num_classes=2)
-        else:
-            logger.error(f"Unknown model type: {model_type}")
-            return None
-        
-        # Load state dict
-        state_dict = torch.load(model_path, map_location=device)
-        
-        # Handle different state dict formats
-        if 'model_state_dict' in state_dict:
-            model.load_state_dict(state_dict['model_state_dict'])
-        elif 'state_dict' in state_dict:
-            model.load_state_dict(state_dict['state_dict'])
-        else:
-            model.load_state_dict(state_dict)
-        
-        model.eval()
-        model.to(device)
-        
-        logger.info(f"Loaded pretrained {model_type} classifier from {model_path}")
-        return model
-        
-    except Exception as e:
-        logger.error(f"Failed to load classifier from {model_path}: {e}")
-        return None
-
-
-def create_simple_classifier(device: str = 'cpu') -> nn.Module:
-    """
-    Create a simple classifier for testing when pretrained models aren't available.
-    
-    Args:
-        device: Device to create the model on
-        
-    Returns:
-        Simple CNN classifier
-    """
-    class SimpleCNN(nn.Module):
-        def __init__(self):
-            super(SimpleCNN, self).__init__()
-            
-            self.features = nn.Sequential(
-                # First block
-                nn.Conv2d(3, 32, 3, padding=1),
-                nn.BatchNorm2d(32),
-                nn.ReLU(inplace=True),
-                nn.MaxPool2d(2),
-                
-                # Second block
-                nn.Conv2d(32, 64, 3, padding=1),
-                nn.BatchNorm2d(64),
-                nn.ReLU(inplace=True),
-                nn.MaxPool2d(2),
-                
-                # Third block
-                nn.Conv2d(64, 128, 3, padding=1),
-                nn.BatchNorm2d(128),
-                nn.ReLU(inplace=True),
-                nn.MaxPool2d(2),
-                
-                # Fourth block
-                nn.Conv2d(128, 256, 3, padding=1),
-                nn.BatchNorm2d(256),
-                nn.ReLU(inplace=True),
-                nn.AdaptiveAvgPool2d((7, 7))
-            )
-            
-            self.classifier = nn.Sequential(
-                nn.Dropout(0.5),
-                nn.Linear(256 * 7 * 7, 512),
-                nn.ReLU(inplace=True),
-                nn.Dropout(0.3),
-                nn.Linear(512, 128),
-                nn.ReLU(inplace=True),
-                nn.Linear(128, 2)
-            )
-        
-        def forward(self, x):
-            x = self.features(x)
-            x = torch.flatten(x, 1)
-            x = self.classifier(x)
-            return x
-        
-        def predict_proba(self, x):
-            with torch.no_grad():
-                logits = self.forward(x)
-                probabilities = F.softmax(logits, dim=1)
-            return probabilities
-    
-    model = SimpleCNN()
-    model.eval()
-    model.to(device)
-    
-    logger.info("Created simple CNN classifier for testing")
-    return model
-
-
-# Training utilities (for future model training)
-class DeepfakeTrainer:
-    """Trainer class for deepfake detection models."""
-    
-    def __init__(self, model: nn.Module, device: str = 'cpu'):
-        """Initialize trainer."""
-        self.model = model
-        self.device = device
-        self.criterion = nn.CrossEntropyLoss()
-        self.optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=10, gamma=0.1)
-    
-    def train_epoch(self, dataloader, epoch: int):
-        """Train for one epoch."""
-        self.model.train()
-        total_loss = 0.0
-        correct = 0
-        total = 0
-        
-        for batch_idx, (data, targets) in enumerate(dataloader):
-            data, targets = data.to(self.device), targets.to(self.device)
-            
-            self.optimizer.zero_grad()
-            outputs = self.model(data)
-            loss = self.criterion(outputs, targets)
-            loss.backward()
-            self.optimizer.step()
-            
-            total_loss += loss.item()
-            _, predicted = outputs.max(1)
-            total += targets.size(0)
-            correct += predicted.eq(targets).sum().item()
-            
-            if batch_idx % 100 == 0:
-                logger.info(f'Epoch: {epoch}, Batch: {batch_idx}, Loss: {loss.item():.4f}')
-        
-        accuracy = 100. * correct / total
-        avg_loss = total_loss / len(dataloader)
-        
-        logger.info(f'Epoch {epoch}: Loss: {avg_loss:.4f}, Accuracy: {accuracy:.2f}%')
-        
-        return avg_loss, accuracy
-    
-    def validate(self, dataloader):
-        """Validate the model."""
-        self.model.eval()
-        total_loss = 0.0
-        correct = 0
-        total = 0
-        
-        with torch.no_grad():
-            for data, targets in dataloader:
-                data, targets = data.to(self.device), targets.to(self.device)
-                outputs = self.model(data)
-                loss = self.criterion(outputs, targets)
-                
-                total_loss += loss.item()
-                _, predicted = outputs.max(1)
-                total += targets.size(0)
-                correct += predicted.eq(targets).sum().item()
-        
-        accuracy = 100. * correct / total
-        avg_loss = total_loss / len(dataloader)
-        
-        return avg_loss, accuracy
+atexit.register(_cleanup)

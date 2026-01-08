@@ -1,0 +1,192 @@
+"""
+Configuration Management
+Handles environment variables and application configuration with validation.
+"""
+import logging
+import os
+import secrets
+from typing import Any, Dict, List, Optional
+
+from pydantic import Field, HttpUrl, PostgresDsn, validator
+from pydantic.types import SecretStr
+from pydantic_settings import BaseSettings
+
+logger = logging.getLogger(__name__)
+
+
+class Settings(BaseSettings):
+    # Application Settings
+    APP_NAME: str = "SatyaAI"
+    APP_ENV: str = Field(default="development", env=["ENVIRONMENT", "NODE_ENV"])
+    NODE_ENV: str = "development"
+    DEBUG: bool = Field(default=False, env="DEBUG")
+    SECRET_KEY: str = Field(
+        default_factory=lambda: secrets.token_urlsafe(32), env="SECRET_KEY"
+    )
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    REFRESH_TOKEN_EXPIRES_IN: str = Field(default="30d", env="REFRESH_TOKEN_EXPIRES_IN")
+
+    # Server Configuration
+    PORT: int = Field(default=8000, env=["PORT", "SERVER_PORT"])
+    HOST: str = "0.0.0.0"
+    ENVIRONMENT: str = Field(default="development", env=["ENVIRONMENT", "NODE_ENV"])
+
+    # API Configuration
+    VITE_API_URL: str = "http://localhost:8000/api/v2"
+    API_BASE_URL: str = "http://localhost:8000"
+    VITE_WS_URL: str = "ws://localhost:8000/ws"
+    WS_PATH: str = "/ws"
+    WS_PORT: int = 8000
+    CLIENT_PORT: int = 5173
+
+    # File Uploads
+    UPLOAD_DIR: str = "./uploads"
+    MAX_FILE_SIZE: int = 104857600  # 100MB
+    ALLOWED_FILE_TYPES: str = (
+        "image/jpeg,image/png,image/webp,video/mp4,video/webm,audio/mpeg,audio/wav"
+    )
+
+    # JWT Configuration
+    JWT_SECRET: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRES_IN: str = "24h"
+
+    # API Settings
+    API_V1_STR: str = "/api/v1"
+    API_V2_STR: str = "/api/v2"
+
+    # CORS settings
+    CORS_ALLOW_ORIGINS: List[str] = Field(
+        default=[
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:5173",
+            "https://satyaai.app",
+        ],
+        env=["CORS_ALLOW_ORIGINS", "CORS_ORIGIN"],
+    )
+    CORS_ALLOW_METHODS: List[str] = Field(
+        default=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        env=["CORS_ALLOW_METHODS", "CORS_METHODS"],
+    )
+    CORS_ALLOW_HEADERS: List[str] = Field(default=["*"], env="CORS_ALLOW_HEADERS")
+    CORS_EXPOSE_HEADERS: List[str] = Field(
+        default=["X-Request-ID", "X-RateLimit-Limit", "X-RateLimit-Remaining"],
+        env="CORS_EXPOSE_HEADERS",
+    )
+    CORS_MAX_AGE: int = Field(default=600, env="CORS_MAX_AGE")  # 10 minutes
+    CORS_CREDENTIALS: bool = Field(default=True, env="CORS_CREDENTIALS")
+
+    # Database
+    DATABASE_URL: str
+    TEST_DATABASE_URL: Optional[str] = None
+
+    # Redis
+    REDIS_URL: str = "redis://localhost:6379/0"
+
+    # Supabase
+    SUPABASE_URL: Optional[str] = None
+    SUPABASE_ANON_KEY: Optional[str] = None
+    SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
+    SUPABASE_JWT_SECRET: Optional[str] = None
+    USE_SUPABASE_CLIENT: bool = False
+
+    # Python Server
+    PYTHON_SERVER_URL: str = "http://localhost:8000"
+    PYTHON_SERVER_PORT: int = 8000
+    PYTHON_SERVER_TIMEOUT: int = 300000  # 5 minutes
+    PYTHON_HEALTH_CHECK_URL: str = "http://localhost:8000/health"
+
+    # Rate Limiting
+    RATE_LIMIT_WINDOW_MS: int = 900000  # 15 minutes
+    RATE_LIMIT_MAX: int = 100
+
+    # Security
+    SECURE_COOKIES: bool = True
+    SESSION_COOKIE_NAME: str = "satya_session"
+    SESSION_SECRET: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
+
+    # Rate Limiting
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_DEFAULT: str = "100/minute"
+    RATE_LIMIT_AUTH: str = "10/minute"
+
+    # Logging
+    LOG_LEVEL: str = "INFO"
+    LOG_FORMAT: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+        case_sensitive = True
+        extra = "forbid"  # Enable strict mode
+
+        @classmethod
+        def parse_env_var(cls, field_name: str, raw_val: str) -> Any:
+            if field_name in [
+                "CORS_ALLOW_ORIGINS",
+                "CORS_ALLOW_METHODS",
+                "CORS_ALLOW_HEADERS",
+                "CORS_EXPOSE_HEADERS",
+                "CORS_ORIGIN",
+                "CORS_METHODS",
+            ]:  # Added CORS_ORIGIN and CORS_METHODS
+                return [x.strip() for x in raw_val.split(",") if x.strip()]
+            return cls.json_loads(raw_val) if raw_val else raw_val
+
+    # CORS origins are handled by CORS_ALLOW_ORIGINS
+
+    @validator("APP_ENV", "NODE_ENV", "ENVIRONMENT", pre=True)
+    def validate_app_env(cls, v, field):
+        if v is None:
+            return v
+        v = v.lower()
+        if v not in ["development", "testing", "production"]:
+            raise ValueError(
+                f"{field.name} must be one of: development, testing, production"
+            )
+        return v
+
+    @validator(
+        "CORS_ALLOW_ORIGINS",
+        "CORS_ALLOW_METHODS",
+        "CORS_ALLOW_HEADERS",
+        "CORS_EXPOSE_HEADERS",
+        pre=True,
+    )
+    def parse_comma_separated_list(cls, v):
+        if isinstance(v, str):
+            return [x.strip() for x in v.split(",") if x.strip()]
+        return v or []
+
+
+# Initialize settings
+settings = Settings()
+
+# Apply environment-specific overrides
+if settings.APP_ENV == "production":
+    settings.SECURE_COOKIES = True
+    settings.DEBUG = False
+    settings.LOG_LEVEL = "WARNING"
+elif settings.APP_ENV == "testing":
+    settings.DEBUG = True
+    settings.TESTING = True
+
+# Configure logging
+logging.basicConfig(
+    level=settings.LOG_LEVEL,
+    format=settings.LOG_FORMAT,
+)
+
+# Validate required settings in production
+if settings.APP_ENV == "production":
+    required_vars = ["DATABASE_URL", "SECRET_KEY"]
+    missing_vars = [var for var in required_vars if not getattr(settings, var, None)]
+    if missing_vars:
+        raise ValueError(
+            f"Missing required environment variables: {', '.join(missing_vars)}"
+        )
+
+# Export settings
+__all__ = ["settings"]

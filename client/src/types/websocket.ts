@@ -22,7 +22,7 @@ export type MessageType =
   | 'subscribe'
   | 'unsubscribe';
 
-export type ConnectionState = 'connecting' | 'connected' | 'disconnecting' | 'disconnected';
+export type ConnectionState = 'connecting' | 'connected' | 'disconnecting' | 'disconnected' | 'reconnecting';
 
 export type ScanStatus = 'queued' | 'processing' | 'completed' | 'failed';
 

@@ -3,11 +3,12 @@ System Information and Monitoring Route
 Dedicated route for system metrics and monitoring
 """
 
-from fastapi import APIRouter
-from datetime import datetime
-import psutil
-import platform
 import logging
+import platform
+from datetime import datetime
+
+import psutil
+from fastapi import APIRouter
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ router = APIRouter()
 async def get_system_info():
     """
     Get system information
-    
+
     Returns detailed system information
     """
     try:
@@ -30,9 +31,9 @@ async def get_system_info():
                 "platform_version": platform.version(),
                 "architecture": platform.machine(),
                 "processor": platform.processor(),
-                "python_version": platform.python_version()
+                "python_version": platform.python_version(),
             },
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
     except Exception as e:
         logger.error(f"Failed to get system info: {e}")
@@ -43,35 +44,32 @@ async def get_system_info():
 async def get_system_metrics():
     """
     Get system metrics (CPU, memory, disk)
-    
+
     Returns current system resource usage
     """
     try:
         cpu_percent = psutil.cpu_percent(interval=0.1)
         memory = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
-        
+        disk = psutil.disk_usage("/")
+
         return {
             "success": True,
             "metrics": {
-                "cpu": {
-                    "percent": cpu_percent,
-                    "count": psutil.cpu_count()
-                },
+                "cpu": {"percent": cpu_percent, "count": psutil.cpu_count()},
                 "memory": {
                     "total": memory.total,
                     "available": memory.available,
                     "used": memory.used,
-                    "percent": memory.percent
+                    "percent": memory.percent,
                 },
                 "disk": {
                     "total": disk.total,
                     "used": disk.used,
                     "free": disk.free,
-                    "percent": disk.percent
-                }
+                    "percent": disk.percent,
+                },
             },
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
     except Exception as e:
         logger.error(f"Failed to get system metrics: {e}")
@@ -85,7 +83,7 @@ async def get_process_info():
     """
     try:
         process = psutil.Process()
-        
+
         return {
             "success": True,
             "process": {
@@ -95,12 +93,14 @@ async def get_process_info():
                 "cpu_percent": process.cpu_percent(),
                 "memory_info": {
                     "rss": process.memory_info().rss,
-                    "vms": process.memory_info().vms
+                    "vms": process.memory_info().vms,
                 },
                 "num_threads": process.num_threads(),
-                "create_time": datetime.fromtimestamp(process.create_time()).isoformat()
+                "create_time": datetime.fromtimestamp(
+                    process.create_time()
+                ).isoformat(),
             },
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
     except Exception as e:
         logger.error(f"Failed to get process info: {e}")

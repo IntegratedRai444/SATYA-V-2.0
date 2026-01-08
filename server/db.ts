@@ -1,202 +1,186 @@
-import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
-import * as schema from "@shared/schema";
-import Redis from 'ioredis';
-import { logger } from './config';
+import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import postgres, { type Sql } from 'postgres';
+import * as schema from "../shared/schema";
+import { logger } from './config/logger';
+import { config } from './config/environment';
+import { redisManager } from './config/redis';
 import { supabase } from './services/supabase-client';
-
-// Validate required environment variables
-const requiredEnvVars = [
-  'DATABASE_URL',
-  'JWT_SECRET',
-  'SUPABASE_URL',
-  'SUPABASE_ANON_KEY'
-];
-
-const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
-if (missingVars.length > 0) {
-  const errorMsg = `Missing required environment variables: ${missingVars.join(', ')}`;
-  logger.error(errorMsg);
-  throw new Error(errorMsg);
-}
 
 // Re-export supabase client from single source
 export { supabase };
 
-// PostgreSQL connection string for Supabase
-const connectionString = process.env.DATABASE_URL!;
+type DatabaseType = ReturnType<typeof drizzle<typeof schema>> & { $client: Sql };
 
-// Connection configuration with enhanced settings
-const dbConfig = {
-  max: process.env.DB_POOL_SIZE ? parseInt(process.env.DB_POOL_SIZE, 10) : 10,
-  idle_timeout: 20,
-  connect_timeout: 5,
-  ssl: process.env.NODE_ENV === 'production' ? 'require' : false,
-  prepare: false,
-  connection: {
-    application_name: `satyaai-${process.env.NODE_ENV || 'development'}`,
-    statement_timeout: 10000, // 10 seconds
-    query_timeout: 30000, // 30 seconds
-  },
-  onnotice: (notice: any) => {
-    if (notice.severity === 'WARNING') {
-      logger.warn('Database warning', { notice });
+class DatabaseManager {
+  private static instance: DatabaseManager;
+  private sql: Sql | null = null;
+  private db: DatabaseType | null = null;
+  private isInitialized = false;
+  private isInitializing = false;
+  private initPromise: Promise<void> | null = null;
+
+  private constructor() {}
+
+  public static getInstance(): DatabaseManager {
+    if (!DatabaseManager.instance) {
+      DatabaseManager.instance = new DatabaseManager();
     }
-  },
-  onparameter: (key: string) => {
-    if (key === 'application_name') return false; // Don't log application name
-    return true;
-  },
-  onclose: () => {
-    const error = new Error('Database connection closed');
-    logger.error('Database connection closed unexpectedly', { error: error.message });
-    process.exit(1); // Exit process to allow process manager to restart
-  },
-  ontimeout: () => {
-    const error = new Error('Database connection timeout');
-    logger.error('Database connection timeout', { error: error.message });
-    throw error;
-  },
-  transform: {
-    column: (col: string) => col.toLowerCase(),
-  },
-} as const;
+    return DatabaseManager.instance;
+  }
 
-// Create PostgreSQL connection with enhanced error handling
-let client: ReturnType<typeof postgres> | null = null;
-let dbInitialized = false;
+  private validateConfig() {
+    if (!config.DATABASE_URL) {
+      throw new Error('DATABASE_URL is required in environment variables');
+    }
+  }
 
-async function initializeDatabase() {
-  try {
-    if (client) {
-      await client.end();
+  private createConnection() {
+    this.validateConfig();
+
+    const dbConfig = {
+      max: process.env.DB_POOL_SIZE ? parseInt(process.env.DB_POOL_SIZE, 10) : 10,
+      idle_timeout: 20,
+      connect_timeout: 5,
+      ssl: process.env.NODE_ENV === 'production' ? 'require' : false,
+      prepare: false,
+      connection: {
+        application_name: `satyaai-${process.env.NODE_ENV || 'development'}`,
+        statement_timeout: 10000, // 10 seconds
+      },
+      onnotice: (notice: any) => {
+        if (notice.severity === 'WARNING') {
+          logger.warn('Database warning', { notice });
+        }
+      },
+      onparameter: (key: string) => {
+        if (key === 'application_name') return false;
+        return true;
+      },
+      onclose: () => {
+        logger.warn('Database connection closed');
+      },
+      transform: {
+        column: (col: string) => col.toLowerCase(),
+      },
+    } as const;
+
+    this.sql = postgres(config.DATABASE_URL!, dbConfig);
+    const db = drizzle(this.sql, { schema });
+    this.db = Object.assign(db, { $client: this.sql });
+  }
+
+  public async getDb(): Promise<DatabaseType> {
+    if (this.db) return this.db;
+    
+    if (this.isInitializing && this.initPromise) {
+      await this.initPromise;
+      return this.db!;
     }
 
-    client = postgres(connectionString, dbConfig);
+    this.isInitializing = true;
+    this.initPromise = this.initialize();
+    
+    try {
+      await this.initPromise;
+      return this.db!;
+    } catch (error) {
+      this.isInitializing = false;
+      this.initPromise = null;
+      logger.error('Failed to initialize database connection', { 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
+      throw error;
+    }
+  }
 
-    // Test connection with timeout
-    await Promise.race([
-      client`SELECT 1`,
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Connection timeout')), 5000)
-      )
-    ]);
-    
-    logger.info('✅ PostgreSQL connection successful');
-    dbInitialized = true;
-    
-    // Set up periodic connection check
-    setInterval(async () => {
-      try {
-        await client`SELECT 1`;
-      } catch (error) {
-        logger.error('Database connection check failed', { error });
-        dbInitialized = false;
+  private async initialize(): Promise<void> {
+    try {
+      if (!this.sql || !this.db) {
+        this.createConnection();
       }
-    }, 60000); // Check every minute
-    
-  } catch (error) {
-    const errorMsg = `❌ Failed to connect to database: ${(error as Error).message}`;
-    logger.error(errorMsg, { error });
-    dbInitialized = false;
-    
-    // Attempt to reconnect after delay
-    setTimeout(initializeDatabase, 10000);
+      
+      // Test the connection
+      if (this.sql) {
+        await this.sql`SELECT 1`;
+        this.isInitialized = true;
+        logger.info('Database connection established');
+      }
+    } catch (error) {
+      this.isInitialized = false;
+      logger.error('Database connection failed', { 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
+      throw error;
+    }
+  }
+
+  public isConnected(): boolean {
+    return this.isInitialized;
+  }
+
+  public async close(): Promise<void> {
+    if (this.sql) {
+      await this.sql.end();
+      this.sql = null;
+      this.db = null;
+      this.isInitialized = false;
+      this.isInitializing = false;
+      this.initPromise = null;
+      logger.info('Database connection closed');
+    }
   }
 }
 
-// Initialize database connection
-initializeDatabase();
+// Create database manager instance
+const dbManager = DatabaseManager.getInstance();
 
-// Safe database export with error handling
-export const db = new Proxy({} as ReturnType<typeof drizzle>, {
-  get(_, prop) {
-    if (!dbInitialized) {
+// Export the database instance
+export const db = new Proxy({} as DatabaseType, {
+  get: (_, prop) => {
+    if (!dbManager.isConnected()) {
       throw new Error('Database not connected. Please check your connection and try again.');
     }
-    return (client as any)[prop];
+    return (dbManager as any)[prop];
   },
-  apply(target, thisArg, args) {
-    if (!dbInitialized) {
+  apply: (target, thisArg, args) => {
+    if (!dbManager.isConnected()) {
       throw new Error('Database not connected. Please check your connection and try again.');
     }
-    return (drizzle as any).apply(thisArg, [client, { schema, ...args }]);
+    return (drizzle as any).apply(thisArg, args);
   }
 });
 
-export const isDbConnected = () => dbInitialized;
-
-// Redis caching with enhanced configuration
-let redis: Redis | null = null;
-const redisConfig = {
-  host: process.env.REDIS_HOST || 'localhost',
-  port: Number(process.env.REDIS_PORT) || 6379,
-  password: process.env.REDIS_PASSWORD,
-  db: 0,
-  maxRetriesPerRequest: 3,
-  enableReadyCheck: true,
-  connectTimeout: 10000,
-  retryStrategy: (times: number) => {
-    if (times > 3) {
-      logger.error('Max Redis retry attempts reached');
-      return null; // Stop retrying after 3 attempts
-    }
-    return Math.min(times * 1000, 5000); // Backoff up to 5 seconds
-  },
-  reconnectOnError: (err: Error) => {
-    const targetError = 'READONLY';
-    if (err.message.includes(targetError)) {
-      return true; // Only reconnect for READONLY errors
-    }
-    return false;
-  }
-};
-
-// Initialize Redis if in production or explicitly enabled
-if (process.env.NODE_ENV === 'production' || process.env.ENABLE_REDIS === 'true') {
-  try {
-    redis = new Redis(redisConfig);
-    
-    redis.on('connect', () => {
-      logger.info('✅ Redis connected successfully');
-    });
-    
-    redis.on('error', (error) => {
-      logger.error('Redis error', { error: error.message });
-    });
-    
-    redis.on('reconnecting', () => {
-      logger.info('Attempting to reconnect to Redis...');
-    });
-    
-  } catch (error) {
-    logger.error('Redis initialization failed', { 
-      error: (error as Error).message 
-    });
-    redis = null;
-  }
-}
+export const isDbConnected = (): boolean => dbManager.isConnected();
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received. Closing database connections...');
   
   try {
-    if (client) {
-      await client.end();
-      logger.info('Database connection closed');
-    }
+    await dbManager.close();
     
-    if (redis) {
-      await redis.quit();
-      logger.info('Redis connection closed');
+    if (redisManager) {
+      try {
+        await redisManager.close();
+        logger.info('Redis connection closed');
+      } catch (error) {
+        if (error && typeof error === 'object' && 'code' in error && error.code === 'ECONNREFUSED') {
+          logger.error('Redis connection refused. Is the Redis server running?');
+          process.exit(1);
+        } else {
+          logger.error('Error closing Redis connection', { 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+          });
+          process.exit(1);
+        }
+      }
     }
     
     process.exit(0);
   } catch (error) {
-    logger.error('Error during shutdown', { error });
+    logger.error('Error during shutdown', { 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    });
     process.exit(1);
   }
 });
-
-export { redis };

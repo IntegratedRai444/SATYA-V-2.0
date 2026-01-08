@@ -1,6 +1,6 @@
 import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
 import { logger } from '../config/logger';
-import { pythonConfig } from '../config';
+import { pythonConfig } from '../config/python-config';
 
 export interface AnalysisRequest {
   filePath: string;
@@ -65,7 +65,7 @@ export class PythonBridge {
       const response = await this.client.post<AnalysisResponse>('/analyze', data);
       return response.data;
     } catch (error) {
-      const axiosError = error as AxiosError;
+      const axiosError = error as AxiosError<{ error?: string }>;
       logger.error('Python service request failed', {
         status: axiosError.response?.status,
         message: axiosError.message,
@@ -74,10 +74,8 @@ export class PythonBridge {
       
       this.isAvailable = false; // Mark as unavailable on error
       
-      throw new Error(
-        axiosError.response?.data?.error || 
-        `Analysis failed: ${axiosError.message}`
-      );
+      const errorMessage = axiosError.response?.data?.error || `Analysis failed: ${axiosError.message}`;
+      throw new Error(errorMessage);
     }
   }
 
@@ -86,11 +84,10 @@ export class PythonBridge {
       const response = await this.client.get<AnalysisResponse>(`/status/${jobId}`);
       return response.data;
     } catch (error) {
-      const axiosError = error as AxiosError;
-      throw new Error(
-        axiosError.response?.data?.error || 
-        `Failed to get analysis status: ${axiosError.message}`
-      );
+      const axiosError = error as AxiosError<{ error?: string }>;
+      const errorMessage = axiosError.response?.data?.error || 
+                         `Failed to get analysis status: ${axiosError.message}`;
+      throw new Error(errorMessage);
     }
   }
 

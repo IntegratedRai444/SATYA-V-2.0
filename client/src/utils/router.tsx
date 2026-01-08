@@ -35,7 +35,6 @@ const Home = lazyWithRetry(() => import('@/pages/Home'));
 const Dashboard = lazyWithRetry(() => import('@/pages/Dashboard'));
 const Login = lazyWithRetry(() => import('@/pages/Login'));
 const Analytics = lazyWithRetry(() => import('@/pages/Analytics'));
-const DetectionTools = lazyWithRetry(() => import('@/pages/DetectionTools'));
 const SmartAnalysis = lazyWithRetry(() => import('../pages/SmartAnalysis'));
 const History = lazyWithRetry(() => import('@/pages/History'));
 const Settings = lazyWithRetry(() => import('@/pages/Settings'));
@@ -217,14 +216,6 @@ export const router = createBrowserRouter([
         element: (
           <Suspense fallback={<LoadingState message="Loading analytics..." isLoading={true} />}>
             <Analytics />
-          </Suspense>
-        ),
-      },
-      {
-        path: 'detection-tools',
-        element: (
-          <Suspense fallback={<LoadingState message="Loading tools..." isLoading={true} />}>
-            <DetectionTools />
           </Suspense>
         ),
       },

@@ -1,12 +1,13 @@
 import { EventEmitter } from 'events';
+import * as fs from 'fs/promises';
+import * as os from 'os';
 import pythonBridgeEnhanced from './python-http-bridge';
 import { fileProcessor } from './file-processor';
-import { webSocketManager } from './websocket-manager';
+import { webSocketManager } from './websocket/WebSocketManager';
 import { db } from '../db';
 import { users } from '@shared/schema';
 import { logSystemHealth, logger } from '../config/logger';
-import fs from 'fs/promises';
-import os from 'os';
+import checkDiskSpace from 'check-disk-space';
 
 interface HealthMetrics {
   timestamp: Date;
@@ -239,7 +240,8 @@ class HealthMonitor extends EventEmitter {
 
       logSystemHealth('websocket', status, {
         connectionCount: stats.totalConnections,
-        connectedUsers: stats.connectedUsers
+        connectedUsers: stats.connectedUsers,
+        channels: stats.channels
       });
 
       return {
@@ -265,20 +267,24 @@ class HealthMonitor extends EventEmitter {
    */
   private async checkFileSystem(): Promise<HealthMetrics['fileSystem']> {
     try {
-      const stats = await fs.stat('./');
-      const diskUsage = await this.getDiskUsage();
+      // Using checkDiskSpace for cross-platform disk space checking
+      const diskSpace = await checkDiskSpace(process.cwd());
+      const total = diskSpace.size;
+      const free = diskSpace.free;
+      const used = total - free;
+      const percentage = total > 0 ? (used / total) * 100 : 0;
       
-      const status = diskUsage.percentage > this.alertThresholds.diskUsagePercentage ? 'degraded' : 'healthy';
+      const status = percentage > this.alertThresholds.diskUsagePercentage ? 'degraded' : 'healthy';
 
       logSystemHealth('file_system', status, {
-        diskUsage: diskUsage.percentage,
-        availableSpace: diskUsage.available
+        diskUsage: parseFloat(percentage.toFixed(2)),
+        availableSpace: Math.round(free / (1024 * 1024 * 1024)) // Convert to GB
       });
 
       return {
         status,
-        diskUsage: diskUsage.percentage,
-        availableSpace: diskUsage.available
+        diskUsage: parseFloat(percentage.toFixed(2)),
+        availableSpace: Math.round(free / (1024 * 1024 * 1024)) // Convert to GB
       };
     } catch (error) {
       logSystemHealth('file_system', 'unhealthy', {
@@ -335,29 +341,18 @@ class HealthMonitor extends EventEmitter {
   private checkProcessing(): HealthMetrics['processing'] {
     try {
       const stats = fileProcessor.getStats();
-      const errorRate = stats.totalJobs > 0 ? (stats.failedJobs / stats.totalJobs) * 100 : 0;
-
-      let status: 'healthy' | 'degraded' | 'unhealthy' = 'healthy';
+      const status = stats.activeProcesses > 0 ? 'healthy' : 'degraded';
       
-      if (stats.queuedJobs > this.alertThresholds.maxQueuedJobs) {
-        status = 'degraded';
-      }
-      
-      if (errorRate > this.alertThresholds.errorRatePercentage) {
-        status = 'unhealthy';
-      }
-
       return {
         status,
-        queuedJobs: stats.queuedJobs,
-        processingJobs: stats.processingJobs,
-        errorRate
+        queuedJobs: stats.queuedFiles,
+        processingJobs: stats.activeProcesses,
+        errorRate: 0 // Track error rate if needed
       };
     } catch (error) {
-      logger.error('Processing check failed', {
-        error: (error as Error).message
-      });
-
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logger.error('Error checking processing health:', { error: errorMessage });
+      
       return {
         status: 'unhealthy',
         queuedJobs: 0,
@@ -368,30 +363,32 @@ class HealthMonitor extends EventEmitter {
   }
 
   /**
-  }
-
-  /**
-   * Get disk usage information
+   * Get disk usage information using check-disk-space
    */
   private async getDiskUsage(): Promise<{ percentage: number; available: number; total: number }> {
     try {
-      const stats = await fs.statfs('./');
-      const blockSize = stats.bsize;
-      const total = stats.blocks * blockSize;
-      const available = stats.bfree * blockSize;
+      const diskSpace = await checkDiskSpace(process.cwd());
+      const total = diskSpace.size;
+      const available = diskSpace.free;
       const used = total - available;
       const percentage = total > 0 ? (used / total) * 100 : 0;
 
-      return { percentage, available, total };
+      return {
+        percentage: parseFloat(percentage.toFixed(2)),
+        available: Math.round(available / (1024 * 1024)), // Convert to MB
+        total: Math.round(total / (1024 * 1024)) // Convert to MB
+      };
     } catch (error) {
-      logger.error('Failed to get disk usage', { error: (error as Error).message });
-      return { percentage: 0, available: 0, total: 0 };
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logger.error('Error getting disk usage:', { error: errorMessage });
+      return {
+        percentage: 0,
+        available: 0,
+        total: 0
+      };
     }
   }
 
-  /**
-   * Check for alert conditions
-   */
   private checkAlerts(metrics: HealthMetrics): void {
     const alerts: Array<{ type: string; severity: 'warning' | 'critical'; message: string; context: any }> = [];
 

@@ -1,12 +1,29 @@
 import express, { type Express } from "express";
 import fs from "fs";
 import path from "path";
-import { createServer as createViteServer, createLogger } from "vite";
 import { type Server } from "http";
-import viteConfig from "../config/vite.config";
 import { nanoid } from "nanoid";
 
-const viteLogger = createLogger();
+// Dynamic import for Vite to avoid type issues
+let vite: any;
+let createViteServer: any;
+
+// This will be populated when Vite is loaded
+let viteServer: any;
+
+// Get directory name in CommonJS
+const currentDir = process.cwd();
+const __dirname = path.dirname(process.argv[1] || '');
+
+// Simple logger since createLogger was removed
+const viteLogger = {
+  info: (msg: string) => console.log(`[vite] ${msg}`),
+  warn: (msg: string) => console.warn(`[vite] ${msg}`),
+  error: (msg: string, options?: any) => {
+    console.error(`[vite] ${msg}`, options || '');
+    process.exit(1);
+  }
+};
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -20,55 +37,59 @@ export function log(message: string, source = "express") {
 }
 
 export async function setupVite(app: Express, server: Server) {
-  const serverOptions = {
-    middlewareMode: true,
-    hmr: { server },
-    allowedHosts: true,
-  };
+  try {
+    // Dynamically import Vite
+    vite = await import('vite');
+    createViteServer = vite.createServer;
 
-  const vite = await createViteServer({
-    ...viteConfig,
-    configFile: false,
-    customLogger: {
-      ...viteLogger,
-      error: (msg, options) => {
-        viteLogger.error(msg, options);
-        process.exit(1);
-      },
-    },
-    server: serverOptions,
-    appType: "custom",
-  });
+    const serverOptions = {
+      middlewareMode: true,
+      hmr: { server },
+      allowedHosts: true,
+    };
 
-  app.use(vite.middlewares);
-  app.use("*", async (req, res, next) => {
-    const url = req.originalUrl;
+    // Create Vite server
+    viteServer = await createViteServer({
+      configFile: false,
+      server: serverOptions,
+      appType: "custom",
+      logLevel: 'info',
+      customLogger: viteLogger
+    });
 
-    try {
-      const clientTemplate = path.resolve(
-        import.meta.dirname,
-        "..",
-        "client",
-        "index.html",
-      );
-
-      // always reload the index.html file from disk incase it changes
-      let template = await fs.promises.readFile(clientTemplate, "utf-8");
-      template = template.replace(
-        `src="/src/main.tsx"`,
-        `src="/src/main.tsx?v=${nanoid()}"`,
-      );
-      const page = await vite.transformIndexHtml(url, template);
-      res.status(200).set({ "Content-Type": "text/html" }).end(page);
-    } catch (e) {
-      vite.ssrFixStacktrace(e as Error);
-      next(e);
+    // Add Vite's middleware
+    if (viteServer.middlewares) {
+      app.use(viteServer.middlewares);
+    } else {
+      console.warn('Vite middleware not available');
     }
-  });
+    app.use("/*", async (req, res, next) => {
+      const url = req.originalUrl;
+
+      try {
+        const template = fs.readFileSync(path.resolve(currentDir, 'index.html'), 'utf-8');
+        
+        if (!viteServer || !viteServer.ssrLoadModule) {
+          throw new Error('Vite server not properly initialized');
+        }
+        
+        const { render } = await viteServer.ssrLoadModule('/src/entry-server.ts');
+        const appHtml = await render(url);
+        const html = template.replace('<!--ssr-outlet-->', appHtml);
+        res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+      } catch (e) {
+      viteServer.ssrFixStacktrace(e as Error);
+        next(e);
+      }
+    });
+  } catch (error) {
+    console.error('Failed to initialize Vite:', error);
+    throw error;
+  }
 }
 
 export function serveStatic(app: Express) {
-  const distPath = path.resolve(import.meta.dirname, "public");
+  const distPath = path.resolve(__dirname, "public");
 
   if (!fs.existsSync(distPath)) {
     throw new Error(
@@ -79,7 +100,7 @@ export function serveStatic(app: Express) {
   app.use(express.static(distPath));
 
   // fall through to index.html if the file doesn't exist
-  app.use("*", (_req, res) => {
+  app.use("/*", (_req, res) => {
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }

@@ -1,7 +1,17 @@
 import { Router, type Request, type Response } from 'express';
 import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
-import { optionalAuth, type AuthenticatedRequest } from '../middleware/auth';
+import { supabaseAuth } from '../middleware/supabase-auth';
+
+// Extend the Express Request type to include user
+interface AuthenticatedRequest extends Request {
+  user?: {
+    id: string;
+    email: string;
+    role: string;
+    user_metadata?: Record<string, any>;
+  };
+}
 import { logger } from '../config';
 import rateLimit from 'express-rate-limit';
 
@@ -26,7 +36,7 @@ const openai = new OpenAI({
 const conversations = new Map<string, ChatCompletionMessageParam[]>();
 
 // POST /api/chat/message - Send message to AI assistant
-router.post('/message', chatRateLimit, optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/chat', chatRateLimit, supabaseAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { message, conversationId, options } = req.body;
 
@@ -113,7 +123,7 @@ router.post('/message', chatRateLimit, optionalAuth, async (req: AuthenticatedRe
 });
 
 // GET /api/chat/history - Get chat history
-router.get('/history', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/history', supabaseAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     // Convert conversations to history format
     const history = Array.from(conversations.entries()).map(([id, messages]) => {
@@ -144,7 +154,7 @@ router.get('/history', optionalAuth, async (req: AuthenticatedRequest, res: Resp
 });
 
 // GET /api/chat/conversation/:id - Get specific conversation
-router.get('/conversation/:id', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/conversation/:id', supabaseAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const history = conversations.get(id) || [];
@@ -170,7 +180,7 @@ router.get('/conversation/:id', optionalAuth, async (req: AuthenticatedRequest, 
 });
 
 // DELETE /api/chat/conversation/:id - Delete conversation
-router.delete('/conversation/:id', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/history/:id', supabaseAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     conversations.delete(id);
@@ -189,7 +199,7 @@ router.delete('/conversation/:id', optionalAuth, async (req: AuthenticatedReques
 });
 
 // POST /api/chat/suggestions - Get suggested responses
-router.post('/suggestions', optionalAuth, async (_req: AuthenticatedRequest, res: Response) => {
+router.post('/feedback', supabaseAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     res.json({
       success: true,

@@ -1,4 +1,4 @@
-""
+"""
 SatyaAI FastAPI Application
 Main entry point for the deepfake detection API
 """
@@ -35,13 +35,18 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
+# CORS configuration
+ALLOWED_ORIGINS = os.getenv('ALLOWED_ORIGINS', '').split(',')
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
+    allow_origins=ALLOWED_ORIGINS or ["http://localhost:3000"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
+    max_age=600,  # 10 minutes
 )
 
 # OAuth2 scheme for authentication
@@ -239,45 +244,7 @@ async def analyze_video(
             detail=f"Error analyzing video: {str(e)}"
         )
 
-# Audio analysis endpoint
-@app.post("/analyze/audio")
-async def analyze_audio(
-    audio_path: str,
-    model_name: str = "audio_net"
-):
-    """
-    Analyze an audio file for deepfake detection
-    
-    Args:
-        audio_path: Path to the audio file
-        model_name: Name of the model to use for detection
-        
-    Returns:
-        Analysis results
-    """
-    try:
-        # Verify file exists
-        if not os.path.isfile(audio_path):
-            raise HTTPException(
-                status_code=404,
-                detail=f"File not found: {audio_path}"
-            )
-            
-        # Process audio
-        result = model_manager.process_audio(audio_path, model_name)
-        
-        return {
-            "status": "success",
-            "model": model_name,
-            "result": result
-        }
-        
-    except Exception as e:
-        logger.error(f"Error analyzing audio: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error analyzing audio: {str(e)}"
-        )
+# Audio analysis is now handled by the SentinelAgent through the /audio/ endpoint
 
 def start_server(host: str = "0.0.0.0", port: int = 8000, reload: bool = False):
     """Start the FastAPI server"""

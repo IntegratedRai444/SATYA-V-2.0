@@ -168,6 +168,42 @@ export interface SecurityConfig {
 
 // Default security configuration
 export const defaultSecurityConfig: SecurityConfig = {
+  // Security Headers
+  securityHeaders: {
+    enabled: true,
+    hsts: {
+      maxAge: 31536000, // 1 year in seconds
+      includeSubDomains: true,
+      preload: true
+    },
+    contentSecurityPolicy: {
+      directives: {
+        'default-src': ["'self'"],
+        'script-src': ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        'style-src': ["'self'", "'unsafe-inline'"],
+        'img-src': ["'self'", "data:", "https://*"],
+        'connect-src': ["'self'", "https://*"],
+        'font-src': ["'self'", "data:"],
+        'object-src': ["'none'"],
+        'media-src': ["'self'"],
+        'frame-src': ["'self'"],
+        'frame-ancestors': ["'self'"],
+        'form-action': ["'self'"],
+        'base-uri': ["'self'"]
+      },
+      reportUri: process.env.CSP_REPORT_URI
+    },
+    featurePolicy: {
+      features: {
+        camera: ["'none'"],
+        microphone: ["'none'"],
+        geolocation: ["'none'"],
+        fullscreen: ["'self'"],
+        payment: ["'none'"]
+      }
+    }
+  },
+
   // JWT Configuration
   jwt: {
     secret: process.env.JWT_SECRET || 'your-secret-key',

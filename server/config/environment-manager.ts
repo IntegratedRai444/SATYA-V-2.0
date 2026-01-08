@@ -25,8 +25,10 @@ export interface EnvironmentConfig {
   };
   python: {
     serverUrl: string;
+    port: number;
     timeout: number;
     retries: number;
+    healthCheckUrl: string;
   };
   storage: {
     uploadDir: string;
@@ -125,8 +127,10 @@ class EnvironmentManager {
       },
       python: {
         serverUrl: process.env.PYTHON_SERVER_URL || 'http://localhost:5001',
+        port: 5001,
         timeout: parseInt(process.env.PYTHON_TIMEOUT || '30000'),
-        retries: parseInt(process.env.PYTHON_RETRIES || '3')
+        retries: parseInt(process.env.PYTHON_RETRIES || '3'),
+        healthCheckUrl: '/health'
       },
       storage: {
         uploadDir: process.env.UPLOAD_DIR || './uploads',
@@ -208,6 +212,23 @@ class EnvironmentManager {
         rateLimit: { ...base.server.rateLimit, ...override.server?.rateLimit }
       },
       python: { ...base.python, ...override.python },
+      storage: { ...base.storage, ...override.storage },
+      logging: { ...base.logging, ...override.logging },
+      security: { ...base.security, ...override.security },
+      monitoring: { ...base.monitoring, ...override.monitoring },
+      features: { ...base.features, ...override.features },
+      external: {
+        ...base.external,
+        ...override.external,
+        redis: override.external?.redis ? { ...base.external?.redis, ...override.external.redis } : base.external?.redis,
+        email: override.external?.email ? { ...base.external?.email, ...override.external.email } : base.external?.email,
+        webhook: override.external?.webhook ? { ...base.external?.webhook, ...override.external.webhook } : base.external?.webhook
+      }
+    };
+  }
+
+  private validateConfiguration(): void {
+    const errors: string[] = [];
 
     // Validate required fields
     if (!this.config.security.jwtSecret || this.config.security.jwtSecret.length < 32) {

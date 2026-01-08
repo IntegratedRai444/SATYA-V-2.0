@@ -3,13 +3,14 @@ Image Upload and Analysis Route
 Dedicated route for image processing
 """
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, Request, Form
-from fastapi.responses import FileResponse
-from pathlib import Path
+import logging
 import shutil
 import uuid
 from datetime import datetime
-import logging
+from pathlib import Path
+
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
 
 logger = logging.getLogger(__name__)
 
@@ -27,72 +28,102 @@ ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/jpg", "image/webp"}
 
 
 @router.post("/")
-async def upload_image(
-    request: Request,
-    file: UploadFile = File(...),
-    analyze: bool = Form(True)
-):
+async def upload_image(request: Request, file: UploadFile = File(...)):
     """
     Upload and analyze an image
-    
-    - **file**: Image file to upload
-    - **analyze**: Whether to run ML analysis (default: True)
+
+    - **file**: Image file to upload and analyze
     """
     try:
         # Validate file type
         if file.content_type not in ALLOWED_IMAGE_TYPES:
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid file type. Allowed: {', '.join(ALLOWED_IMAGE_TYPES)}"
+                detail=f"Invalid file type. Allowed: {', '.join(ALLOWED_IMAGE_TYPES)}",
             )
-        
+
         # Read file content
         content = await file.read()
         file_size = len(content)
-        
+
         # Validate file size
         if file_size > MAX_IMAGE_SIZE:
             raise HTTPException(
                 status_code=400,
-                detail=f"File too large. Max: {MAX_IMAGE_SIZE / (1024*1024):.1f} MB"
+                detail=f"File too large. Max: {MAX_IMAGE_SIZE / (1024*1024):.1f} MB",
             )
-        
+
         # Generate unique filename
         file_id = str(uuid.uuid4())
         file_extension = Path(file.filename).suffix
         filename = f"{file_id}{file_extension}"
         file_path = UPLOAD_DIR / filename
-        
+
         # Save file
         with file_path.open("wb") as f:
             f.write(content)
-        
-        logger.info(f"Image uploaded: {filename} ({file_size} bytes)")
-        
-        # Analyze if requested
-        analysis_result = None
-        if analyze and hasattr(request.app.state, 'image_detector'):
-            logger.info(f"Analyzing image: {filename}")
-            detector = request.app.state.image_detector
-            analysis_result = detector.detect(str(file_path))
-        
-        return {
-            "success": True,
-            "file_id": file_id,
-            "filename": file.filename,
-            "saved_as": filename,
-            "size": file_size,
-            "content_type": file.content_type,
-            "path": str(file_path),
-            "timestamp": datetime.utcnow().isoformat(),
-            "analysis": analysis_result
+
+        logger.info(f"Image uploaded for analysis: {filename} ({file_size} bytes)")
+
+        # Create analysis request
+        analysis_request = AnalysisRequest(
+            analysis_type="image",
+            content=content,
+            metadata={
+                "filename": file.filename,
+                "content_type": file.content_type,
+                "size": file_size,
+            },
+        )
+
+        # Analyze using SentinelAgent (single entry point)
+        result = await request.app.state.sentinel_agent.analyze(analysis_request)
+
+        if not result or not hasattr(result, "conclusions") or not result.conclusions:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to analyze image: No valid analysis results",
+            )
+
+        # Get the primary conclusion (highest confidence or most severe)
+        primary_conclusion = max(
+            result.conclusions, key=lambda c: (c.confidence, c.severity)
+        )
+
+        # Extract model info from the first available conclusion
+        model_info = {}
+        if result.conclusions:
+            model_info = result.conclusions[0].metadata.get("model_info", {})
+
+        # Format the response
+        response = {
+            "status": "success",
+            "analysis": {
+                "is_deepfake": primary_conclusion.is_deepfake,
+                "confidence": float(primary_conclusion.confidence),
+                "model_info": model_info,
+                "timestamp": datetime.utcnow().isoformat(),
+                "evidence_id": result.evidence_ids[0]
+                if hasattr(result, "evidence_ids") and result.evidence_ids
+                else file_id,
+            },
+            "metadata": {
+                "filename": file.filename,
+                "content_type": file.content_type,
+                "size": file_size,
+                "analysis_timestamp": datetime.utcnow().isoformat(),
+            },
         }
-        
+
+        return response
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Image upload failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+        logger.error(f"Image analysis failed: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to process image: {str(e)}"
+        )
 
 
 @router.get("/{file_id}")

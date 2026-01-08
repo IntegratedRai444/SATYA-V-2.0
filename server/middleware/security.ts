@@ -1,7 +1,17 @@
-import type { Request, Response, NextFunction } from 'express';
-import { createHmac, timingSafeEqual } from 'crypto';
+import type { Request, Response, NextFunction, RequestHandler } from 'express';
+import { createHmac, timingSafeEqual, randomBytes } from 'crypto';
 import { logger } from '../config/logger';
-import { apiKeyService } from '../services/apiKeyService';
+import { ApiKeyService } from '../services/apiKeyService';
+import { AuthUser } from './auth';
+import { validationResult } from 'express-validator';
+import { rateLimit } from 'express-rate-limit';
+import helmet, { contentSecurityPolicy, crossOriginEmbedderPolicy, crossOriginOpenerPolicy, crossOriginResourcePolicy, dnsPrefetchControl, frameguard, hidePoweredBy, hsts, ieNoOpen, noSniff, originAgentCluster, referrerPolicy, xssFilter } from 'helmet';
+// @ts-ignore - Using custom type declaration from server/types
+import xss from 'xss-clean';
+import hpp from 'hpp';
+import mongoSanitize from 'express-mongo-sanitize';
+import { v4 as uuidv4 } from 'uuid';
+import express from 'express';
 
 // IP Whitelisting Middleware
 export const ipWhitelist = (allowedIPs: string[] = []) => {
@@ -152,11 +162,13 @@ export const requestSigner = (options: {
   };
 };
 
+// Use the existing AuthUser type from auth.ts
+
 // API Key Authentication Middleware
-export const apiKeyAuth = (requiredPermissions: string[] = []) => {
+export const apiKeyAuth = (requiredRoles: string[] = []) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const apiKey = req.headers['x-api-key'] as string;
+      const apiKey = req.headers['x-api-key'] as string || req.query.api_key as string;
       
       if (!apiKey) {
         return res.status(401).json({
@@ -166,9 +178,9 @@ export const apiKeyAuth = (requiredPermissions: string[] = []) => {
         });
       }
 
-      const { isValid, keyData } = await apiKeyService.verifyKey(apiKey);
+      const user = await ApiKeyService.getUserByApiKey(apiKey);
       
-      if (!isValid || !keyData) {
+      if (!user) {
         return res.status(401).json({
           success: false,
           code: 'INVALID_API_KEY',
@@ -176,27 +188,22 @@ export const apiKeyAuth = (requiredPermissions: string[] = []) => {
         });
       }
 
-      // Check permissions if any are required
-      if (requiredPermissions.length > 0) {
-        const hasPermission = requiredPermissions.every(permission => 
-          keyData.permissions.includes(permission)
-        );
-
-        if (!hasPermission) {
-          return res.status(403).json({
-            success: false,
-            code: 'INSUFFICIENT_PERMISSIONS',
-            message: 'Insufficient permissions to access this resource'
-          });
-        }
+      // Check role if any is required
+      if (requiredRoles.length > 0 && !requiredRoles.includes(user.role)) {
+        return res.status(403).json({
+          success: false,
+          code: 'INSUFFICIENT_PERMISSIONS',
+          message: 'Insufficient permissions to access this resource'
+        });
       }
 
-      // Attach key information to the request
-      req.apiKey = apiKey;
-      (req as any).apiKeyData = keyData;
-      
-      // Track API key usage
-      apiKeyService.trackApiKeyUsage(apiKey, req);
+      // Attach user information to the request
+      const authUser: AuthUser = {
+        id: user.id.toString(),
+        email: user.email || '',
+        role: user.role || 'user'
+      };
+      req.user = authUser;
       
       next();
     } catch (error) {
@@ -211,72 +218,142 @@ export const apiKeyAuth = (requiredPermissions: string[] = []) => {
 };
 
 // Security Headers Middleware
-export const securityHeaders = (options: {
+interface SecurityHeadersOptions {
   enableCSP?: boolean;
   enableHSTS?: boolean;
   enableXSS?: boolean;
   enableFrameOptions?: boolean;
   enableNoSniff?: boolean;
   cspDirectives?: Record<string, string[]>;
-}) => {
-  const {
-    enableCSP = true,
-    enableHSTS = true,
-    enableXSS = true,
-    enableFrameOptions = true,
-    enableNoSniff = true,
-    cspDirectives = {
-      'default-src': ["'self'"],
-      'script-src': ["'self'"],
-      'style-src': ["'self'"],
-      'img-src': ["'self'"],
-      'connect-src': ["'self'"],
-      'font-src': ["'self'"],
-      'object-src': ["'none'"],
-      'media-src': ["'self'"],
-      'frame-src': ["'none'"],
-      'worker-src': ["'self'"],
-      'child-src': ["'self'"]
-    }
-  } = options;
+  maxRequestBodySize?: string;
+}
 
-  return (req: Request, res: Response, next: NextFunction) => {
-    // Content Security Policy
-    if (enableCSP) {
-      const csp = Object.entries(cspDirectives)
-        .map(([directive, sources]) => {
-          return `${directive} ${sources.join(' ')}`;
-        })
-        .join('; ');
-      
-      res.setHeader('Content-Security-Policy', csp);
-      res.setHeader('X-Content-Security-Policy', csp); // For older browsers
-    }
-
-    // HTTP Strict Transport Security
-    if (enableHSTS) {
-      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
-    }
-
-    // XSS Protection
-    if (enableXSS) {
-      res.setHeader('X-XSS-Protection', '1; mode=block');
-    }
-
-    // Frame Options
-    if (enableFrameOptions) {
-      res.setHeader('X-Frame-Options', 'DENY');
-    }
-
-    // No Sniff
-    if (enableNoSniff) {
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-    }
-
-    // Additional security headers
-    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+export const securityHeaders = ({
+  enableCSP = true,
+  enableHSTS = true,
+  enableXSS = true,
+  enableFrameOptions = true,
+  enableNoSniff = true,
+  cspDirectives = {
+    defaultSrc: ["'self'"],
+    scriptSrc: ["'self'"],
+    styleSrc: ["'self'"],
+    imgSrc: ["'self'", 'data:'],
+    connectSrc: ["'self'"],
+    fontSrc: ["'self'"]
+  },
+  maxRequestBodySize = '10mb'
+}: SecurityHeadersOptions = {}): RequestHandler[] => {
+  return [
+    // Parse JSON bodies with size limit
+    express.json({
+      limit: maxRequestBodySize,
+      verify: (req: any, res: any, buf: Buffer) => {
+        req.rawBody = buf.toString();
+      },
+    }),
     
-    next();
-  };
+    // Parse URL-encoded bodies with size limit
+    express.urlencoded({
+      extended: true,
+      limit: maxRequestBodySize,
+      parameterLimit: 100,
+    }),
+
+    // Security headers with individual middleware for better typing
+    helmet(),
+    enableCSP ? contentSecurityPolicy({
+      useDefaults: true,
+      directives: cspDirectives as any,
+    }) : (req, res, next) => next(),
+    crossOriginEmbedderPolicy(),
+    crossOriginOpenerPolicy(),
+    crossOriginResourcePolicy(),
+    dnsPrefetchControl(),
+    enableHSTS ? hsts({
+      maxAge: 31536000, // 1 year
+      includeSubDomains: true,
+      preload: true,
+    }) : (req, res, next) => next(),
+    ieNoOpen(),
+    enableNoSniff ? noSniff() : (req, res, next) => next(),
+    originAgentCluster(),
+    referrerPolicy({
+      policy: 'strict-origin-when-cross-origin',
+    }),
+    enableXSS ? xssFilter() : (req, res, next) => next(),
+    enableFrameOptions ? frameguard({ action: 'deny' }) : (req, res, next) => next(),
+    hidePoweredBy(),
+
+    // Prevent HTTP Parameter Pollution
+    hpp({
+      whitelist: [
+        'filter',
+        'sort',
+        'limit',
+        'page',
+        'fields',
+      ],
+    }),
+
+    // Sanitize request data
+    xss(),
+
+    // Prevent NoSQL injection
+    mongoSanitize({
+      onSanitize: ({ req, key }) => {
+        logger.warn('NoSQL injection attempt detected', {
+          ip: req.ip,
+          method: req.method,
+          url: req.originalUrl,
+          key,
+        });
+      },
+    }),
+
+    // Add security response headers
+    (req: Request, res: Response, next: NextFunction) => {
+      // Add request ID
+      req.id = req.get('X-Request-ID') || uuidv4();
+      res.setHeader('X-Request-ID', req.id);
+      
+      // Security headers
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('X-XSS-Protection', '1; mode=block');
+      res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+      res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+      
+      next();
+    },
+
+    // Request validation error handler
+    ((err: any, req: Request, res: Response, next: NextFunction) => {
+      if (err instanceof SyntaxError && 'body' in err) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_JSON',
+          message: 'Invalid JSON payload',
+          requestId: req.id,
+        });
+      }
+      next(err);
+    }) as express.ErrorRequestHandler,
+
+    // Rate limiting for auth endpoints
+    rateLimit({
+      windowMs: 15 * 60 * 1000, // 15 minutes
+      max: 100, // Limit each IP to 100 requests per windowMs
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: {
+        success: false,
+        code: 'TOO_MANY_REQUESTS',
+        message: 'Too many requests, please try again later',
+        requestId: (req: Request) => req.id,
+      },
+    }),
+  ];
 };
+
+// ... (rest of the code remains the same)

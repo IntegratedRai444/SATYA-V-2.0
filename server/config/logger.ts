@@ -25,8 +25,10 @@ const developmentFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.colorize({ all: true }),
   winston.format.printf(({ timestamp, level, message, ...meta }) => {
-    const metaStr = Object.keys(meta).length ? JSON.stringify(meta, null, 2) : '';
-    return `${timestamp} [${level}]: ${message} ${metaStr}`;
+    const { requestId, traceId, spanId, ...restMeta } = meta;
+    const traceInfo = requestId ? `[${requestId}|${traceId}|${spanId}]` : '';
+    const metaStr = Object.keys(restMeta).length ? JSON.stringify(restMeta, null, 2) : '';
+    return `${timestamp} ${traceInfo} [${level}]: ${message} ${metaStr}`.trim();
   })
 );
 
@@ -34,6 +36,15 @@ const developmentFormat = winston.format.combine(
 const productionFormat = winston.format.combine(
   winston.format.timestamp(),
   winston.format.errors({ stack: true }),
+  winston.format((info: any) => {
+    // Add tracing context to all log entries
+    const { requestId, traceId, spanId, ...rest } = info;
+    const result: any = { ...rest };
+    if (requestId) result.requestId = requestId;
+    if (traceId) result.traceId = traceId;
+    if (spanId) result.spanId = spanId;
+    return result;
+  })(),
   winston.format.json()
 );
 

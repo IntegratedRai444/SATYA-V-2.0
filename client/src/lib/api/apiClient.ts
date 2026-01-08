@@ -1,324 +1,455 @@
-import { authService } from '@/services/auth';
+// Types
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD';
 
-type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-
-interface ApiRequestOptions extends RequestInit {
-  params?: Record<string, string | number | boolean | undefined>;
-  data?: unknown;
-  timeout?: number;
-  retries?: number;
-  retryDelay?: number;
-  skipAuth?: boolean;
-  signal?: AbortSignal;
-  isRetry?: boolean;
+export interface RetryPolicy {
+  maxRetries: number;
+  initialDelay: number;
+  maxDelay: number;
+  factor: number;
+  retryOn: number[];
+  retryIf: (error: unknown) => boolean;
+  jitter?: boolean;
 }
 
-interface PendingRequest {
-  promise: Promise<Response>;
+export interface ApiRequestOptions<T = unknown> {
+  headers?: Record<string, string>;
+  params?: Record<string, unknown>;
+  data?: T;
+  signal?: AbortSignal;
+  timeout?: number;
+  retryPolicy?: Partial<RetryPolicy>;
+  cacheTTL?: number;
+  deduplicate?: boolean;
+  [key: string]: unknown;
+}
+
+interface PendingRequest<T = unknown> {
+  promise: Promise<T>;
   controller: AbortController;
   timestamp: number;
+  retryCount: number;
+  url: string;
+  method: string;
+  cacheTTL?: number;
+  retryPolicy: RetryPolicy;
 }
 
-// Constants
-const DEFAULT_TIMEOUT = 30000; // 30 seconds
-const DEFAULT_RETRIES = 2;
-const DEFAULT_RETRY_DELAY = 1000; // 1 second
-const REQUEST_CACHE = new Map<string, PendingRequest>();
-const CACHE_TTL = 1000 * 60 * 5; // 5 minutes
-
-// Clean up old pending requests
-const cleanupStaleRequests = () => {
-  const now = Date.now();
-  for (const [key, request] of REQUEST_CACHE.entries()) {
-    if (now - request.timestamp > CACHE_TTL) {
-      request.controller.abort('Request timed out');
-      REQUEST_CACHE.delete(key);
-    }
-  }
-};
-
-// Set up periodic cleanup
-setInterval(cleanupStaleRequests, CACHE_TTL / 2);
-
-export class ApiError extends Error {
+class ApiError extends Error {
   constructor(
+    message: string,
     public status: number,
     public code?: string,
     public details?: unknown,
-    public isAuthError = false
+    public retryable = true
   ) {
-    super(`API Error: ${status}`);
+    super(message);
     this.name = 'ApiError';
+    Object.setPrototypeOf(this, ApiError.prototype);
   }
 }
 
+// Auth service placeholder
+const authService = {
+  getToken: (): string | null => {
+    return typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+  },
+  refreshToken: async (): Promise<{ access_token: string }> => {
+    // This will be replaced with actual refresh token logic
+    return { access_token: '' };
+  }
+};
+
+const CACHE_CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
+
 class ApiClient {
-  private baseUrl: string;
-  private defaultHeaders: Record<string, string>;
+  private readonly baseUrl: string;
+  private requestCache: Map<string, PendingRequest<unknown>>;
+  // Cleanup interval for cache management
+  private cleanupInterval: ReturnType<typeof setInterval>;
   private isRefreshing = false;
-  private refreshPromise: Promise<{ access_token: string } | null> | null = null;
+  private refreshSubscribers: Array<(token: string) => void> = [];
+  private refreshPromise: Promise<string> | null = null;
+
+  private defaultRetryPolicy: RetryPolicy = {
+    maxRetries: 3,
+    initialDelay: 1000,
+    maxDelay: 30000,
+    factor: 2,
+    retryOn: [408, 429, 500, 502, 503, 504],
+    retryIf: (error: unknown) => {
+      if (error instanceof ApiError) {
+        return error.retryable !== false;
+      }
+      return true;
+    },
+    jitter: true
+  };
 
   constructor(baseUrl: string) {
-    this.baseUrl = baseUrl.replace(/\/+$/, ''); // Remove trailing slashes
-    this.defaultHeaders = {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    };
+    this.baseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    this.requestCache = new Map();
+    
+    // Initialize cleanup interval
+    this.cleanupInterval = setInterval(() => this.cleanupCache(), CACHE_CLEANUP_INTERVAL);
   }
 
-  private async refreshToken() {
-    if (!this.isRefreshing) {
-      this.isRefreshing = true;
-      this.refreshPromise = authService.refreshToken()
-        .finally(() => {
-          this.isRefreshing = false;
-          this.refreshPromise = null;
-        });
+  // Clean up resources when the instance is no longer needed
+  public destroy(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
     }
+    this.cleanupCache();
+  }
+
+  private cleanupCache(): void {
+    const now = Date.now();
+    const entries = Array.from(this.requestCache.entries());
+
+    for (const [key, request] of entries) {
+      const age = now - request.timestamp;
+      const maxAge = request.cacheTTL ?? 5 * 60 * 1000; // Default 5 minutes
+      if (age > maxAge) {
+        request.controller.abort();
+        this.requestCache.delete(key);
+      }
+    }
+  }
+
+  private generateCacheKey(
+    method: string,
+    url: string,
+    params?: Record<string, unknown>,
+    data?: unknown
+  ): string {
+    const keyParts = [method, url];
+
+    if (params) {
+      try {
+        const paramsKey = Object.entries(params)
+          .sort((a, b) => a[0].localeCompare(b[0]))
+          .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+          .join('&');
+        keyParts.push(paramsKey);
+      } catch (error) {
+        console.warn('Failed to stringify params for cache key', error);
+      }
+    }
+
+    if (data) {
+      try {
+        const dataKey = JSON.stringify(data);
+        keyParts.push(dataKey);
+      } catch (error) {
+        console.warn('Failed to stringify data for cache key', error);
+      }
+    }
+
+    return keyParts.join('|');
+  }
+
+  private async waitForTokenRefresh(): Promise<string> {
+    if (this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    this.isRefreshing = true;
+    this.refreshPromise = (async (): Promise<string> => {
+      try {
+        const { access_token } = await authService.refreshToken();
+        this.refreshSubscribers.forEach(callback => callback(access_token));
+        return access_token;
+      } finally {
+        this.isRefreshing = false;
+        this.refreshPromise = null;
+        this.refreshSubscribers = [];
+      }
+    })();
+
     return this.refreshPromise;
   }
 
-  private async parseError(response: Response): Promise<{
-    code?: string;
-    message?: string;
-    details?: unknown;
-  }> {
-    const contentType = response.headers.get('content-type');
-    
-    if (contentType?.includes('application/json')) {
-      try {
-        const errorData = await response.json();
-        return {
-          code: errorData.code || `HTTP_${response.status}`,
-          message: errorData.message || response.statusText,
-          details: errorData.details
-        };
-      } catch {
-        // If we can't parse JSON, return a generic error
-      }
+  private async handleTokenRefresh(): Promise<string> {
+    if (this.isRefreshing) {
+      return new Promise<string>((resolve) => {
+        this.refreshSubscribers.push(resolve);
+      });
     }
-
-    // For non-JSON responses, try to get text
-    const text = await response.text();
-    if (text) {
-      return {
-        code: `HTTP_${response.status}`,
-        message: text,
-        details: text
-      };
-    }
-
-    // If we can't get text, return a minimal error
-    return {
-      code: `HTTP_${response.status}`,
-      message: response.statusText
-    };
+    return this.waitForTokenRefresh();
   }
 
-  private async request<T = unknown>(
-    endpoint: string,
-    method: HttpMethod = 'GET',
-    options: ApiRequestOptions = {}
-  ): Promise<T> {
-    const isAuthEndpoint = endpoint.includes('/auth/');
-    const {
-      params = {},
-      data,
-      headers = {},
-      timeout = DEFAULT_TIMEOUT,
-      retries = DEFAULT_RETRIES,
-      retryDelay = DEFAULT_RETRY_DELAY,
-      skipAuth = false,
-      signal: externalSignal,
-      isRetry = false,
-      ...restOptions
-    } = options;
+  // Error parsing utility method used internally
+  private parseError(error: unknown): Error {
+    if (error instanceof Error) {
+      return error;
+    }
+    return new Error(String(error));
+  }
 
-    // Create request key for deduplication
-    const requestKey = `${method}:${endpoint}:${JSON.stringify(params)}`;
+  private calculateRetryDelay(
+    retryCount: number,
+    initialDelay: number,
+    maxDelay: number,
+    factor: number,
+    jitter: boolean
+  ): number {
+    const delay = Math.min(initialDelay * Math.pow(factor, retryCount - 1), maxDelay);
+    return jitter ? delay * (0.8 + Math.random() * 0.4) : delay;
+  }
+
+  private async handleErrorResponse(response: Response): Promise<ApiError> {
+    try {
+      const errorData = await response.json().catch(() => ({}));
+      return new ApiError(
+        errorData.message || response.statusText,
+        response.status,
+        errorData.code,
+        errorData.details,
+        errorData.retryable
+      );
+    } catch (e) {
+      // Use parseError for consistent error handling
+      const error = this.parseError(e);
+      return new ApiError(
+        response.statusText,
+        response.status,
+        undefined,
+        error,
+        [408, 429, 500, 502, 503, 504].includes(response.status)
+      );
+    }
+  }
+
+  private async makeRequest<T>(
+    method: HttpMethod,
+    endpoint: string,
+    options: ApiRequestOptions<T> = {}
+  ): Promise<T> {
+    const url = `${this.baseUrl}${endpoint}`;
+    const cacheKey = this.generateCacheKey(method, url, options.params, options.data);
     
-    // Check for duplicate request (only for GET requests and not retries)
-    if (method === 'GET' && !isRetry && REQUEST_CACHE.has(requestKey)) {
-      const { promise } = REQUEST_CACHE.get(requestKey)!;
-      return promise.then(response => response.clone().json()) as Promise<T>;
+    // Check if we have a pending request for this cache key
+    if (options.deduplicate !== false && this.requestCache.has(cacheKey)) {
+      const pendingRequest = this.requestCache.get(cacheKey)!;
+      return pendingRequest.promise as Promise<T>;
     }
 
     const controller = new AbortController();
-    const signal = externalSignal || controller.signal;
+    const signal = options.signal || controller.signal;
     
-    // Set up timeout
-    const timeoutId = setTimeout(() => {
-      controller.abort('Request timeout');
-    }, timeout);
-
-    // Prepare headers
-    const requestHeaders: Record<string, string> = {
-      ...this.defaultHeaders,
-      ...(headers as Record<string, string>)
-    };
-
-    // Add auth token if needed
-    if (!skipAuth && !isAuthEndpoint) {
-      const token = authService.getAuthToken();
-      if (token) {
-        requestHeaders['Authorization'] = `Bearer ${token}`;
-      }
-    }
-
-    // Build URL with query parameters
-    const url = new URL(endpoint, this.baseUrl);
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) {
-        url.searchParams.append(key, String(value));
-      }
-    });
-
-    // Prepare request config
-    const config: RequestInit = {
-      method,
-      headers: new Headers(requestHeaders),
-      signal,
-      ...restOptions,
-    };
-
-    // Add request body for non-GET requests
-    if (method !== 'GET' && data !== undefined) {
-      config.body = JSON.stringify(data);
-    }
-
-    // Create request promise with retry logic
-    const makeRequest = async (attempt = 0): Promise<Response> => {
+    const executeRequest = async (): Promise<T> => {
       try {
-        const response = await fetch(url.toString(), config);
+        // Add auth token if available
+        let token = authService.getToken();
+        
+        // If token is expired, try to refresh it
+        if (!token && this.isRefreshing) {
+          token = await this.handleTokenRefresh();
+        }
 
-        // Handle 401 Unauthorized - try to refresh token and retry
-        if (response.status === 401 && !isAuthEndpoint && !skipAuth && attempt < retries) {
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` }),
+          ...options.headers,
+        };
+
+        const response = await fetch(url, {
+          method,
+          headers,
+          body: options.data ? JSON.stringify(options.data) : undefined,
+          signal,
+        });
+
+        // Handle 401 Unauthorized with token refresh
+        if (response.status === 401 && !this.isRefreshing) {
           try {
-            // Try to refresh token
-            const refreshResponse = await this.refreshToken();
+            const newToken = await this.handleTokenRefresh();
+            headers.Authorization = `Bearer ${newToken}`;
             
-            if (refreshResponse?.access_token) {
-              // Update auth header with new token
-              requestHeaders['Authorization'] = `Bearer ${refreshResponse.access_token}`;
-              config.headers = new Headers(requestHeaders);
-              
-              // Retry the original request with new token
-              return makeRequest(attempt + 1);
+            // Retry the request with the new token
+            const retryResponse = await fetch(url, {
+              method,
+              headers,
+              body: options.data ? JSON.stringify(options.data) : undefined,
+              signal,
+            });
+
+            if (!retryResponse.ok) {
+              throw await this.handleErrorResponse(retryResponse);
             }
+            return await retryResponse.json() as T;
           } catch (refreshError) {
-            // If refresh fails, clear auth and rethrow
-            await authService.logout();
-            throw new ApiError(401, 'AUTH_REFRESH_FAILED', 'Failed to refresh token', true);
+            throw new ApiError(
+              'Failed to refresh token',
+              401,
+              'TOKEN_REFRESH_FAILED',
+              refreshError
+            );
           }
         }
 
-        // Handle other error statuses
         if (!response.ok) {
-          const errorData = await this.parseError(response);
-          throw new ApiError(
-            response.status,
-            errorData?.code || 'API_ERROR',
-            errorData?.details || 'An unknown error occurred',
-            response.status === 401
-          );
+          throw await this.handleErrorResponse(response);
         }
 
-        return response;
+        return await response.json() as T;
       } catch (error) {
-        // Handle network errors and timeouts
-        if (error instanceof Error && error.name === 'AbortError' && attempt < retries) {
-          // Exponential backoff
-          await new Promise(resolve => setTimeout(resolve, retryDelay * (2 ** attempt)));
-          return makeRequest(attempt + 1);
+        if (error instanceof Error && error.name === 'AbortError') {
+          throw new ApiError('Request aborted', 0, 'ABORTED', error, false);
         }
         throw error;
-      } finally {
-        clearTimeout(timeoutId);
       }
     };
 
-    // Execute the request
-    try {
-      const response = await makeRequest();
-      
-      // Handle empty responses
-      const responseText = await response.text();
-      if (!responseText) {
-        return null as T;
+    const requestPromise = (async (): Promise<T> => {
+      const retryPolicy = {
+        ...this.defaultRetryPolicy,
+        ...(options.retryPolicy || {}),
+      };
+
+      for (let attempt = 0; attempt <= retryPolicy.maxRetries; attempt++) {
+        try {
+          return await executeRequest();
+        } catch (error) {
+          const shouldRetry = error instanceof ApiError 
+            ? retryPolicy.retryIf(error) && error.retryable !== false
+            : retryPolicy.retryIf(error);
+
+          if (attempt === retryPolicy.maxRetries || !shouldRetry) {
+            throw error;
+          }
+
+          const delay = this.calculateRetryDelay(
+            attempt + 1,
+            retryPolicy.initialDelay,
+            retryPolicy.maxDelay,
+            retryPolicy.factor,
+            retryPolicy.jitter ?? true
+          );
+
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
       }
-      
-      // Parse JSON response
-      return JSON.parse(responseText) as T;
-    } catch (error) {
-      if (error instanceof ApiError) {
-        throw error;
-      }
-      
-      // Handle network errors
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw new ApiError(408, 'REQUEST_TIMEOUT', 'Request timed out');
-      }
-      
-      throw new ApiError(0, 'NETWORK_ERROR', error instanceof Error ? error.message : 'Unknown error');
-    } finally {
-      // Clean up
-      REQUEST_CACHE.delete(requestKey);
+
+      throw new Error('Max retries exceeded');
+    })();
+
+    // Store the request in cache if deduplication is enabled
+    if (options.deduplicate !== false) {
+      this.requestCache.set(cacheKey, {
+        promise: requestPromise,
+        controller,
+        timestamp: Date.now(),
+        retryCount: 0,
+        url,
+        method,
+        cacheTTL: options.cacheTTL,
+        retryPolicy: {
+          ...this.defaultRetryPolicy,
+          ...(options.retryPolicy || {}),
+        },
+      });
+
+      // Remove from cache when the request completes or fails
+      requestPromise
+        .catch(() => {})
+        .finally(() => this.requestCache.delete(cacheKey));
     }
+
+    return requestPromise;
   }
 
-  // HTTP method implementations
-  async get<T = unknown>(
+  public async request<T = unknown, D = unknown>(
     endpoint: string,
-    options: Omit<ApiRequestOptions, 'method' | 'data'> = {}
+    method: HttpMethod = 'GET',
+    options: Omit<ApiRequestOptions<D>, 'method'> = {}
   ): Promise<T> {
-    return this.request<T>(endpoint, 'GET', options);
+    return this.makeRequest<T>(method, endpoint, options as ApiRequestOptions<T>);
   }
 
-  async post<T = unknown>(
+  /**
+   * Make a GET request
+   */
+  public async get<T = unknown>(
     endpoint: string,
-    data?: unknown,
-    options: Omit<ApiRequestOptions, 'method' | 'data'> = {}
+    params?: Record<string, unknown>,
+    options: Omit<ApiRequestOptions<never>, 'method' | 'body' | 'data' | 'params'> = {}
   ): Promise<T> {
-    return this.request<T>(endpoint, 'POST', { ...options, data });
+    return this.request<T>(endpoint, 'GET', {
+      ...options,
+      params,
+    });
   }
 
-  async put<T = unknown>(
+  public async post<T = unknown, D = unknown>(
     endpoint: string,
-    data?: unknown,
-    options: Omit<ApiRequestOptions, 'method' | 'data'> = {}
+    data?: D,
+    options: Omit<ApiRequestOptions<D>, 'method' | 'data'> = {}
   ): Promise<T> {
-    return this.request<T>(endpoint, 'PUT', { ...options, data });
+    return this.request<T>(endpoint, 'POST', { ...options, data } as ApiRequestOptions<T>);
   }
 
-  async patch<T = unknown>(
+  public async put<T = unknown, D = unknown>(
     endpoint: string,
-    data?: unknown,
-    options: Omit<ApiRequestOptions, 'method' | 'data'> = {}
+    data?: D,
+    options: Omit<ApiRequestOptions<D>, 'method' | 'data'> = {}
   ): Promise<T> {
-    return this.request<T>(endpoint, 'PATCH', { ...options, data });
+    return this.request<T>(endpoint, 'PUT', { ...options, data } as ApiRequestOptions<T>);
   }
 
-  async delete<T = void>(
+  public async patch<T = unknown, D = unknown>(
     endpoint: string,
-    options: Omit<ApiRequestOptions, 'method'> = {}
+    data?: D,
+    options: Omit<ApiRequestOptions<D>, 'method' | 'data'> = {}
+  ): Promise<T> {
+    return this.request<T>(endpoint, 'PATCH', { ...options, data } as ApiRequestOptions<T>);
+  }
+
+  public async delete<T = void>(
+    endpoint: string,
+    options: Omit<ApiRequestOptions<never>, 'method'> = {}
   ): Promise<T> {
     return this.request<T>(endpoint, 'DELETE', options);
   }
+}
 
-  // Cancel all pending requests
-  static cancelAllRequests(): void {
-    for (const { controller } of REQUEST_CACHE.values()) {
-      controller.abort('Request cancelled by user');
-    }
-    REQUEST_CACHE.clear();
+// Create a singleton instance with environment variable
+const getApiBaseUrl = (): string => {
+  if (typeof process !== 'undefined' && process.env.VITE_API_URL) {
+    return process.env.VITE_API_URL;
+  }
+  if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL as string;
+  }
+  throw new Error('VITE_API_URL environment variable is not set');
+};
+
+// Create and export the API client instance
+const createApiClient = () => {
+  const client = new ApiClient(getApiBaseUrl());
+  
+  // Clean up on page unload
+  if (typeof window !== 'undefined') {
+    window.addEventListener('beforeunload', () => {
+      client.destroy();
+    });
+  }
+  
+  return client;
+};
+
+export const apiClient = createApiClient();
+
+export default apiClient;
+
+// Global type declarations
+declare global {
+
+  interface Window {
+    apiClient: typeof apiClient;
   }
 }
 
-// Create a singleton instance
-export const apiClient = new ApiClient(import.meta.env.VITE_API_URL || 'http://localhost:8000');
-
-// Export a default instance for easier imports
-export default apiClient;
-
-// Export types
-export type { ApiRequestOptions };
+// Expose to window for debugging
+if (typeof window !== 'undefined') {
+  window.apiClient = apiClient;
+}

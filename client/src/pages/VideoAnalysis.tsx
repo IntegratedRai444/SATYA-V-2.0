@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import { Video, Upload, Film, CheckCircle, AlertCircle, Loader2, Eye, FileText, BarChart3 } from 'lucide-react';
-import apiClient from '../lib/api';
+import { Video, Upload, Film, CheckCircle, AlertCircle, Loader2, Eye } from 'lucide-react';
+import { analysisService } from '../lib/api';
 import { formatFileSize } from '../lib/file-utils';
 import logger from '../lib/logger';
 
@@ -9,7 +9,7 @@ export default function VideoAnalysis() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState<string>('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState<any>(null);
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -63,11 +63,85 @@ export default function VideoAnalysis() {
     }
   };
 
+  // Validate the proof of analysis from the server
+  interface AnalysisProof {
+    analysis_id: string;
+    model_version: string;
+    frames_analyzed: number;
+    inference_time: number;
+    timestamp: string;
+    confidence: number;
+  }
+
+  interface AnalysisResult {
+    analysis: {
+      is_deepfake: boolean;
+      confidence: number;
+      proof: AnalysisProof;
+      details?: {
+        processing_time_seconds: number;
+        frames_analyzed: number;
+        model_version: string;
+      };
+    };
+    request_id: string;
+    error?: string;
+    timestamp: string;
+  }
+
+  const validateProof = (result: unknown): result is AnalysisResult => {
+    if (!result || typeof result !== 'object') return false;
+    
+    const res = result as Record<string, any>;
+    if (!res.analysis || !res.analysis.proof) {
+      logger.error('Invalid analysis result: Missing proof');
+      return false;
+    }
+
+    const proof = res.analysis.proof as Partial<AnalysisProof>;
+    
+    // Type guard to check all required fields exist
+    const hasAllFields = [
+      'analysis_id', 'model_version', 'frames_analyzed',
+      'inference_time', 'timestamp', 'confidence'
+    ].every(field => field in proof);
+    
+    if (!hasAllFields) {
+      logger.error('Invalid proof: Missing required fields');
+      return false;
+    }
+
+    // Type assertion since we've checked all fields exist
+    const validProof = proof as AnalysisProof;
+
+    // Validate inference time is positive
+    if (validProof.inference_time <= 0) {
+      logger.error('Invalid proof: Invalid inference time');
+      return false;
+    }
+
+    // Validate model version is non-empty
+    if (!validProof.model_version) {
+      logger.error('Invalid proof: Missing model version');
+      return false;
+    }
+
+    // Validate frames analyzed is a positive integer
+    if (!Number.isInteger(validProof.frames_analyzed) || validProof.frames_analyzed <= 0) {
+      logger.error('Invalid proof: Invalid frames_analyzed');
+      return false;
+    }
+
+    return true;
+  };
+
   const analyzeVideo = async () => {
     if (!selectedFile) return;
 
+    // Reset state before starting new analysis
     setIsAnalyzing(true);
     setError('');
+    setAnalysisResult(null);
 
     try {
       logger.info('Starting video analysis', {
@@ -75,19 +149,37 @@ export default function VideoAnalysis() {
         size: selectedFile.size
       });
 
-      const result = await apiClient.analyzeVideo(selectedFile);
-      logger.info('Analysis completed', { success: result.success });
+      // Make the API call
+      const result = await analysisService.analyzeVideo(selectedFile, {
+        includeDetails: true
+      }) as unknown;
+      logger.info('Analysis API response received');
 
-      if (result.result) {
-        setAnalysisResult(result.result);
-      } else if (result.success !== false) {
-        setAnalysisResult(result);
-      } else {
-        throw new Error(result.error || 'Analysis failed');
+      // Validate the response structure and proof
+      if (!validateProof(result)) {
+        throw new Error('Analysis failed: Invalid response from server');
       }
-    } catch (error: any) {
-      logger.error('Analysis failed', error);
-      setError(error.message || 'Analysis failed. Please try again.');
+
+          // At this point, TypeScript knows result is AnalysisResult
+      const analysisResult = result as AnalysisResult;
+
+      // Only update state if we have valid results and proof
+      logger.info('Analysis completed successfully', {
+        isDeepfake: analysisResult.analysis?.is_deepfake,
+        confidence: analysisResult.analysis?.confidence
+      });
+
+      // Set the analysis result - this will trigger re-render with results
+      setAnalysisResult(analysisResult);
+      
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'Analysis failed. Please try again.';
+      
+      logger.error('Analysis failed: ' + errorMessage);
+      setError(errorMessage);
+      setAnalysisResult(null);
     } finally {
       setIsAnalyzing(false);
     }
@@ -227,94 +319,60 @@ export default function VideoAnalysis() {
         {analysisResult && (
           <div className="bg-[#2a2e39] border border-gray-700/50 rounded-xl p-8 mb-6">
             <div className="flex items-center gap-4 mb-6">
-              <div className={`w-16 h-16 rounded-full flex items-center justify-center ${analysisResult.authenticity === 'AUTHENTIC MEDIA'
-                ? 'bg-green-500/10 border-2 border-green-500/30'
-                : 'bg-red-500/10 border-2 border-red-500/30'
-                }`}>
-                {analysisResult.authenticity === 'AUTHENTIC MEDIA' ? (
-                  <CheckCircle className="w-8 h-8 text-green-500" />
-                ) : (
+              <div className={`w-16 h-16 rounded-full flex items-center justify-center ${
+                analysisResult.analysis.is_deepfake 
+                  ? 'bg-red-500/10 border-2 border-red-500/30'
+                  : 'bg-green-500/10 border-2 border-green-500/30'
+              }`}>
+                {analysisResult.analysis.is_deepfake ? (
                   <AlertCircle className="w-8 h-8 text-red-500" />
+                ) : (
+                  <CheckCircle className="w-8 h-8 text-green-500" />
                 )}
               </div>
               <div>
                 <h2 className="text-2xl font-bold text-white mb-1">
-                  {analysisResult.authenticity === 'AUTHENTIC MEDIA' ? 'Authentic Media' : 'Potential Deepfake'}
+                  {analysisResult.analysis.is_deepfake ? 'Potential Deepfake Detected' : 'Authentic Media'}
                 </h2>
                 <p className="text-gray-400">
-                  Confidence: <span className="text-white font-semibold">{analysisResult.confidence.toFixed(1)}%</span>
+                  Confidence: <span className="text-white font-semibold">
+                    {(analysisResult.analysis.confidence * 100).toFixed(1)}%
+                  </span>
                 </p>
               </div>
             </div>
 
-            {/* Detailed Analysis */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Key Findings */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-purple-400" />
-                  Key Findings
-                </h3>
-                <div className="space-y-2">
-                  {analysisResult.key_findings?.map((finding: string, index: number) => (
-                    <div key={index} className="flex items-start gap-2">
-                      <div className="w-2 h-2 bg-purple-400 rounded-full mt-2 flex-shrink-0"></div>
-                      <p className="text-gray-300 text-sm">{finding}</p>
-                    </div>
-                  ))}
-                </div>
+            {/* Analysis Details */}
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <span className="text-gray-300 text-sm">Analysis ID</span>
+                <span className="text-white font-mono text-sm">
+                  {analysisResult.analysis.proof.analysis_id}
+                </span>
               </div>
-
-              {/* Technical Details */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                  <BarChart3 className="w-5 h-5 text-purple-400" />
-                  Analysis Scores
-                </h3>
-                <div className="space-y-3">
-                  {analysisResult.detailed_analysis && (
-                    <>
-                      {analysisResult.detailed_analysis.frame_analysis && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-300 text-sm">Frame Consistency</span>
-                          <span className="text-white font-semibold">
-                            {(analysisResult.detailed_analysis.frame_analysis.consistency_score * 100).toFixed(1)}%
-                          </span>
-                        </div>
-                      )}
-                      {analysisResult.detailed_analysis.temporal_analysis && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-300 text-sm">Temporal Consistency</span>
-                          <span className="text-white font-semibold">
-                            {(analysisResult.detailed_analysis.temporal_analysis.temporal_score * 100).toFixed(1)}%
-                          </span>
-                        </div>
-                      )}
-                      {analysisResult.detailed_analysis.audio_visual_analysis && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-300 text-sm">Audio-Visual Sync</span>
-                          <span className="text-white font-semibold">
-                            {(analysisResult.detailed_analysis.audio_visual_analysis.sync_score * 100).toFixed(1)}%
-                          </span>
-                        </div>
-                      )}
-                    </>
-                  )}
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-300 text-sm">Processing Time</span>
-                    <span className="text-white font-semibold">
-                      {analysisResult.technical_details?.processing_time_seconds?.toFixed(2) || '0.0'}s
-                    </span>
-                  </div>
-                </div>
+              
+              <div className="flex justify-between items-center">
+                <span className="text-gray-300 text-sm">Model Version</span>
+                <span className="text-white">{analysisResult.analysis.proof.model_version}</span>
+              </div>
+              
+              <div className="flex justify-between items-center">
+                <span className="text-gray-300 text-sm">Frames Analyzed</span>
+                <span className="text-white">{analysisResult.analysis.proof.frames_analyzed}</span>
+              </div>
+              
+              <div className="flex justify-between items-center">
+                <span className="text-gray-300 text-sm">Processing Time</span>
+                <span className="text-white">
+                  {analysisResult.analysis.proof.inference_time.toFixed(2)}s
+                </span>
               </div>
             </div>
 
-            {/* Case ID and Timestamp */}
             <div className="mt-6 pt-6 border-t border-gray-700">
               <div className="flex justify-between items-center text-sm text-gray-400">
-                <span>Case ID: {analysisResult.case_id}</span>
-                <span>Analyzed: {new Date(analysisResult.analysis_date).toLocaleString()}</span>
+                <span>Request ID: {analysisResult.request_id}</span>
+                <span>Analyzed: {new Date(analysisResult.analysis.proof.timestamp).toLocaleString()}</span>
               </div>
             </div>
           </div>

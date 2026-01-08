@@ -12,7 +12,7 @@ import logger from './logger';
 
 const envSchema = z.object({
   // API Configuration
-  VITE_API_URL: z.string().url().default('http://localhost:3000'),
+  VITE_API_URL: z.string().url().default('http://localhost:5001'),
   VITE_API_TIMEOUT: z.coerce.number().default(300000), // 5 minutes
   
   // WebSocket Configuration
@@ -145,7 +145,7 @@ class ConfigManager {
    */
   private buildAppConfig(envConfig: EnvConfig): AppConfig {
     const wsUrl = envConfig.VITE_WS_URL || 
-      envConfig.VITE_API_URL.replace(/^http/, 'ws').replace(/:\d+/, ':3000');
+      envConfig.VITE_API_URL.replace(/^http/, 'ws').replace(/:\d+/, ':5001');
 
     return {
       api: {

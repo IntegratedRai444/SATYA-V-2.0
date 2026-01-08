@@ -1,5 +1,12 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response, NextFunction, RequestHandler, Application } from 'express';
+import { Server } from 'http';
 import { logger } from '../config/logger';
+import { v4 as uuidv4 } from 'uuid';
+
+export interface RequestWithId extends Request {
+  id?: string;
+  startTime?: number;
+}
 
 export class ApiError extends Error {
   constructor(
@@ -224,11 +231,88 @@ export function notFoundHandler(req: Request, res: Response) {
   return res.status(statusCode).json(response);
 }
 
-export function asyncHandler(fn: Function) {
+export const asyncHandler = (fn: Function) => {
   return (req: Request, res: Response, next: NextFunction) => {
     Promise.resolve(fn(req, res, next)).catch(next);
   };
-}
+};
+
+/**
+ * Middleware to add a unique request ID to each request
+ */
+export const requestIdMiddleware: RequestHandler = (req: RequestWithId, res: Response, next: NextFunction) => {
+  req.id = uuidv4();
+  req.startTime = Date.now();
+  next();
+};
+
+/**
+ * Setup graceful shutdown for the server
+ */
+export const setupGracefulShutdown = (
+  server: Server,
+  options: {
+    cleanup?: () => Promise<void>;
+    timeout?: number;
+  } = {}
+) => {
+  const { cleanup, timeout = 30000 } = options;
+
+  const shutdown = async (signal: string) => {
+    logger.info(`Received ${signal}. Starting graceful shutdown...`);
+    
+    try {
+      // Stop accepting new connections
+      server.close(async (err) => {
+        if (err) {
+          logger.error('Error during server close:', err);
+          process.exit(1);
+        }
+
+        // Run cleanup if provided
+        if (cleanup) {
+          try {
+            await cleanup();
+          } catch (error) {
+            logger.error('Error during cleanup:', error);
+          }
+        }
+
+        logger.info('Graceful shutdown complete');
+        process.exit(0);
+      });
+
+      // Force shutdown after timeout
+      setTimeout(() => {
+        logger.error('Graceful shutdown timed out. Forcing exit.');
+        process.exit(1);
+      }, timeout);
+
+    } catch (error) {
+      logger.error('Error during shutdown:', error);
+      process.exit(1);
+    }
+  };
+
+  // Handle signals
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  
+  // Handle uncaught exceptions
+  process.on('uncaughtException', (error: Error) => {
+    logger.error('Uncaught Exception:', error);
+    shutdown('uncaughtException');
+  });
+
+  // Handle unhandled promise rejections
+  process.on('unhandledRejection', (reason: Error | any, promise: Promise<any>) => {
+    logger.error('Unhandled Rejection at:', { 
+      promise, 
+      reason: reason?.message || reason,
+      stack: reason?.stack 
+    });
+  });
+};
 
 // Global error handler for unhandled rejections
 process.on('unhandledRejection', (reason: Error | any, promise: Promise<any>) => {

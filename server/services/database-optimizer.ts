@@ -174,9 +174,10 @@ class DatabaseOptimizer {
         const [totalUsersResult, totalScansResult, activeUsersResult, recentScansResult] = await Promise.all([
           db.select({ count: sql<number>`count(*)` }).from(users),
           db.select({ count: sql<number>`count(*)` }).from(scans),
+          // Using updatedAt as a proxy for last login time since lastLoginAt doesn't exist
           db.select({ count: sql<number>`count(distinct ${users.id})` })
             .from(users)
-            .where(lt(users.lastLoginAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))),
+            .where(lt(users.updatedAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))),
           db.select({ count: sql<number>`count(*)` })
             .from(scans)
             .where(lt(scans.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000)))
@@ -224,9 +225,10 @@ class DatabaseOptimizer {
       // Clean up old scans (older than 90 days)
       const oldScansThreshold = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
       const deletedScans = await db.delete(scans)
-        .where(lt(scans.createdAt, oldScansThreshold));
+        .where(lt(scans.createdAt, oldScansThreshold))
+        .returning({ count: sql<number>`count(*)` });
       
-      results.deletedScans = deletedScans.changes || 0;
+      results.deletedScans = deletedScans[0]?.count || 0;
 
       // Clean up inactive users (no login for 1 year and no scans)
       const inactiveUsersThreshold = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
@@ -235,7 +237,7 @@ class DatabaseOptimizer {
       const inactiveUsers = await db.select({ id: users.id })
         .from(users)
         .where(and(
-          lt(users.lastLoginAt, inactiveUsersThreshold),
+          lt(users.updatedAt, inactiveUsersThreshold),
           sql`${users.id} NOT IN (SELECT DISTINCT user_id FROM scans WHERE created_at > ${inactiveUsersThreshold})`
         ));
 
@@ -274,12 +276,12 @@ class DatabaseOptimizer {
       const indexQueries = [
         'CREATE INDEX IF NOT EXISTS idx_scans_user_id ON scans(user_id)',
         'CREATE INDEX IF NOT EXISTS idx_scans_created_at ON scans(created_at)',
-        'CREATE INDEX IF NOT EXISTS idx_users_last_login ON users(last_login_at)',
+        'CREATE INDEX IF NOT EXISTS idx_users_updated_at ON users(updated_at)',
         'CREATE INDEX IF NOT EXISTS idx_scans_user_created ON scans(user_id, created_at)'
       ];
 
       for (const query of indexQueries) {
-        await db.run(sql.raw(query));
+        await db.execute(sql.raw(query));
       }
 
       logger.info('Database indexes created successfully');
@@ -312,7 +314,9 @@ class DatabaseOptimizer {
     // Implement LRU eviction if cache is full
     if (this.queryCache.size >= this.maxCacheSize) {
       const oldestKey = this.queryCache.keys().next().value;
-      this.queryCache.delete(oldestKey);
+      if (oldestKey) {
+        this.queryCache.delete(oldestKey);
+      }
     }
 
     this.queryCache.set(key, {

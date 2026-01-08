@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 from pathlib import Path
 
 # Add server/python to path
@@ -22,7 +22,7 @@ modules = [
     "routes.system",
     "routes.webcam",
     "routes.feedback",
-    "routes.team"
+    "routes.team",
 ]
 
 for module in modules:

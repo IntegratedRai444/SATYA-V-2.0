@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import checkDiskSpace from 'check-disk-space';
 import { logger } from '../config';
 
 interface PerformanceMetrics {
@@ -246,9 +247,8 @@ class PerformanceOptimizer extends EventEmitter {
         dryRun: false
       });
 
-      // Clear expired sessions
-      const { sessionManager } = await import('./session-manager');
-      // sessionManager has automatic cleanup, but we can trigger it
+      // Session cleanup is handled automatically by the session manager
+      // No need to explicitly import or call it here
 
       logger.info('Cleanup operations completed');
     } catch (error) {
@@ -293,14 +293,19 @@ class PerformanceOptimizer extends EventEmitter {
    */
   private async getDiskUsage(): Promise<{ used: number; available: number; percentage: number }> {
     try {
-      const stats = await fs.statfs('./');
-      const total = stats.blocks * stats.blksize;
-      const available = stats.bavail * stats.blksize;
-      const used = total - available;
-      const percentage = (used / total) * 100;
+      const diskSpace = await checkDiskSpace(process.cwd());
+      const total = diskSpace.size;
+      const free = diskSpace.free;
+      const used = total - free;
+      const percentage = total > 0 ? (used / total) * 100 : 0;
 
-      return { used, available, percentage };
+      return { 
+        used, 
+        available: free, 
+        percentage: parseFloat(percentage.toFixed(2)) 
+      };
     } catch (error) {
+      logger.error('Error getting disk usage:', { error });
       return { used: 0, available: 0, percentage: 0 };
     }
   }
@@ -310,10 +315,11 @@ class PerformanceOptimizer extends EventEmitter {
    */
   private async getActiveConnections(): Promise<number> {
     try {
-      const { webSocketManager } = await import('./websocket-manager');
+      const { webSocketManager } = await import('./websocket/WebSocketManager');
       const stats = webSocketManager.getStats();
       return stats.totalConnections;
     } catch (error) {
+      logger.error('Error getting active connections:', { error });
       return 0;
     }
   }
@@ -325,8 +331,9 @@ class PerformanceOptimizer extends EventEmitter {
     try {
       const { fileProcessor } = await import('./file-processor');
       const stats = fileProcessor.getStats();
-      return stats.queuedJobs;
+      return stats.queuedFiles;
     } catch (error) {
+      logger.error('Error getting queue length:', { error });
       return 0;
     }
   }
@@ -334,7 +341,7 @@ class PerformanceOptimizer extends EventEmitter {
   /**
    * Get current performance metrics
    */
-  getCurrentMetrics(): PerformanceMetrics | null {
+  public getCurrentMetrics(): PerformanceMetrics | null {
     return this.metricsHistory.length > 0 ? 
            this.metricsHistory[this.metricsHistory.length - 1] : null;
   }
@@ -342,7 +349,7 @@ class PerformanceOptimizer extends EventEmitter {
   /**
    * Get metrics history
    */
-  getMetricsHistory(limit?: number): PerformanceMetrics[] {
+  public getMetricsHistory(limit?: number): PerformanceMetrics[] {
     const history = [...this.metricsHistory];
     return limit ? history.slice(-limit) : history;
   }
@@ -350,12 +357,12 @@ class PerformanceOptimizer extends EventEmitter {
   /**
    * Get performance trends
    */
-  getPerformanceTrends(): {
+  public getPerformanceTrends(): {
     memoryTrend: 'increasing' | 'decreasing' | 'stable';
     cpuTrend: 'increasing' | 'decreasing' | 'stable';
     diskTrend: 'increasing' | 'decreasing' | 'stable';
   } {
-    if (this.metricsHistory.length < 5) {
+    if (this.metricsHistory.length < 2) {
       return {
         memoryTrend: 'stable',
         cpuTrend: 'stable',
@@ -394,8 +401,11 @@ class PerformanceOptimizer extends EventEmitter {
   /**
    * Update optimization thresholds
    */
-  updateThresholds(newThresholds: Partial<typeof this.optimizationThresholds>): void {
-    this.optimizationThresholds = { ...this.optimizationThresholds, ...newThresholds };
+  public updateThresholds(newThresholds: Partial<typeof this.optimizationThresholds>): void {
+    this.optimizationThresholds = { 
+      ...this.optimizationThresholds, 
+      ...newThresholds 
+    };
     logger.info('Performance optimization thresholds updated', {
       thresholds: this.optimizationThresholds
     });
@@ -404,7 +414,7 @@ class PerformanceOptimizer extends EventEmitter {
   /**
    * Shutdown performance optimizer
    */
-  shutdown(): void {
+  public shutdown(): void {
     if (this.monitoringInterval) {
       clearInterval(this.monitoringInterval);
       this.monitoringInterval = null;

@@ -167,42 +167,54 @@ class PrometheusMetrics {
   }
 
   // Express middleware for HTTP metrics
-  httpMetricsMiddleware() {
-    // Analysis metrics helpers
-    recordAnalysisStart(type: string): () => void {
-      this.incrementCounter('analysis_requests_total', { type });
-      this.incrementGauge('analysis_queue_length');
+  httpMetricsMiddleware(): (req: Request, res: Response, next: () => void) => void {
+    return (req: Request, res: Response, next: () => void) => {
+      const start = process.hrtime();
+      const path = req.path;
+      const method = req.method;
 
-      return this.startTimer('analysis_duration_seconds', { type });
-    }
+      res.on('finish', () => {
+        const duration = process.hrtime(start);
+        const responseTime = duration[0] * 1e3 + duration[1] * 1e-6; // Convert to milliseconds
+        
+        this.incrementCounter('http_requests_total', { method, path, status: res.statusCode.toString() });
+        this.recordHistogram('http_request_duration_seconds', responseTime / 1000, { method, path });
+      });
 
-    recordAnalysisComplete(type: string): void {
-      this.decrementGauge('analysis_queue_length');
-    }
+      next();
+    };
+  }
 
-    recordAnalysisError(type: string, error: string): void {
-      this.incrementCounter('analysis_errors_total', { type, error });
-      this.decrementGauge('analysis_queue_length');
-    }
+  recordAnalysisStart(type: string): () => void {
+    this.incrementCounter('analysis_requests_total', { type });
+    this.incrementGauge('analysis_queue_length');
+    return this.startTimer('analysis_duration_seconds', { type });
+  }
 
-    // Health status updates
-    updateHealthStatus(component: string, status: boolean): void {
-      this.setGauge('health_check_status', status ? 1 : 0, { component });
-    }
+  recordAnalysisComplete(type: string): void {
+    this.decrementGauge('analysis_queue_length');
+  }
 
-    // WebSocket metrics
-    recordWebSocketConnection(connected: boolean): void {
-      if(connected) {
-        this.incrementGauge('active_websocket_connections');
-      } else {
-        this.decrementGauge('active_websocket_connections');
-      }
-    }
+  recordAnalysisError(type: string, error: string): void {
+    this.incrementCounter('analysis_errors_total', { type, error });
+    this.decrementGauge('analysis_queue_length');
+  }
 
-    // Session metrics
-    updateActiveSessionsCount(count: number): void {
-      this.setGauge('active_sessions', count);
+  updateHealthStatus(component: string, status: boolean): void {
+    this.setGauge('health_check_status', status ? 1 : 0, { component });
+  }
+
+  recordWebSocketConnection(connected: boolean): void {
+    if(connected) {
+      this.incrementGauge('active_websocket_connections');
+    } else {
+      this.decrementGauge('active_websocket_connections');
     }
+  }
+
+  updateActiveSessionsCount(count: number): void {
+    this.setGauge('active_sessions', count);
+  }
 
   private getLabelKey(labels?: Record<string, string>): string {
     if (!labels) return '';
