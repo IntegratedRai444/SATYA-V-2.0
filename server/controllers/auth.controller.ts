@@ -181,7 +181,7 @@ export const authController = {
 
       // Set secure HTTP-only cookies with proper configuration
       const isProduction = process.env.NODE_ENV === 'production';
-      const cookieOptions = {
+      const baseCookieOptions = {
         httpOnly: true,
         secure: isProduction,
         sameSite: isProduction ? 'none' : 'lax' as const,
@@ -189,40 +189,27 @@ export const authController = {
         domain: isProduction ? process.env.COOKIE_DOMAIN : undefined,
         // Partitioning for better security in cross-site contexts
         partitionKey: isProduction ? '__Host-' : undefined
-      };
+      } as const;
 
       // Set access token cookie (short-lived)
       res.cookie('satya_access_token', tokenPair.accessToken, {
-        ...cookieOptions,
-        maxAge: 15 * 60 * 1000, // 15 minutes
-        // Add prefix for secure cookies in production
-        ...(isProduction && { 
-          name: '__Secure-satya_access_token',
-          domain: process.env.COOKIE_DOMAIN,
-          sameSite: 'none',
-          secure: true
-        })
+        ...baseCookieOptions,
+        maxAge: 15 * 60 * 1000 // 15 minutes
       });
 
       // Set refresh token cookie (longer-lived, httpOnly, secure)
       res.cookie('satya_refresh_token', tokenPair.refreshToken, {
-        ...cookieOptions,
+        ...baseCookieOptions,
         path: '/api/auth/refresh',
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-        // Add prefix for secure cookies in production
-        ...(isProduction && { 
-          name: '__Secure-satya_refresh_token',
-          domain: process.env.COOKIE_DOMAIN,
-          sameSite: 'none',
-          secure: true
-        })
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
       });
 
       // Store session in database
       try {
+        const userId = user?.id ? parseInt(user.id) : 0; // Provide a default value or handle the undefined case
         await db.insert(sessions).values({
           id: tokenPair.sessionId,
-          userId: parseInt(user.id), // Ensure userId is a number
+          userId: userId,
           refreshToken: tokenPair.refreshTokenJti,
           userAgent: req.get('user-agent') || 'unknown',
           ipAddress: req.ip || 'unknown',
@@ -292,37 +279,24 @@ export const authController = {
       
       // Set secure HTTP-only cookies with proper configuration
       const isProduction = process.env.NODE_ENV === 'production';
-      const cookieOptions = {
+      const baseCookieOptions = {
         httpOnly: true,
         secure: isProduction,
         sameSite: isProduction ? 'none' : 'lax' as const,
         path: '/',
         domain: isProduction ? process.env.COOKIE_DOMAIN : undefined,
         partitionKey: isProduction ? '__Host-' : undefined
-      };
+      } as const;
 
       // Set new access token cookie
       res.cookie('satya_access_token', tokenPair.accessToken, {
-        ...cookieOptions,
-        maxAge: 15 * 60 * 1000, // 15 minutes
-        ...(isProduction && { 
-          name: '__Secure-satya_access_token',
-          domain: process.env.COOKIE_DOMAIN,
-          sameSite: 'none',
-          secure: true
-        })
+        ...baseCookieOptions,
+        maxAge: 15 * 60 * 1000 // 15 minutes
       });
 
       // Set new refresh token cookie
       res.cookie('satya_refresh_token', tokenPair.refreshToken, {
-        ...cookieOptions,
-        path: '/api/auth/refresh',
-        ...(isProduction && { 
-          name: '__Secure-satya_refresh_token',
-          domain: process.env.COOKIE_DOMAIN,
-          sameSite: 'none',
-          secure: true
-        })
+        ...baseCookieOptions,
         path: '/api/auth/refresh',
         maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
       });
