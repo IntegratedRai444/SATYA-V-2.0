@@ -27,44 +27,163 @@ import RecentActivity from '@/components/analysis/RecentActivity';
 import AnalysisProgress from '@/components/analysis/AnalysisProgress';
 import AnalysisResults from '@/components/analysis/AnalysisResults';
 import ErrorBoundary from '@/components/ui/ErrorBoundary';
-import { useState } from 'react';
-import { useDashboard } from '@/hooks/useDashboard';
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
 import { useDashboardStats } from '@/hooks/useDashboardStats';
 import { useDashboardWebSocket } from '@/hooks/useDashboardWebSocket';
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const { logout } = useAuth();
   
-  // Dashboard hooks
-  useDashboard(); // For future filter functionality
-  useDashboardStats(); // Stats are displayed in the UI
-  useDashboardWebSocket({
+  // State management
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [progressItems, setProgressItems] = useState<Array<{
+    fileId: string;
+    filename: string;
+    progress: number;
+    status: 'uploading' | 'processing' | 'completed' | 'error' | 'queued';
+    message?: string;
+    result?: any;
+  }>>([]);
+  
+  const [analysisResults, setAnalysisResults] = useState<Array<{
+    id: string;
+    filename: string;
+    fileType: 'image' | 'video' | 'audio';
+    confidence: number;
+    authenticity: 'AUTHENTIC MEDIA' | 'MANIPULATED MEDIA' | 'UNCERTAIN';
+    processingTime: number;
+    keyFindings: string[];
+    timestamp: Date;
+  }>>([]);
+  
+  // Dashboard hooks with error handling
+  // Use dashboard settings if needed
+  // const { timeRange, setTimeRange, analysisType, setAnalysisType } = useDashboard();
+  const statsQuery = useDashboardStats();
+  const { isConnected } = useDashboardWebSocket({
     autoConnect: true,
     onStatsUpdate: (data) => {
       console.log('Dashboard stats updated:', data);
+      setError(null); // Clear error on successful update
     },
     onActivityUpdate: (data) => {
       console.log('Dashboard activity updated:', data);
     }
   });
-  
-  // State for analysis progress
-  const [progressItems, setProgressItems] = useState<any[]>([]);
-  const [analysisResults, setAnalysisResults] = useState<any[]>([]);
 
+  // Handle errors from hooks
+  useEffect(() => {
+    if (statsQuery.error) {
+      console.error('Stats error:', statsQuery.error);
+      setError(prev => prev || 'Failed to load statistics. Some features may be limited.');
+    }
+  }, [statsQuery.error]);
+  
+  // Handle initial load and error states
+  useEffect(() => {
+    setIsLoading(statsQuery.isLoading);
+    
+    // Set error if any of the hooks report an error
+    if (statsQuery.error) {
+      setError(statsQuery.error instanceof Error ? statsQuery.error.message : 'An error occurred');
+    }
+  }, [statsQuery.isLoading, statsQuery.error]);
+  
+  // Handle removing an item from progress
   const handleRemoveProgress = (fileId: string) => {
     setProgressItems(prev => prev.filter(item => item.fileId !== fileId));
   };
 
-  const handleAnalysisComplete = (fileId: string, result: any) => {
-    // Move from progress to results
-    setProgressItems(prev => prev.filter(item => item.fileId !== fileId));
-    setAnalysisResults(prev => [...prev, result]);
+  // Handle refresh action
+  const handleRefresh = async () => {
+    try {
+      setIsRefreshing(true);
+      setError(null);
+      // Trigger a refresh of all data
+      // Note: You'll need to implement refresh methods in your hooks
+      window.location.reload(); // Simple refresh for now
+    } catch (err) {
+      console.error('Refresh failed:', err);
+      setError('Failed to refresh data. Please try again.');
+    } finally {
+      setIsRefreshing(false);
+    }
   };
+  
+  // Handle logout on authentication error
+  useEffect(() => {
+    if (error?.includes('401') || error?.includes('403')) {
+      console.warn('Authentication error detected, logging out...');
+      logout();
+      navigate('/login');
+    }
+  }, [error, logout, navigate]);
+
+  // Render error state
+  const renderError = () => {
+    if (!error) return null;
+    
+    return (
+      <div className="mb-6">
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4 mr-2" />
+          <AlertDescription className="flex justify-between items-center">
+            <span>{error}</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="ml-4"
+            >
+              {isRefreshing ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-2" />
+              )}
+              Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  };
+  
+  // Render loading state
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center space-y-4">
+          <Loader2 className="h-12 w-12 text-blue-500 animate-spin mx-auto" />
+          <p className="text-lg text-slate-600">Loading dashboard...</p>
+          <p className="text-sm text-slate-500">This may take a moment</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-[1400px] mx-auto">
-          {/* Hero Banner Section with Blue Gradient Background */}
+      {renderError()}
+          {/* Connection Status Badge */}
+        <div className="flex justify-end mb-4">
+          <div className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+            isConnected ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+          }`}>
+            <span className={`w-2 h-2 rounded-full mr-2 ${
+              isConnected ? 'bg-green-500' : 'bg-yellow-500'
+            }`}></span>
+            {isConnected ? 'Connected' : 'Disconnected'}
+          </div>
+        </div>
+        
+        {/* Hero Banner Section with Blue Gradient Background */}
           <div className="relative bg-gradient-to-br from-[#1e3a5f] via-[#1a2f4a] to-[#152238] rounded-2xl p-10 mb-14 overflow-hidden border border-gray-800/30">
             <div className="grid grid-cols-[1.2fr_320px] gap-16 relative z-10">
               {/* Left Section - Text Content */}
@@ -392,24 +511,69 @@ const Dashboard = () => {
 
           {/* Analysis Progress Section */}
           {progressItems.length > 0 && (
-            <ErrorBoundary>
-              <div className="mt-12">
+            <div className="mb-8">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold">Analysis in Progress</h2>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleRefresh}
+                  disabled={isRefreshing}
+                >
+                  {isRefreshing ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                  )}
+                  Refresh
+                </Button>
+              </div>
+              <ErrorBoundary fallback={
+                <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4 mr-2" />
+                  <AlertDescription>
+                    Failed to load analysis progress. Please try refreshing the page.
+                  </AlertDescription>
+                </Alert>
+              }>
                 <AnalysisProgress 
                   progressItems={progressItems}
                   onRemove={handleRemoveProgress}
-                  onComplete={handleAnalysisComplete}
                 />
-              </div>
-            </ErrorBoundary>
+              </ErrorBoundary>
+            </div>
           )}
 
           {/* Analysis Results Section */}
           {analysisResults.length > 0 && (
-            <ErrorBoundary>
-              <div className="mt-12">
-                <AnalysisResults results={analysisResults} />
+            <div className="mb-8">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold">Recent Analysis Results</h2>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => {
+                    // Handle view all results
+                    navigate('/analysis/history');
+                  }}
+                >
+                  View All
+                </Button>
               </div>
-            </ErrorBoundary>
+              <ErrorBoundary fallback={
+                <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4 mr-2" />
+                  <AlertDescription>
+                    Failed to load analysis results. Please try again later.
+                  </AlertDescription>
+                </Alert>
+              }>
+                <AnalysisResults 
+                  results={analysisResults}
+                  isLoading={isLoading}
+                />
+              </ErrorBoundary>
+            </div>
           )}
 
           {/* Analytics & Insights Section */}

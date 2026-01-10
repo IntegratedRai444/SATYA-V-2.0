@@ -12,6 +12,7 @@ import { rateLimiter } from '../middleware/rateLimiter';
 import jwt from 'jsonwebtoken';
 // Remove redis import as it's not used directly in this file
 import { addMinutes } from 'date-fns';
+import { validatePassword } from '../../shared/utils/password';
 
 interface Request extends ExpressRequest {
   user?: {
@@ -29,24 +30,58 @@ export const authController = {
     try {
       const { email, password, user_metadata } = req.body;
       
+      // Validate password complexity
+      const passwordValidation = validatePassword(password);
+      if (!passwordValidation.isValid) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_PASSWORD',
+          message: 'Password does not meet requirements',
+          errors: passwordValidation.errors
+        });
+      }
+      
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: user_metadata }
+        options: { 
+          data: user_metadata,
+          emailRedirectTo: `${process.env.CLIENT_URL}/auth/callback`
+        }
       });
 
-      if (error) throw error;
+      if (error) {
+        logger.error('Supabase signup error:', error);
+        throw error;
+      }
+
+      if (!data.user) {
+        throw new Error('No user data returned from authentication service');
+      }
 
       res.status(201).json({
         success: true,
         message: 'Signup successful. Please check your email for verification.',
         user: data.user
       });
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Registration error:', error);
+      
+      // Handle specific Supabase errors
+      if (error.status === 400) {
+        return res.status(400).json({
+          success: false,
+          code: error.code || 'REGISTRATION_FAILED',
+          message: error.message || 'Invalid registration data',
+          error: process.env.NODE_ENV === 'development' ? error : undefined
+        });
+      }
+      
       res.status(500).json({ 
         success: false, 
-        message: 'Failed to register user' 
+        code: 'REGISTRATION_ERROR',
+        message: 'Failed to register user',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
   },
@@ -206,7 +241,13 @@ export const authController = {
 
       // Store session in database
       try {
-        const userId = user?.id ? parseInt(user.id) : 0; // Provide a default value or handle the undefined case
+        if (!user?.id) {
+          throw new Error('User ID is required');
+        }
+        
+        // Use the ID directly as a string since that's what the database expects
+        const userId = user.id;
+        
         await db.insert(sessions).values({
           id: tokenPair.sessionId,
           userId: userId,

@@ -105,30 +105,13 @@ const initializeRateLimitStore = async () => {
 // Initialize the store immediately and store the promise
 const storePromise = initializeRateLimitStore();
 
-// Extend the Express Request type
-declare module 'express-serve-static-core' {
-  interface Request {
-    user?: {
-      id: string;
-      email: string;
-      role: string;
-      user_metadata?: Record<string, any>;
-    };
-    rateLimit?: {
-      limit: number;
-      current: number;
-      remaining: number;
-      resetTime?: Date;
-    };
-  }
-}
-
 // Create and export a custom Request type that extends Express's Request
 export type Request = ExpressRequest & {
   user?: {
     id: string;
     email: string;
     role: string;
+    email_verified: boolean;
     user_metadata?: Record<string, any>;
   };
   rateLimit?: {
@@ -143,6 +126,7 @@ export type Request = ExpressRequest & {
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 const MAX_REQUESTS_PER_WINDOW = 100; // General API requests
 const MAX_AUTH_REQUESTS = 10; // Auth-specific endpoints (login, register, etc.)
+const MAX_REFRESH_REQUESTS = 5; // Refresh token requests per window
 const MAX_LOGIN_ATTEMPTS = 5; // Login attempts before temporary block
 const LOGIN_BLOCK_DURATION = 15 * 60 * 1000; // 15 minutes block after max attempts
 
@@ -151,64 +135,83 @@ const createRateLimiters = async () => {
   const store = await storePromise;
   
   // Main rate limiter for all requests
-  const apiLimiter = rateLimit({
+  const apiRateLimiter = rateLimit({
     windowMs: RATE_LIMIT_WINDOW_MS,
-    max: (req: ExpressRequest) => {
-      // Apply stricter limits to public endpoints
-      if (req.path.startsWith('/api/auth/')) {
-        return MAX_AUTH_REQUESTS;
-      }
-      return MAX_REQUESTS_PER_WINDOW;
-    },
+    max: MAX_REQUESTS_PER_WINDOW,
     store: store as any, // Type assertion for RedisStore compatibility
     skip: (req: ExpressRequest) => {
-      // Skip rate limiting for health checks and monitoring
-      return req.path === '/health' || req.path === '/metrics';
+      // Skip rate limiting for health checks and static files
+      return req.path === '/health' || req.path.startsWith('/static/');
     },
-    message: 'Too many requests, please try again later.',
-    standardHeaders: true,
-    legacyHeaders: false,
-    keyGenerator: (req: ExpressRequest) => {
-      // Use API key if available, otherwise fall back to IP
-      return req.headers['x-api-key']?.toString() || req.ip || 'unknown';
+    keyGenerator: (req) => {
+      return (req.ip || 'unknown') + ':' + (req.user?.id || 'anonymous');
     },
-    skipFailedRequests: false,
-    skipSuccessfulRequests: false,
-    handler: (req: Request, res: Response) => {
+    handler: (req, res) => {
       res.status(429).json({
         success: false,
-        error: 'Too many requests, please try again later.'
+        code: 'RATE_LIMIT_EXCEEDED',
+        message: 'Too many requests, please try again later.',
+        retryAfter: Math.ceil(RATE_LIMIT_WINDOW_MS / 1000)
       });
     }
   });
 
-  // Login-specific rate limiter with stricter limits
-  const loginLimiter = rateLimit({
+  const authRateLimiter = rateLimit({
+    windowMs: RATE_LIMIT_WINDOW_MS,
+    max: MAX_AUTH_REQUESTS,
+    message: 'Too many authentication attempts, please try again later.',
+    standardHeaders: true,
+    legacyHeaders: false,
     store: store as any, // Type assertion needed due to RedisStore type issues
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: MAX_LOGIN_ATTEMPTS,
-    message: JSON.stringify({
-      error: 'Too many login attempts',
-      message: 'Please try again later',
-      retryAfter: '15 minutes'
-    }),
-    skipFailedRequests: false,
-    keyGenerator: (req: ExpressRequest) => {
-      // Use username + IP to prevent targeted attacks
-      const username = req.body?.username || 'unknown';
-      return `${username}_${req.ip}`;
+    keyGenerator: (req) => {
+      // Include both IP and email if available for auth endpoints
+      const identifier = req.body?.email || 'unknown';
+      return `auth:${req.ip || 'unknown'}:${identifier}`;
     },
-    standardHeaders: true,
-    legacyHeaders: false,
-    handler: (req: Request, res: Response) => {
+    skip: (req) => {
+      // Skip rate limiting for password reset requests
+      return req.path.includes('reset-password');
+    },
+    handler: (req, res) => {
       res.status(429).json({
         success: false,
-        error: 'Too many login attempts. Please try again in 15 minutes.'
+        code: 'AUTH_RATE_LIMIT_EXCEEDED',
+        message: 'Too many authentication attempts, please try again later.',
+        retryAfter: Math.ceil(RATE_LIMIT_WINDOW_MS / 1000)
       });
     }
   });
 
-  return { apiLimiter, loginLimiter };
+  // Dedicated rate limiter for refresh tokens
+  const refreshTokenRateLimiter = rateLimit({
+    windowMs: RATE_LIMIT_WINDOW_MS,
+    max: MAX_REFRESH_REQUESTS,
+    message: 'Too many refresh token attempts, please try again later.',
+    standardHeaders: true,
+    legacyHeaders: false,
+    store: store as any, // Type assertion needed due to RedisStore type issues
+    keyGenerator: (req) => {
+      // Use IP + user ID if available, otherwise just IP
+      const userId = req.user?.id || 'anonymous';
+      const refreshToken = req.body?.refresh_token || 'none';
+      return `refresh:${req.ip || 'unknown'}:${userId}:${refreshToken.substring(0, 10)}`;
+    },
+    handler: (req, res) => {
+      const retryAfter = Math.ceil(RATE_LIMIT_WINDOW_MS / 1000);
+      res.status(429).json({
+        success: false,
+        code: 'REFRESH_RATE_LIMIT_EXCEEDED',
+        message: `Too many refresh attempts. Please try again in ${retryAfter} seconds.`,
+        retryAfter
+      });
+    }
+  });
+
+  return {
+    apiRateLimiter,
+    authRateLimiter,
+    refreshTokenRateLimiter
+  };
 };
 
 // Initialize rate limiters
@@ -224,13 +227,18 @@ export const getRateLimiters = async () => {
 
 // Export rate limiters with initialization wrapper
 export const apiLimiter = async (req: Request, res: Response, next: NextFunction) => {
-  const { apiLimiter } = await getRateLimiters();
-  return apiLimiter(req, res, next);
+  const { apiRateLimiter } = await getRateLimiters();
+  return apiRateLimiter(req, res, next);
 };
 
 export const loginLimiter = async (req: Request, res: Response, next: NextFunction) => {
-  const { loginLimiter } = await getRateLimiters();
-  return loginLimiter(req, res, next);
+  const { authRateLimiter } = await getRateLimiters();
+  return authRateLimiter(req, res, next);
+};
+
+export const refreshTokenLimiter = async (req: Request, res: Response, next: NextFunction) => {
+  const { refreshTokenRateLimiter } = await getRateLimiters();
+  return refreshTokenRateLimiter(req, res, next);
 };
 
 // Slow down for brute force protection
@@ -250,7 +258,7 @@ const tokenSchema = z.object({
 });
 
 /**
- * JWT Authentication Middleware with enhanced security
+ * JWT Authentication Middleware with enhanced security and email verification
  */
 export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -272,7 +280,8 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
         userAgent: req.headers['user-agent']
       });
       return res.status(401).json({
-        error: 'unauthorized',
+        success: false,
+        error: 'AUTH_REQUIRED',
         message: 'Authentication required',
         code: 'AUTH_REQUIRED'
       });
@@ -291,33 +300,56 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
       // Check for token expiration specifically
       if (error.message.includes('expired')) {
         return res.status(401).json({
-          error: 'token_expired',
+          success: false,
+          error: 'TOKEN_EXPIRED',
           message: 'Session expired. Please log in again.',
           code: 'TOKEN_EXPIRED'
         });
       }
       
       return res.status(401).json({
-        error: 'invalid_token',
+        success: false,
+        error: 'INVALID_TOKEN',
         message: 'Invalid or expired token',
         code: 'INVALID_TOKEN'
       });
     }
 
-    // Rate limiting per user (simplified for now - will be handled by the rate limiter middleware)
-    // In a production environment, you'd want to track user-specific limits here
+    // Check if user exists and email is verified
+    if (!user) {
+      logger.warn('User not found during authentication');
+      return res.status(401).json({
+        success: false,
+        error: 'USER_NOT_FOUND',
+        message: 'User not found',
+        code: 'USER_NOT_FOUND'
+      });
+    }
 
-    // Rate limiting is handled by the middleware
+    // Check if email is verified
+    if (!user.email_confirmed_at) {
+      logger.warn('Email not verified', {
+        userId: user.id,
+        email: user.email,
+        path: req.path
+      });
+      
+      return res.status(403).json({
+        success: false,
+        error: 'EMAIL_NOT_VERIFIED',
+        message: 'Please verify your email address to continue.',
+        code: 'EMAIL_NOT_VERIFIED'
+      });
+    }
 
     // Attach user to request with minimal required data
-    if (user) {
-      req.user = {
-        id: user.id,
-        email: user.email || '',
-        role: user.user_metadata?.role || 'user',
-        user_metadata: user.user_metadata || {}
-      };
-    }
+    req.user = {
+      id: user.id,
+      email: user.email || '',
+      role: user.user_metadata?.role || 'user',
+      email_verified: !!user.email_confirmed_at,
+      user_metadata: user.user_metadata || {}
+    };
     
     // Set security headers
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -381,9 +413,25 @@ export const requireRole = (roles: UserRole | UserRole[]) => {
   };
 };
 
+// CSRF token generation and validation
+const CSRF_TOKEN_SECRET = process.env.CSRF_TOKEN_SECRET || 'your-secret-key';
+const CSRF_TOKEN_AGE = 24 * 60 * 60 * 1000; // 24 hours
+
+/**
+ * Generate a CSRF token
+ */
+export const generateCsrfToken = (): { token: string; cookie: string } => {
+  const token = require('crypto').randomBytes(32).toString('hex');
+  const expires = new Date(Date.now() + CSRF_TOKEN_AGE);
+  const cookie = `csrf_token=${token}; Path=/; HttpOnly; SameSite=Strict; Expires=${expires.toUTCString()}` + 
+    (process.env.NODE_ENV === 'production' ? '; Secure' : '');
+  
+  return { token, cookie };
+};
+
 /**
  * CSRF Protection Middleware
- * Validates CSRF tokens for state-changing requests
+ * Validates CSRF tokens for state-changing requests using double-submit cookie pattern
  */
 export const csrfProtection = (req: Request, res: Response, next: NextFunction) => {
   // Skip CSRF check for safe HTTP methods
@@ -391,10 +439,17 @@ export const csrfProtection = (req: Request, res: Response, next: NextFunction) 
     return next();
   }
 
-  // Get CSRF token from header or body
-  const csrfToken = req.headers['x-csrf-token'] || req.body._csrf;
-  
-  if (!csrfToken) {
+  // Skip CSRF check for public endpoints that don't modify state
+  const publicEndpoints = ['/auth/csrf-token'];
+  if (publicEndpoints.some(ep => req.path.endsWith(ep))) {
+    return next();
+  }
+
+  // Get CSRF token from header
+  const csrfToken = req.headers['x-csrf-token'] as string;
+  const csrfCookie = req.cookies?.csrf_token;
+
+  if (!csrfToken || !csrfCookie) {
     return res.status(403).json({
       success: false,
       code: 'CSRF_TOKEN_REQUIRED',
@@ -402,10 +457,37 @@ export const csrfProtection = (req: Request, res: Response, next: NextFunction) 
     });
   }
 
-  // In production, verify the CSRF token against the user's session
-  if (process.env.NODE_ENV === 'production') {
-    // Add your CSRF token verification logic here
-    // Example: verifyCsrfToken(csrfToken, req.session.csrfSecret)
+  // Verify the token matches the cookie value (double-submit pattern)
+  if (csrfToken !== csrfCookie) {
+    return res.status(403).json({
+      success: false,
+      code: 'INVALID_CSRF_TOKEN',
+      message: 'Invalid CSRF token'
+    });
+  }
+
+  next();
+};
+
+/**
+ * Middleware to check if user's email is verified
+ * Must be used after authenticate middleware
+ */
+export const requireVerifiedEmail = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      code: 'AUTH_REQUIRED',
+      message: 'Authentication required'
+    });
+  }
+
+  if (!req.user.email_verified) {
+    return res.status(403).json({
+      success: false,
+      code: 'EMAIL_NOT_VERIFIED',
+      message: 'Please verify your email address to access this resource'
+    });
   }
 
   next();
@@ -413,6 +495,7 @@ export const csrfProtection = (req: Request, res: Response, next: NextFunction) 
 
 // Predefined middleware combinations
 export const requireAuth = [authenticate];
+export const requireVerifiedUser = [authenticate, requireVerifiedEmail];
 export const requireAdmin = [authenticate, requireRole('admin')];
 export const requireModerator = [authenticate, requireRole(['admin', 'moderator'])];
 

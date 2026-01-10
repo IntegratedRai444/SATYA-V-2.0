@@ -91,13 +91,24 @@ const AppLayout = () => {
   );
 };
 
-// Protected route component with better loading state
-const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, isLoading, user } = useAuth();
+/**
+ * ProtectedRoute - A component that protects routes from unauthenticated access
+ * 
+ * @param children - Child components to render if authenticated
+ * @param redirectPath - Optional custom redirect path (default: '/login')
+ */
+const ProtectedRoute = ({ 
+  children, 
+  redirectPath = '/login' 
+}: { 
+  children: React.ReactNode;
+  redirectPath?: string;
+}) => {
+  const { isAuthenticated, isLoading, connectionStatus, initialAuthCheckComplete } = useAuth();
   const location = useLocation();
 
   // Show loading state while checking authentication
-  if (isLoading) {
+  if (isLoading || !initialAuthCheckComplete || connectionStatus === 'checking') {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <LoadingState variant="page" message="Checking authentication..." />
@@ -105,13 +116,14 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
     );
   }
 
-  // Only redirect if definitely not authenticated
-  // Check both isAuthenticated and user to avoid race conditions
-  if (!isAuthenticated && !user) {
-    // Store the attempted URL for redirecting after login
-    return <Navigate to="/login" state={{ from: location }} replace />;
+  // If not authenticated, redirect to login with return URL
+  if (!isAuthenticated) {
+    const searchParams = new URLSearchParams();
+    searchParams.set('returnTo', location.pathname + location.search);
+    return <Navigate to={`${redirectPath}?${searchParams.toString()}`} replace />;
   }
 
+  // If authenticated, render the protected content
   return <>{children}</>;
 };
 
@@ -186,9 +198,14 @@ export const router = createBrowserRouter([
       </ProtectedRoute>
     ),
     children: [
-      // Dashboard - now with MainLayout (DEFAULT HOME PAGE)
+      // Redirect root to dashboard
       {
         index: true,
+        element: <Navigate to="/dashboard" replace />
+      },
+      // Dashboard route
+      {
+        path: 'dashboard',
         element: (
           <Suspense fallback={<LoadingState message="Loading dashboard..." isLoading={true} />}>
             <Dashboard />

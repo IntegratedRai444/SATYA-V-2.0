@@ -1,188 +1,328 @@
--- ============================================================================
--- SatyaAI Complete Database Schema - PostgreSQL/Supabase
--- ============================================================================
--- Run this in Supabase SQL Editor: https://supabase.com/dashboard
--- 
--- This schema includes:
--- ✅ Core tables (users, scans, tasks, preferences)
--- ✅ Additional tables (notifications, audit_logs, api_keys)  
--- ✅ Optimized indexes for fast queries
--- ✅ Auto-update triggers
--- ✅ Useful views
--- ✅ Demo data
--- ============================================================================
+-- ============================================================
+-- SatyaAI Schema v2.0 (Supabase PostgreSQL)
+-- Author: Rishabh Kapoor (Founder)
+-- ============================================================
 
--- ============================================================================
--- STEP 1: DROP EXISTING TABLES (Clean Slate)
--- ============================================================================
+-- Extensions (uuid + crypto)
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
-DROP TABLE IF EXISTS audit_logs CASCADE;
-DROP TABLE IF EXISTS notifications CASCADE;
-DROP TABLE IF EXISTS api_keys CASCADE;
-DROP TABLE IF EXISTS tasks CASCADE;
-DROP TABLE IF EXISTS scans CASCADE;
-DROP TABLE IF EXISTS user_preferences CASCADE;
-DROP TABLE IF EXISTS users CASCADE;
+-- ============================================================
+-- ENUM TYPES
+-- ============================================================
 
-DROP VIEW IF EXISTS user_statistics CASCADE;
-DROP VIEW IF EXISTS recent_activity CASCADE;
-DROP VIEW IF EXISTS task_queue CASCADE;
+-- User role type
+DO $$ BEGIN
+  CREATE TYPE public.user_role AS ENUM ('user','admin','moderator');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-DROP FUNCTION IF EXISTS update_updated_at_column() CASCADE;
+-- Analysis job status type
+DO $$ BEGIN
+  CREATE TYPE public.analysis_status AS ENUM ('pending','queued','processing','completed','failed');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- ============================================================================
--- STEP 2: CREATE CORE TABLES
--- ============================================================================
+-- Media type type
+DO $$ BEGIN
+  CREATE TYPE public.media_type AS ENUM ('image','video','audio','multimodal','webcam');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- Users table - Authentication & user management
-CREATE TABLE users (
-  id SERIAL PRIMARY KEY,
-  username VARCHAR(255) NOT NULL UNIQUE,
-  password TEXT NOT NULL,
-  email VARCHAR(255) UNIQUE,
-  full_name VARCHAR(255),
-  role VARCHAR(50) NOT NULL DEFAULT 'user',
+-- Notification type
+DO $$ BEGIN
+  CREATE TYPE public.notification_type AS ENUM ('info','success','warning','error','scan_complete');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- ============================================================
+-- CORE TABLES
+-- ============================================================
+
+-- User table (extends auth.users)
+CREATE TABLE IF NOT EXISTS public.users (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  username TEXT UNIQUE NOT NULL,
+  email TEXT UNIQUE,
+  full_name TEXT,
+  avatar_url TEXT,
+  role public.user_role NOT NULL DEFAULT 'user',
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
-  last_login TIMESTAMP,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  CONSTRAINT username_length CHECK (LENGTH(username) >= 3),
-  CONSTRAINT role_check CHECK (role IN ('user', 'admin', 'moderator'))
+  last_login TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT username_format CHECK (username ~ '^[a-zA-Z0-9_]{3,30}$')
 );
 
--- Scans table - Deepfake detection results
-CREATE TABLE scans (
-  id SERIAL PRIMARY KEY,
-  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  filename TEXT NOT NULL,
-  type VARCHAR(50) NOT NULL,
-  result VARCHAR(50) NOT NULL,
-  confidence_score INTEGER NOT NULL,
-  detection_details JSONB,
-  metadata JSONB,
-  file_size BIGINT,
-  processing_time_ms INTEGER,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  CONSTRAINT type_check CHECK (type IN ('image', 'video', 'audio', 'multimodal')),
-  CONSTRAINT result_check CHECK (result IN ('authentic', 'deepfake', 'suspicious', 'inconclusive')),
-  CONSTRAINT confidence_check CHECK (confidence_score >= 0 AND confidence_score <= 100)
-);
-
--- User preferences table - User settings
-CREATE TABLE user_preferences (
-  id SERIAL PRIMARY KEY,
-  user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-  theme VARCHAR(50) DEFAULT 'dark',
-  language VARCHAR(50) DEFAULT 'english',
-  confidence_threshold INTEGER DEFAULT 75,
+-- User preferences
+CREATE TABLE IF NOT EXISTS public.user_preferences (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL UNIQUE REFERENCES public.users(id) ON DELETE CASCADE,
+  theme TEXT DEFAULT 'dark',
+  language TEXT DEFAULT 'english',
+  confidence_threshold INT DEFAULT 75,
   enable_notifications BOOLEAN DEFAULT TRUE,
   auto_analyze BOOLEAN DEFAULT TRUE,
-  sensitivity_level VARCHAR(50) DEFAULT 'medium',
-  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  CONSTRAINT theme_check CHECK (theme IN ('light', 'dark', 'auto')),
-  CONSTRAINT confidence_threshold_check CHECK (confidence_threshold >= 0 AND confidence_threshold <= 100),
-  CONSTRAINT sensitivity_check CHECK (sensitivity_level IN ('low', 'medium', 'high'))
+  sensitivity_level TEXT DEFAULT 'medium',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT theme_check CHECK (theme IN ('light','dark','auto')),
+  CONSTRAINT confidence_check CHECK (confidence_threshold BETWEEN 0 AND 100),
+  CONSTRAINT sensitivity_check CHECK (sensitivity_level IN ('low','medium','high'))
 );
 
--- Tasks table - Processing queue for async analysis
-CREATE TABLE tasks (
-  id SERIAL PRIMARY KEY,
-  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  type VARCHAR(50) NOT NULL,
-  status VARCHAR(50) NOT NULL DEFAULT 'queued',
-  progress INTEGER NOT NULL DEFAULT 0,
+-- Analysis jobs (queue/tasks)
+CREATE TABLE IF NOT EXISTS public.analysis_jobs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  status public.analysis_status NOT NULL DEFAULT 'pending',
+  media_type public.media_type NOT NULL,
   file_name TEXT NOT NULL,
-  file_size BIGINT NOT NULL,
-  file_type VARCHAR(100) NOT NULL,
   file_path TEXT NOT NULL,
-  report_code VARCHAR(100) UNIQUE,
-  result JSONB,
-  error JSONB,
+  file_size BIGINT,
+  file_hash TEXT,
+  progress INT NOT NULL DEFAULT 0,
   metadata JSONB,
-  priority INTEGER DEFAULT 5,
-  retry_count INTEGER DEFAULT 0,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  started_at TIMESTAMP,
-  completed_at TIMESTAMP,
-  CONSTRAINT type_check CHECK (type IN ('image', 'video', 'audio', 'webcam', 'multimodal', 'batch')),
-  CONSTRAINT status_check CHECK (status IN ('queued', 'processing', 'completed', 'failed', 'cancelled')),
-  CONSTRAINT progress_check CHECK (progress >= 0 AND progress <= 100),
-  CONSTRAINT priority_check CHECK (priority >= 1 AND priority <= 10)
+  error_message TEXT,
+  priority INT DEFAULT 5,
+  retry_count INT DEFAULT 0,
+  report_code TEXT UNIQUE,
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT progress_check CHECK (progress BETWEEN 0 AND 100),
+  CONSTRAINT priority_check CHECK (priority BETWEEN 1 AND 10)
 );
 
--- ============================================================================
--- STEP 3: CREATE ADDITIONAL TABLES
--- ============================================================================
+-- Analysis results
+CREATE TABLE IF NOT EXISTS public.analysis_results (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id UUID NOT NULL REFERENCES public.analysis_jobs(id) ON DELETE CASCADE,
+  model_name TEXT NOT NULL DEFAULT 'SatyaAI',
+  confidence FLOAT,
+  is_deepfake BOOLEAN,
+  analysis_data JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT confidence_float_check CHECK (confidence IS NULL OR (confidence >= 0 AND confidence <= 1))
+);
 
--- Notifications table - User notifications
-CREATE TABLE notifications (
-  id SERIAL PRIMARY KEY,
-  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  type VARCHAR(50) NOT NULL,
-  title VARCHAR(255) NOT NULL,
+-- Notifications
+CREATE TABLE IF NOT EXISTS public.notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  type public.notification_type NOT NULL DEFAULT 'info',
+  title TEXT NOT NULL,
   message TEXT NOT NULL,
-  read BOOLEAN NOT NULL DEFAULT FALSE,
+  is_read BOOLEAN NOT NULL DEFAULT FALSE,
   action_url TEXT,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  read_at TIMESTAMP,
-  CONSTRAINT type_check CHECK (type IN ('info', 'success', 'warning', 'error', 'scan_complete'))
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  read_at TIMESTAMPTZ
 );
 
--- API Keys table - For external API access
-CREATE TABLE api_keys (
-  id SERIAL PRIMARY KEY,
-  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  key_name VARCHAR(255) NOT NULL,
-  api_key TEXT NOT NULL UNIQUE,
-  permissions JSONB DEFAULT '{"read": true, "write": false, "admin": false}'::jsonb,
+-- API keys (optional external API access)
+CREATE TABLE IF NOT EXISTS public.api_keys (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  key_hash TEXT NOT NULL UNIQUE,
+  permissions JSONB NOT NULL DEFAULT '{"read": true, "write": false, "admin": false}'::jsonb,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
-  last_used_at TIMESTAMP,
-  expires_at TIMESTAMP,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  last_used_at TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  revoked_at TIMESTAMPTZ
 );
 
--- Audit logs table - Security & activity tracking
-CREATE TABLE audit_logs (
+-- ============================================================
+-- INDEXES
+-- ============================================================
+
+-- Users
+CREATE INDEX IF NOT EXISTS idx_users_username ON public.users(username);
+CREATE INDEX IF NOT EXISTS idx_users_email ON public.users(email);
+CREATE INDEX IF NOT EXISTS idx_users_active ON public.users(is_active) WHERE is_active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_users_created_at ON public.users(created_at DESC);
+
+-- Analysis jobs
+CREATE INDEX IF NOT EXISTS idx_analysis_jobs_user_id ON public.analysis_jobs(user_id);
+CREATE INDEX IF NOT EXISTS idx_analysis_jobs_status ON public.analysis_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_analysis_jobs_created_at ON public.analysis_jobs(created_at);
+CREATE INDEX IF NOT EXISTS idx_analysis_jobs_media_type ON public.analysis_jobs(media_type);
+
+-- Analysis results
+CREATE INDEX IF NOT EXISTS idx_analysis_results_job_id ON public.analysis_results(job_id);
+CREATE INDEX IF NOT EXISTS idx_analysis_results_created_at ON public.analysis_results(created_at);
+
+-- Notifications
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON public.notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON public.notifications(created_at);
+CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON public.notifications(is_read) WHERE NOT is_read;
+CREATE INDEX IF NOT EXISTS idx_notifications_type ON public.notifications(type);
+
+-- API keys
+CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON public.api_keys(user_id);
+CREATE INDEX IF NOT EXISTS idx_api_keys_expires ON public.api_keys(expires_at) WHERE expires_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_api_keys_is_active ON public.api_keys(is_active) WHERE is_active = TRUE;
+
+-- ============================================================
+-- ROW LEVEL SECURITY (RLS)
+-- ============================================================
+
+-- Enable RLS on all tables
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_preferences ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.analysis_jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.analysis_results ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.api_keys ENABLE ROW LEVEL SECURITY;
+
+-- Users policies
+CREATE POLICY "Users can view their own profile" 
+  ON public.users FOR SELECT 
+  USING (auth.uid() = id);
+
+CREATE POLICY "Users can update their own profile"
+  ON public.users FOR UPDATE
+  USING (auth.uid() = id);
+
+-- User preferences policies
+CREATE POLICY "Users can manage their preferences"
+  ON public.user_preferences
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- Analysis jobs policies
+CREATE POLICY "Users can manage their analysis jobs"
+  ON public.analysis_jobs
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- Analysis results policies
+CREATE POLICY "Users can view their analysis results"
+  ON public.analysis_results
+  USING (EXISTS (
+    SELECT 1 FROM public.analysis_jobs 
+    WHERE public.analysis_jobs.id = public.analysis_results.job_id 
+    AND public.analysis_jobs.user_id = auth.uid()
+  ));
+
+-- Notifications policies
+CREATE POLICY "Users can manage their notifications"
+  ON public.notifications
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- API keys policies
+CREATE POLICY "Users can manage their API keys"
+  ON public.api_keys
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- ============================================================
+-- HELPER FUNCTIONS
+-- ============================================================
+
+-- Update updated_at timestamp
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Add updated_at triggers
+CREATE TRIGGER set_updated_at
+BEFORE UPDATE ON public.users
+FOR EACH ROW
+EXECUTE FUNCTION public.update_updated_at_column();
+
+CREATE TRIGGER set_updated_at
+BEFORE UPDATE ON public.user_preferences
+FOR EACH ROW
+EXECUTE FUNCTION public.update_updated_at_column();
+
+CREATE TRIGGER set_updated_at
+BEFORE UPDATE ON public.analysis_jobs
+FOR EACH ROW
+EXECUTE FUNCTION public.update_updated_at_column();
+
+-- ============================================================
+-- COMPLETED SCHEMA
+-- ============================================================
+
+COMMENT ON SCHEMA public IS 'SatyaAI v2.0 Database Schema - Deepfake Detection Platform';
+
+-- ============================================================
+-- SCHEMA VERSION
+-- ============================================================
+
+-- Track schema version for future migrations
+CREATE TABLE IF NOT EXISTS public.schema_migrations (
   id SERIAL PRIMARY KEY,
-  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-  action VARCHAR(100) NOT NULL,
-  resource_type VARCHAR(50),
-  resource_id INTEGER,
-  ip_address VARCHAR(45),
-  user_agent TEXT,
-  metadata JSONB,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  version VARCHAR(50) NOT NULL UNIQUE,
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  description TEXT
 );
 
--- ============================================================================
--- STEP 4: CREATE INDEXES FOR PERFORMANCE
--- ============================================================================
+-- Insert initial schema version if not exists
+INSERT INTO public.schema_migrations (version, description)
+VALUES ('1.0.0', 'Initial database schema')
+ON CONFLICT (version) DO NOTHING;
 
--- Users indexes
-CREATE INDEX idx_users_username ON users(username);
-CREATE INDEX idx_users_email ON users(email) WHERE email IS NOT NULL;
-CREATE INDEX idx_users_role ON users(role);
-CREATE INDEX idx_users_active ON users(is_active) WHERE is_active = TRUE;
-CREATE INDEX idx_users_created_at ON users(created_at DESC);
+-- ============================================================
+-- DATABASE FUNCTIONS
+-- ============================================================
 
--- Scans indexes
-CREATE INDEX idx_scans_user_id ON scans(user_id);
-CREATE INDEX idx_scans_created_at ON scans(created_at DESC);
-CREATE INDEX idx_scans_type ON scans(type);
-CREATE INDEX idx_scans_result ON scans(result);
-CREATE INDEX idx_scans_confidence ON scans(confidence_score DESC);
-CREATE INDEX idx_scans_user_date ON scans(user_id, created_at DESC);
-CREATE INDEX idx_scans_type_result ON scans(type, result);
-CREATE INDEX idx_scans_detection_details ON scans USING GIN (detection_details);
-CREATE INDEX idx_scans_metadata ON scans USING GIN (metadata);
+-- Function to generate report codes (e.g., SATYA-IMG-20230101-0001)
+CREATE OR REPLACE FUNCTION public.generate_report_code(media_type TEXT)
+RETURNS TEXT AS $$
+DECLARE
+  prefix TEXT;
+  date_str TEXT := to_char(CURRENT_DATE, 'YYYYMMDD');
+  seq_num INT;
+BEGIN
+  -- Determine prefix based on media type
+  CASE media_type
+    WHEN 'image' THEN prefix := 'IMG';
+    WHEN 'video' THEN prefix := 'VID';
+    WHEN 'audio' THEN prefix := 'AUD';
+    WHEN 'webcam' THEN prefix := 'WEB';
+    ELSE prefix := 'GEN';
+  END CASE;
+  
+  -- Get next sequence number for this date and type
+  SELECT COALESCE(MAX(SUBSTRING(report_code, -4)::INT), 0) + 1 INTO seq_num
+  FROM public.analysis_jobs
+  WHERE report_code LIKE 'SATYA-' || prefix || '-' || date_str || '-%';
+  
+  -- Format: SATYA-{TYPE}-{DATE}-{SEQ}
+  RETURN 'SATYA-' || prefix || '-' || date_str || '-' || LPAD(seq_num::TEXT, 4, '0');
+END;
+$$ LANGUAGE plpgsql;
 
--- Tasks indexes
-CREATE INDEX idx_tasks_user_id ON tasks(user_id);
-CREATE INDEX idx_tasks_status ON tasks(status);
-CREATE INDEX idx_tasks_created_at ON tasks(created_at DESC);
-CREATE INDEX idx_tasks_user_status_date ON tasks(user_id, status, created_at DESC);
-CREATE INDEX idx_tasks_report_code ON tasks(report_code) WHERE report_code IS NOT NULL;
+-- Function to update job progress
+CREATE OR REPLACE FUNCTION public.update_job_progress(
+  job_id UUID,
+  new_progress INT,
+  status_text TEXT DEFAULT NULL
+) RETURNS VOID AS $$
+BEGIN
+  UPDATE public.analysis_jobs
+  SET 
+    progress = LEAST(GREATEST(new_progress, 0), 100),
+    status = COALESCE(status_text::public.analysis_status, 
+                     CASE 
+                       WHEN new_progress >= 100 THEN 'completed'::public.analysis_status
+                       WHEN new_progress > 0 THEN 'processing'::public.analysis_status
+                       ELSE status
+                     END),
+    updated_at = NOW(),
+    completed_at = CASE WHEN new_progress >= 100 THEN NOW() ELSE completed_at END
+  WHERE id = job_id;
+END;
+$$ LANGUAGE plpgsql;
 CREATE INDEX idx_tasks_priority_status ON tasks(priority DESC, status, created_at);
 CREATE INDEX idx_tasks_result ON tasks USING GIN (result);
 

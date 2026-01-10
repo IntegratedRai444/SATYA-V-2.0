@@ -7,8 +7,8 @@ const REFRESH_TOKEN_KEY = 'satya_refresh_token';
 const USER_KEY = 'satya_user';
 const TOKEN_TIMESTAMP_KEY = 'satya_token_timestamp';
 
-// Token expiration time in milliseconds (30 minutes)
-const TOKEN_EXPIRY_TIME = 30 * 60 * 1000;
+// Note: TOKEN_EXPIRY_TIME is not currently used, but keeping it for future reference
+// const TOKEN_EXPIRY_TIME = 30 * 60 * 1000; // 30 minutes
 
 export interface User {
   id: string;
@@ -111,43 +111,68 @@ export const login = async (username: string, password: string, role?: 'user' | 
     return response;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Login failed';
-    logger.error('Login failed', { 
-      error: errorMessage,
-      username: username ? 'provided' : 'not provided' 
-    });
+    logger.error(`Login failed: ${errorMessage}`);
+    logger.debug(`Login attempt with username: ${username ? 'provided' : 'not provided'}`);
     throw new Error(errorMessage);
   }
 };
 
 export const logout = async (): Promise<void> => {
   try {
-    // Only try to call the logout endpoint if we have a valid token
-    const token = getAuthToken();
-    if (token) {
-      await apiClient.post(
-        '/api/auth/logout', 
-        { refresh_token: getRefreshToken() },
-        { skipAuth: false }
-      );
-    }
-  } catch (error) {
-    // Even if logout API call fails, we still want to clear local data
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    logger.warn('Logout request failed', { 
-      error: errorMessage
-    });
-  } finally {
-    // Clear all auth-related data
+    // Get refresh token before clearing
+    const refreshToken = getRefreshToken();
+    
+    // Clear all auth-related data first to prevent race conditions
     removeAuthToken();
     localStorage.removeItem(TOKEN_TIMESTAMP_KEY);
     
-    // Clear any cached data that might be user-specific
-    // Add any other cleanup needed for your app
+    // Call server to invalidate session
+    if (refreshToken) {
+      try {
+        await apiClient.post(
+          '/api/auth/logout', 
+          { refresh_token: refreshToken },
+          { 
+            skipAuth: true, // Don't use auth header for logout
+            withCredentials: true // Include cookies
+          }
+        );
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        logger.warn(`Logout API call failed, but proceeding with client cleanup: ${errorMessage}`);
+      }
+    }
     
-    // Dispatch a global event that the app can listen to
-    window.dispatchEvent(new Event('auth-logout'));
+    // Clear any cached data that might be user-specific
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith('satya_') || key.startsWith('sb-')) {
+        localStorage.removeItem(key);
+      }
+    });
+    
+    // Clear session storage
+    sessionStorage.clear();
+    
+    // Dispatch events for other parts of the app to handle
+    const authEvent = new Event('auth-logout');
+    window.dispatchEvent(authEvent);
+    
+    // Redirect to login page
+    window.location.href = '/login';
+    
+    // Force stop any pending requests
+    if (typeof window !== 'undefined') {
+      // This will prevent any pending requests from completing
+      window.stop();
+    }
     
     logger.info('User logged out successfully');
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.error(`Logout error: ${errorMessage}`);
+    
+    // Ensure we still redirect to login even if there was an error
+    window.location.href = '/login';
   }
 };
 
@@ -192,10 +217,8 @@ export const refreshToken = async (): Promise<{ access_token: string; refresh_to
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Token refresh failed';
-    logger.error('Token refresh failed', { 
-      error: errorMessage,
-      hasRefreshToken: !!refreshToken
-    });
+    logger.error(`Token refresh failed: ${errorMessage}`);
+    logger.debug(`Refresh token available: ${!!refreshToken}`);
     
     // Clear auth data on refresh failure
     removeAuthToken();
@@ -241,9 +264,8 @@ export const isAuthenticated = (): boolean => {
     
     return true;
   } catch (error) {
-    logger.error('Error validating authentication', { 
-      error: error instanceof Error ? error.message : 'Unknown error' 
-    });
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.error(`Error validating authentication: ${errorMessage}`);
     return false;
   }
 };
@@ -260,16 +282,6 @@ export const hasRole = (requiredRole: string | string[]): boolean => {
   }
   
   return user.role === requiredRole;
-};
-
-// Add a function to check token expiration
-const isTokenExpired = (token: string): boolean => {
-  try {
-    const tokenData = JSON.parse(atob(token.split('.')[1]));
-    return tokenData.exp * 1000 < Date.now();
-  } catch (error) {
-    return true; // If we can't parse the token, consider it expired
-  }
 };
 
 export const authService = {

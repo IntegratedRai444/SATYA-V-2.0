@@ -1,4 +1,5 @@
-import { Router, type Request as ExpressRequest, type Response, type NextFunction } from 'express';
+import { Router } from 'express';
+import type { Request as ExpressRequest, Response, NextFunction } from 'express';
 import { body, type ValidationChain } from 'express-validator';
 import { validateRequest } from '../middleware/validate-request';
 import { logger } from '../config/logger';
@@ -6,23 +7,42 @@ import {
   authenticate, 
   loginLimiter, 
   csrfProtection,
+  generateCsrfToken,
   apiLimiter as authLimiter,
+  refreshTokenLimiter,
   type Request as AuthRequest
 } from '../middleware/auth.middleware';
 import { supabase } from '../config/supabase';
 
 // Use the Request type from auth middleware
-type Request = AuthRequest;
+type Request = AuthRequest & ExpressRequest;
 
 export const authRouter = Router();
 
+// CSRF Token Endpoint
+authRouter.get('/csrf-token', (req: ExpressRequest, res: Response) => {
+  try {
+    const { token, cookie } = generateCsrfToken();
+    res.setHeader('Set-Cookie', cookie);
+    res.json({ token });
+  } catch (error) {
+    logger.error('CSRF token generation failed:', error);
+    res.status(500).json({
+      success: false,
+      code: 'CSRF_TOKEN_ERROR',
+      message: 'Failed to generate CSRF token'
+    });
+  }
+});
+
 // Helper function to handle errors
-const handleError = (error: unknown, res: Response, defaultMessage: string) => {
+const handleError = (error: unknown, res: Response, defaultMessage: string, code = 'AUTH_ERROR') => {
   const errorMessage = error instanceof Error ? error.message : defaultMessage;
   logger.error('Auth error:', error);
   return res.status(400).json({
     success: false,
-    error: errorMessage
+    code,
+    message: errorMessage
   });
 };
 
@@ -36,10 +56,10 @@ authRouter.post(
     body('username').notEmpty().withMessage('Username is required'),
     body('fullName').optional(),
     validateRequest,
-    authLimiter,
+    authLimiter as any, // Type assertion for express-rate-limit
     csrfProtection
   ],
-  async (req: Request, res: Response) => {
+  async (req: ExpressRequest, res: Response) => {
     try {
       const { email, password, username, fullName } = req.body;
       
@@ -70,6 +90,7 @@ authRouter.post(
   }
 );
 
+
 // Login with email/password
 authRouter.post(
   '/login',
@@ -77,10 +98,10 @@ authRouter.post(
     body('email').isEmail().normalizeEmail(),
     body('password').notEmpty().withMessage('Password is required'),
     validateRequest,
-    loginLimiter,
-    csrfProtection
+    loginLimiter as any, // Type assertion for express-rate-limit
+    csrfProtection // CSRF protection enabled for login
   ],
-  async (req: Request, res: Response) => {
+  async (req: ExpressRequest, res: Response) => {
     try {
       const { email, password } = req.body;
       
@@ -93,6 +114,18 @@ authRouter.post(
         throw error;
       }
       
+      // Check if email is verified
+      if (!data.user?.email_confirmed_at) {
+        // Optionally, you can resend verification email here
+        // await supabase.auth.resendOtp({ email, type: 'signup' });
+        
+        return res.status(403).json({
+          success: false,
+          code: 'EMAIL_NOT_VERIFIED',
+          message: 'Please verify your email address before logging in. Check your inbox for the verification link.'
+        });
+      }
+      
       res.json({
         success: true,
         message: 'Login successful',
@@ -101,45 +134,95 @@ authRouter.post(
       });
     } catch (error: unknown) {
       logger.error('Login error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Invalid email or password';
+      
+      // Handle specific error cases
+      if (errorMessage.includes('Invalid login credentials')) {
+        return res.status(401).json({
+          success: false,
+          code: 'INVALID_CREDENTIALS',
+          message: 'Invalid email or password'
+        });
+      }
+      
       res.status(401).json({
         success: false,
-        error: (error as Error).message || 'Invalid email or password'
+        code: 'LOGIN_FAILED',
+        message: errorMessage
       });
     }
   }
 );
 
 // Refresh session
-authRouter.post('/refresh', async (req, res, next) => {
+authRouter.post('/refresh', [
+  csrfProtection, 
+  refreshTokenLimiter as any, // Type assertion needed due to express-rate-limit types
+  async (req: ExpressRequest, res: Response, next: NextFunction) => {
   try {
-    const { refresh_token } = req.body;
+    const { refresh_token } = req.body as { refresh_token?: string };
+    
     if (!refresh_token) {
       return res.status(400).json({
         success: false,
-        error: 'Refresh token is required'
+        code: 'REFRESH_TOKEN_REQUIRED',
+        message: 'Refresh token is required'
       });
     }
 
     const { data, error } = await supabase.auth.refreshSession({
-      refresh_token,
-      // @ts-ignore
-      session: req.session,
+      refresh_token
     });
     
-    if (error) {
-      throw new Error(error.message);
+    if (error || !data.session) {
+      logger.warn('Failed to refresh session', { 
+        error: error?.message || 'No session data returned',
+        hasSession: !!data?.session,
+        ip: req.ip
+      });
+      
+      return res.status(401).json({
+        success: false,
+        code: 'INVALID_REFRESH_TOKEN',
+        message: 'Invalid or expired refresh token. Please log in again.'
+      });
     }
     
+    // Generate new CSRF token for the session
+    const { token: csrfToken, cookie: csrfCookie } = generateCsrfToken();
+    
+    // Set the CSRF token as HTTP-only cookie
+    res.setHeader('Set-Cookie', csrfCookie);
+    
+    // Return the new tokens and user data
     res.json({
       success: true,
-      user: data.user,
-      session: data.session
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+      expires_in: data.session.expires_in,
+      token_type: data.session.token_type,
+      csrf_token: csrfToken,
+      user: {
+        id: data.user?.id,
+        email: data.user?.email,
+        role: data.user?.user_metadata?.role || 'user',
+        email_confirmed_at: data.user?.email_confirmed_at,
+        last_sign_in_at: data.user?.last_sign_in_at
+      }
     });
   } catch (error: unknown) {
-    logger.error('Session refresh error:', error);
-    res.status(401).json({
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error during refresh';
+    logger.error('Session refresh error:', { 
+      error: errorMessage,
+      stack: error instanceof Error ? error.stack : undefined,
+      ip: req.ip
+    });
+    
+    res.status(500).json({
       success: false,
-      error: 'Failed to refresh session'
+      code: 'REFRESH_ERROR',
+      message: 'An error occurred while refreshing the session',
+      error: process.env.NODE_ENV === 'development' ? errorMessage : undefined
     });
   }
 });
@@ -147,7 +230,7 @@ authRouter.post('/refresh', async (req, res, next) => {
 // Get current user
 authRouter.get(
   '/me', 
-  [authenticate, authLimiter],
+  [authenticate, authLimiter, csrfProtection],
   async (req: Request, res: Response) => {
     try {
       // Get fresh user data from Supabase
@@ -210,7 +293,7 @@ authRouter.post(
 // Request password reset
 authRouter.post(
   '/reset-password',
-  [body('email').isEmail().normalizeEmail()],
+  [body('email').isEmail().normalizeEmail(), csrfProtection],
   validateRequest,
   async (req: Request, res: Response) => {
     try {
@@ -234,16 +317,13 @@ authRouter.post(
         error: error instanceof Error ? error.message : 'Password reset request failed'
       });
     }
-  }
-);
-
-// Update user profile
 // Requires authentication
 // Uses the Supabase Admin API to update user metadata
 authRouter.patch(
   '/profile',
   [
-    authenticate,
+    authenticate as any, // Type assertion for custom middleware
+    csrfProtection,
     body('fullName').optional().isString().trim().isLength({ max: 100 }),
     body('username').optional().isString().trim().isLength({ min: 3, max: 30 }),
     body('avatarUrl').optional().isString().trim().isURL()
@@ -281,112 +361,12 @@ authRouter.patch(
   }
 );
 
-// Get user profile
-authRouter.get('/profile', authenticate, async (req: Request, res: Response) => {
-  try {
-    res.json({
-      success: true,
-      user: req.user
-    });
-  } catch (error: unknown) {
-    logger.error('Get profile error:', error);
-    res.status(400).json({
-      success: false,
-      error: 'Failed to get user profile'
-    });
-  }
-});
-
-// OAuth providers configuration
-authRouter.get('/providers', (req: Request, res: Response) => {
-  const providers = [
-    {
-      id: 'google',
-      name: 'Google',
-      enabled: process.env.OAUTH_GOOGLE_ENABLED === 'true',
-      url: '/auth/google/authorize'
-    },
-    {
-      id: 'github',
-      name: 'GitHub',
-      enabled: process.env.OAUTH_GITHUB_ENABLED === 'true',
-      url: '/auth/github/authorize'
-    },
-    // Add more providers as needed
-  ].filter(provider => provider.enabled);
-  
-  res.json({
-    success: true,
-    providers
-  });
-});
-
-// Initialize OAuth flow
-authRouter.get('/:provider/authorize', async (req: Request, res: Response) => {
-  const { provider } = req.params;
-  const redirectTo = req.query.redirectTo || '/';
-  
-  // Store the redirect URL in the session or state
-  const state = JSON.stringify({ redirectTo });
-  
-  // Generate the OAuth URL
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: provider as any,
-    options: {
-      redirectTo: `${process.env.API_URL}/auth/${provider}/callback`,
-      queryParams: { state }
-    }
-  });
-  
-  if (error) {
-    logger.error(`OAuth ${provider} error:`, error);
-    return res.redirect(`/login?error=${encodeURIComponent(error.message)}`);
-  }
-  
-  res.redirect(data.url);
-});
-
-// OAuth callback
-authRouter.get('/:provider/callback', async (req: Request, res: Response) => {
-  const { provider } = req.params;
-  const { code, state } = req.query;
-  
-  try {
-    if (!code) {
-      throw new Error('Authorization code is required');
-    }
-    
-    // Exchange the code for a session
-    const { data, error } = await supabase.auth.exchangeCodeForSession(code as string);
-    
-    if (error) {
-      throw new Error(error.message);
-    }
-    
-    // Redirect to the client with the session
-    const stateObj = state ? JSON.parse(state as string) : {};
-    const redirectUrl = new URL(stateObj.redirectTo || '/', process.env.CLIENT_URL);
-    
-    // Set the session in a cookie or local storage via query params
-    redirectUrl.searchParams.set('access_token', data.session.access_token);
-    redirectUrl.searchParams.set('refresh_token', data.session.refresh_token);
-    
-    res.redirect(redirectUrl.toString());
-  } catch (error: unknown) {
-    logger.error(`OAuth ${provider} callback error:`, error);
-    const redirectUrl = new URL('/login', process.env.CLIENT_URL);
-    redirectUrl.searchParams.set(
-      'error', 
-      error instanceof Error ? error.message : 'Authentication failed'
-    );
-    res.redirect(redirectUrl.toString());
-  }
-});
+// ...
 
 // Change password route
 authRouter.post(
   '/change-password',
-  authenticate,
+  authenticate as any, // Type assertion for custom middleware
   [
     body('currentPassword').notEmpty(),
     body('newPassword').isLength({ min: 8 })

@@ -1,6 +1,7 @@
 import axios, { AxiosInstance, AxiosResponse, AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig, AxiosHeaders } from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { metrics, trackError as logError } from '@/lib/services/metrics';
+import { getCsrfToken } from './services/csrfService';
 
 // Types
 type CacheEntry = {
@@ -115,8 +116,27 @@ const createEnhancedAxiosInstance = (baseURL: string): AxiosInstance => {
   
   // Request interceptor for caching and metrics
   instance.interceptors.request.use(
-    (config: RequestConfig) => {
-      const requestId = config.headers?.['X-Request-Id'] as string || uuidv4();
+    async (config: RequestConfig) => {
+      const requestId = uuidv4();
+      config.id = requestId;
+      config.metadata = {
+        requestId,
+        startTime: Date.now(),
+      };
+
+      // Add CSRF token to all non-GET requests
+      if (config.method?.toUpperCase() !== 'GET') {
+        try {
+          const token = await getCsrfToken();
+          if (token) {
+            config.headers = config.headers || {};
+            config.headers['X-CSRF-Token'] = token;
+          }
+        } catch (error) {
+          console.warn('Failed to get CSRF token:', error);
+        }
+      }
+
       const method = config.method?.toUpperCase() || 'GET';
       const cacheKey = generateCacheKey(config);
       
@@ -221,6 +241,14 @@ const createEnhancedAxiosInstance = (baseURL: string): AxiosInstance => {
 // Create separate instances for auth and analysis
 const authApiClient = createEnhancedAxiosInstance(import.meta.env.VITE_AUTH_API_URL);
 const analysisApiClient = createEnhancedAxiosInstance(import.meta.env.VITE_ANALYSIS_API_URL);
+
+// Reference to the auth service for token refresh
+let authService: any = null;
+
+// Function to set the auth service reference
+export const setAuthService = (service: any) => {
+  authService = service;
+};
 
 // Default export is the analysis client for backward compatibility
 const apiClient = createEnhancedAxiosInstance(import.meta.env.VITE_API_URL);
@@ -397,71 +425,52 @@ apiClient.interceptors.response.use(
     const originalRequest = error.config as any;
     const { requestId, startTime, requestKey } = originalRequest?.metadata || {};
     
-    // Track the error
-    if (requestId && startTime) {
-      // Remove unused duration variable
-      const status = error.response?.status || 0;
+    // If error is not 401 or we've already retried, reject
+    if (error.response?.status !== 401 || originalRequest._retry) {
+      return Promise.reject(error);
+    }
+
+    // Skip refresh for login/register endpoints
+    if (originalRequest.url?.includes('/auth/login') || 
+        originalRequest.url?.includes('/auth/register')) {
+      return Promise.reject(error);
+    }
+
+    originalRequest._retry = true;
+    
+    try {
+      // Try to refresh the token
+      const refreshToken = localStorage.getItem('refresh_token');
+      if (!refreshToken) {
+        throw new Error('No refresh token available');
+      }
       
-logError(
-        new Error(`API Error: ${error.message} (${status} ${error.response?.statusText})`),
-        'api_error',
-        { status, url: originalRequest?.url }
+      const response = await axios.post(
+        `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api'}/auth/refresh-token`,
+        { refreshToken },
+        { withCredentials: true }
       );
       
-      // Clean up request cache on error
-      if (requestKey) {
-        pendingRequests.delete(requestKey);
-      }
-    }
-    
-    // Handle request cancellation
-    if (axios.isCancel(error)) {
-      return Promise.reject({
-        code: 'REQUEST_CANCELLED',
-        message: 'Request was cancelled',
-        isCancelled: true
-      });
-    }
-    
-    // Handle 401 Unauthorized (token refresh)
-    if (error.response?.status === 401 && !originalRequest?._retry) {
-      originalRequest._retry = true;
+      const { accessToken } = response.data;
+      localStorage.setItem('access_token', accessToken);
       
-      try {
-        // Try to refresh the token
-        const refreshToken = localStorage.getItem('refresh_token');
-        if (!refreshToken) {
-          throw new Error('No refresh token available');
-        }
-        
-        const response = await axios.post(
-          `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api'}/auth/refresh-token`,
-          { refreshToken },
-          { withCredentials: true }
-        );
-        
-        const { accessToken } = response.data;
-        localStorage.setItem('access_token', accessToken);
-        
-        // Update the authorization header
-        originalRequest.headers.Authorization = `Bearer ${accessToken}`;
-        
-        // Retry the original request
-        return apiClient(originalRequest);
-      } catch (refreshError) {
-        // If refresh fails, log out the user
-        if (refreshError instanceof Error) {
-          logError(refreshError, 'auth.refresh_token', {
-            requestId,
-            url: originalRequest?.url,
-          });
-        } else {
-          logError(new Error(String(refreshError)), 'auth.refresh_token', {
-            requestId,
-            url: originalRequest?.url,
-          });
-        }
-        
+      // Update the authorization header
+      originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+      
+      // Retry the original request
+      return apiClient(originalRequest);
+    } catch (refreshError) {
+      // If refresh fails, log out the user
+      if (refreshError instanceof Error) {
+        logError(refreshError, 'auth.refresh_token', {
+          requestId,
+          url: originalRequest?.url,
+        });
+      } else {
+        logError(new Error(String(refreshError)), 'auth.refresh_token', {
+          requestId,
+          url: originalRequest?.url,
+        });
         console.error('Session expired. Please log in again.');
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
