@@ -46,8 +46,6 @@ import {
   RequestWithId
 } from './middleware/error-handler';
 
-// Type for logError function
-declare function logError(error: Error, context?: Record<string, any>): void;
 
 // Import routes
 import { router as apiRouter } from './routes/index';
@@ -93,7 +91,7 @@ if (process.env.ENABLE_WEBSOCKETS === 'true') {
 import { configureSecurity, getSecurityConfig } from './config/security-config';
 
 // Configuration and logging
-import { logger } from './config/logger';
+import { logger, logError } from './config/logger';
 import { createRequestLogger } from './config/logger';
 
 declare global {

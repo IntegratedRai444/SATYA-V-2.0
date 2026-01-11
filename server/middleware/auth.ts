@@ -8,6 +8,7 @@ export interface AuthUser {
   id: string;
   email: string;
   role: string;
+  email_verified: boolean;
   user_metadata?: Record<string, any>;
   [key: string]: any; // Allow additional properties
 }
@@ -39,20 +40,26 @@ export const authenticateToken = (
     }
 
     // Verify token and cast to our AuthUser type
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as AuthUser;
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as Partial<AuthUser>;
     
     // Add user to request object with required properties
     if (!decoded.id || !decoded.email || !decoded.role) {
       throw new Error('Invalid token payload: missing required fields');
     }
     
+    // Ensure id is always a string and handle email_verified
+    const userId = String(decoded.id);
+    const emailVerified = Boolean(decoded.email_verified);
+    
+    // Create user object with all required fields
     req.user = {
       ...decoded, // Spread all properties first
       // Explicitly set required fields to ensure correct types
-      id: decoded.id,
+      id: userId,
       email: decoded.email,
       role: decoded.role,
-      user_metadata: decoded.user_metadata
+      email_verified: emailVerified,
+      user_metadata: decoded.user_metadata || {}
     };
     
     // Continue to the next middleware/route handler

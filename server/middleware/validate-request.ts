@@ -110,17 +110,19 @@ type ValidationMiddleware = (req: Request, res: Response, next: NextFunction) =>
 export const validate = <T extends ZodTypeAny>(
   validations: ValidationChain[],
   schema?: T
-): (ValidationChain | ValidationMiddleware)[] => {
-  const middlewares: (ValidationChain | ValidationMiddleware)[] = [
-    ...validations,
-    validateRequest(validations)
-  ];
+): Array<ValidationChain | ValidationMiddleware> => {
+  // Create a new array with the validation chains
+  const middlewareArray: Array<ValidationChain | ValidationMiddleware> = [...validations];
   
+  // Add the validation middleware that runs the validations
+  middlewareArray.push(validateRequest(validations) as unknown as ValidationMiddleware);
+  
+  // Add schema validation if provided
   if (schema) {
-    middlewares.push(validateSchema(schema) as ValidationMiddleware);
+    middlewareArray.push(validateSchema(schema) as unknown as ValidationMiddleware);
   }
   
-  return middlewares;
+  return middlewareArray;
 };
 
 // Extend Express Request type to include validated data

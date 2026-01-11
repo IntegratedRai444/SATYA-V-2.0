@@ -11,6 +11,10 @@ export const users = pgTable("users", {
   fullName: varchar("full_name", { length: 255 }),
   apiKey: text("api_key").unique(),
   role: varchar("role", { length: 50 }).notNull().default("user"),
+  failedLoginAttempts: integer("failed_login_attempts").notNull().default(0),
+  lastFailedLogin: timestamp("last_failed_login"),
+  isLocked: boolean("is_locked").notNull().default(false),
+  lockoutUntil: timestamp("lockout_until"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

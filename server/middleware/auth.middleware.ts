@@ -14,6 +14,7 @@ declare module 'express-serve-static-core' {
       id: string;
       email: string;
       role: string;
+      email_verified: boolean;
       user_metadata?: Record<string, any>;
     };
     rateLimit?: {

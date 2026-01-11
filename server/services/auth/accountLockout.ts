@@ -1,5 +1,5 @@
 import { db } from '../../db';
-import { users } from '../../db/schema';
+import { users } from '../../../shared/schema';
 import { eq } from 'drizzle-orm';
 import { logger } from '../../config/logger';
 
@@ -35,7 +35,9 @@ export async function handleFailedLogin(email: string, ipAddress: string): Promi
       .set({
         failedLoginAttempts: failedAttempts,
         lastFailedLogin: now,
-        isActive: !isLocked
+        isLocked: isLocked,
+        lockoutUntil: isLocked ? new Date(now.getTime() + LOCKOUT_DURATION_MS) : null,
+        updatedAt: new Date()
       })
       .where(eq(users.id, user.id));
 
@@ -61,7 +63,9 @@ export async function resetFailedLoginAttempts(userId: number): Promise<void> {
       .set({
         failedLoginAttempts: 0,
         lastFailedLogin: null,
-        isActive: true
+        isLocked: false,
+        lockoutUntil: null,
+        updatedAt: new Date()
       })
       .where(eq(users.id, userId));
   } catch (error) {

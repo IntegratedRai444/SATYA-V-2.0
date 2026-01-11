@@ -1,5 +1,4 @@
-import { Router } from 'express';
-import type { Request as ExpressRequest, Response, NextFunction } from 'express';
+import { Router, type Request as ExpressRequest, type Response, type NextFunction, type RequestHandler } from 'express';
 import { body, type ValidationChain } from 'express-validator';
 import { validateRequest } from '../middleware/validate-request';
 import { logger } from '../config/logger';
@@ -14,8 +13,25 @@ import {
 } from '../middleware/auth.middleware';
 import { supabase } from '../config/supabase';
 
-// Use the Request type from auth middleware
-type Request = AuthRequest & ExpressRequest;
+import { User as SupabaseUser } from '@supabase/supabase-js';
+
+// Use the same user type as defined in auth.middleware.ts
+type AuthUser = {
+  id: string;
+  email: string;
+  role: string;
+  email_verified: boolean;
+  user_metadata?: Record<string, any>;
+};
+
+// Extend the Express Request type to include our auth user
+declare module 'express-serve-static-core' {
+  interface Request {
+    user?: AuthUser;
+  }
+}
+
+type Request = Express.Request;
 
 export const authRouter = Router();
 
@@ -57,37 +73,37 @@ authRouter.post(
     body('fullName').optional(),
     validateRequest,
     authLimiter as any, // Type assertion for express-rate-limit
-    csrfProtection
-  ],
-  async (req: ExpressRequest, res: Response) => {
-    try {
-      const { email, password, username, fullName } = req.body;
-      
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: `${process.env.CLIENT_URL}/auth/callback`
-        },
-      });
+    csrfProtection,
+    async (req: ExpressRequest, res: Response) => {
+      try {
+        const { email, password, username, fullName } = req.body;
+        
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: `${process.env.CLIENT_URL}/auth/callback`
+          },
+        });
 
-      if (error) {
-        throw error;
+        if (error) {
+          throw error;
+        }
+        
+        res.status(201).json({
+          success: true,
+          message: 'Signup successful. Please check your email for verification.',
+          user: data.user,
+        });
+      } catch (error: unknown) {
+        logger.error('Signup error:', error);
+        res.status(400).json({
+          success: false,
+          error: error instanceof Error ? error.message : 'Signup failed',
+        });
       }
-      
-      res.status(201).json({
-        success: true,
-        message: 'Signup successful. Please check your email for verification.',
-        user: data.user
-      });
-    } catch (error: unknown) {
-      logger.error('Signup error:', error);
-      res.status(400).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Signup failed'
-      });
     }
-  }
+  ]
 );
 
 
@@ -99,9 +115,9 @@ authRouter.post(
     body('password').notEmpty().withMessage('Password is required'),
     validateRequest,
     loginLimiter as any, // Type assertion for express-rate-limit
-    csrfProtection // CSRF protection enabled for login
+    csrfProtection as any // CSRF protection enabled for login
   ],
-  async (req: ExpressRequest, res: Response) => {
+  async (req: ExpressRequest, res: Response, next: NextFunction) => {
     try {
       const { email, password } = req.body;
       
@@ -155,83 +171,90 @@ authRouter.post(
 );
 
 // Refresh session
-authRouter.post('/refresh', [
-  csrfProtection, 
-  refreshTokenLimiter as any, // Type assertion needed due to express-rate-limit types
-  async (req: ExpressRequest, res: Response, next: NextFunction) => {
-  try {
-    const { refresh_token } = req.body as { refresh_token?: string };
-    
-    if (!refresh_token) {
-      return res.status(400).json({
-        success: false,
-        code: 'REFRESH_TOKEN_REQUIRED',
-        message: 'Refresh token is required'
-      });
-    }
+authRouter.post<{}, any, { refresh_token?: string }>(
+  '/refresh',
+  [
+    csrfProtection as any,
+    refreshTokenLimiter as any,
+    async (req: ExpressRequest, res: Response) => {
+      try {
+        const { refresh_token } = req.body;
+        
+        if (!refresh_token) {
+          return res.status(400).json({
+            success: false,
+            code: 'REFRESH_TOKEN_REQUIRED',
+            message: 'Refresh token is required'
+          });
+        }
 
-    const { data, error } = await supabase.auth.refreshSession({
-      refresh_token
-    });
-    
-    if (error || !data.session) {
-      logger.warn('Failed to refresh session', { 
-        error: error?.message || 'No session data returned',
-        hasSession: !!data?.session,
-        ip: req.ip
-      });
-      
-      return res.status(401).json({
-        success: false,
-        code: 'INVALID_REFRESH_TOKEN',
-        message: 'Invalid or expired refresh token. Please log in again.'
-      });
-    }
-    
-    // Generate new CSRF token for the session
-    const { token: csrfToken, cookie: csrfCookie } = generateCsrfToken();
-    
-    // Set the CSRF token as HTTP-only cookie
-    res.setHeader('Set-Cookie', csrfCookie);
-    
-    // Return the new tokens and user data
-    res.json({
-      success: true,
-      access_token: data.session.access_token,
-      refresh_token: data.session.refresh_token,
-      expires_in: data.session.expires_in,
-      token_type: data.session.token_type,
-      csrf_token: csrfToken,
-      user: {
-        id: data.user?.id,
-        email: data.user?.email,
-        role: data.user?.user_metadata?.role || 'user',
-        email_confirmed_at: data.user?.email_confirmed_at,
-        last_sign_in_at: data.user?.last_sign_in_at
+        const { data, error } = await supabase.auth.refreshSession({
+          refresh_token
+        });
+        
+        if (error || !data.session) {
+          logger.warn('Failed to refresh session', { 
+            error: error?.message || 'No session data returned',
+            hasSession: !!data?.session,
+            ip: req.ip
+          });
+          
+          return res.status(401).json({
+            success: false,
+            code: 'INVALID_REFRESH_TOKEN',
+            message: 'Invalid or expired refresh token. Please log in again.'
+          });
+        }
+        
+        // Generate new CSRF token for the session
+        const { token: csrfToken, cookie: csrfCookie } = generateCsrfToken();
+        
+        // Set the CSRF token as HTTP-only cookie
+        res.setHeader('Set-Cookie', csrfCookie);
+        
+        // Return the new tokens and user data
+        return res.json({
+          success: true,
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token,
+          expires_in: data.session.expires_in,
+          token_type: data.session.token_type,
+          csrf_token: csrfToken,
+          user: {
+            id: data.user?.id,
+            email: data.user?.email,
+            role: data.user?.user_metadata?.role || 'user',
+            email_confirmed_at: data.user?.email_confirmed_at,
+            last_sign_in_at: data.user?.last_sign_in_at
+          }
+        });
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error during refresh';
+        logger.error('Session refresh error:', { 
+          error: errorMessage,
+          stack: error instanceof Error ? error.stack : undefined,
+          ip: req.ip
+        });
+        
+        return res.status(500).json({
+          success: false,
+          code: 'REFRESH_ERROR',
+          message: 'An error occurred while refreshing the session',
+          error: process.env.NODE_ENV === 'development' ? errorMessage : undefined
+        });
       }
-    });
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error during refresh';
-    logger.error('Session refresh error:', { 
-      error: errorMessage,
-      stack: error instanceof Error ? error.stack : undefined,
-      ip: req.ip
-    });
-    
-    res.status(500).json({
-      success: false,
-      code: 'REFRESH_ERROR',
-      message: 'An error occurred while refreshing the session',
-      error: process.env.NODE_ENV === 'development' ? errorMessage : undefined
-    });
-  }
-});
+    }
+  ]
+);
 
 // Get current user
-authRouter.get(
+authRouter.get<{}, any, {}, {}>(
   '/me', 
-  [authenticate, authLimiter, csrfProtection],
-  async (req: Request, res: Response) => {
+  [
+    authenticate as any,
+    authLimiter as any,
+    csrfProtection as any,
+    async (req: Request, res: Response) => {
     try {
       // Get fresh user data from Supabase
       const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -247,28 +270,34 @@ authRouter.get(
         .eq('id', user.id)
         .single();
       
-      res.json({
+      return res.json({
         success: true,
         user: {
-          ...user,
-          ...userData
+          id: user.id,
+          email: user.email,
+          role: user.user_metadata?.role || 'user',
+          ...(userData || {})
         }
       });
-    } catch (error: unknown) {
-      logger.error('Get current user error:', error);
-      res.status(500).json({
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch user profile';
+      logger.error('Profile fetch error:', { error: errorMessage });
+      return res.status(500).json({
         success: false,
-        error: 'Failed to fetch user data'
+        code: 'PROFILE_FETCH_ERROR',
+        message: 'Failed to fetch user profile'
       });
     }
   }
-);
+] as RequestHandler[]);
 
 // Logout
-authRouter.post(
-  '/logout', 
-  [authenticate, csrfProtection],
-  async (req: Request, res: Response) => {
+authRouter.post<{}, any, {}, {}>(
+  '/logout',
+  [
+    authenticate as any,
+    csrfProtection as any,
+    async (req: Request, res: Response) => {
     try {
       // Clear Supabase session
       await supabase.auth.signOut();
@@ -276,9 +305,9 @@ authRouter.post(
       // Clear cookies
       res.clearCookie('sb-access-token');
       
-      res.json({ 
-        success: true, 
-        message: 'Logged out successfully' 
+      res.json({
+        success: true,
+        message: 'Logged out successfully'
       });
     } catch (error: unknown) {
       logger.error('Logout error:', error);
@@ -287,78 +316,8 @@ authRouter.post(
         error: 'Failed to log out'
       });
     }
-  }
-);
-
-// Request password reset
-authRouter.post(
-  '/reset-password',
-  [body('email').isEmail().normalizeEmail(), csrfProtection],
-  validateRequest,
-  async (req: Request, res: Response) => {
-    try {
-      const { email } = req.body;
-      const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${process.env.CLIENT_URL}/reset-password`
-      });
-
-      if (error) {
-        throw error;
-      }
-      
-      res.json({
-        success: true,
-        message: 'Password reset email sent'
-      });
-    } catch (error: unknown) {
-      logger.error('Password reset request error:', error);
-      res.status(400).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Password reset request failed'
-      });
     }
-// Requires authentication
-// Uses the Supabase Admin API to update user metadata
-authRouter.patch(
-  '/profile',
-  [
-    authenticate as any, // Type assertion for custom middleware
-    csrfProtection,
-    body('fullName').optional().isString().trim().isLength({ max: 100 }),
-    body('username').optional().isString().trim().isLength({ min: 3, max: 30 }),
-    body('avatarUrl').optional().isString().trim().isURL()
-  ].filter(Boolean) as ValidationChain[],
-  validateRequest,
-  async (req: Request, res: Response) => {
-    try {
-      const { fullName, username, avatarUrl } = req.body;
-      
-      // Update user metadata
-      const { data: { user }, error } = await supabase.auth.updateUser({
-        data: {
-          ...req.user?.user_metadata,
-          ...(fullName && { full_name: fullName }),
-          ...(username && { username }),
-          ...(avatarUrl && { avatar_url: avatarUrl })
-        }
-      });
-
-      if (error) {
-        throw error;
-      }
-      
-      res.json({
-        success: true,
-        user: user
-      });
-    } catch (error: unknown) {
-      logger.error('Profile update error:', error);
-      res.status(400).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Profile update failed'
-      });
-    }
-  }
+  ]
 );
 
 // ...
@@ -366,12 +325,11 @@ authRouter.patch(
 // Change password route
 authRouter.post(
   '/change-password',
-  authenticate as any, // Type assertion for custom middleware
   [
+    authenticate as any,
     body('currentPassword').notEmpty(),
-    body('newPassword').isLength({ min: 8 })
-  ],
-  validateRequest,
+    body('newPassword').isLength({ min: 8 }),
+    validateRequest as any,
   async (req: Request, res: Response) => {
     try {
       const { currentPassword, newPassword } = req.body;
@@ -393,7 +351,10 @@ authRouter.post(
 
       if (error) throw error;
       
-      res.json({ success: true, message: 'Password updated successfully' });
+      res.json({ 
+        success: true, 
+        message: 'Password changed successfully' 
+      });
     } catch (error: unknown) {
       logger.error('Change password error:', error);
       res.status(400).json({
@@ -401,73 +362,16 @@ authRouter.post(
         error: error instanceof Error ? error.message : 'Failed to change password'
       });
     }
-  }
-);
-
-// Email verification
-authRouter.get(
-  '/verify-email',
-  async (req: Request, res: Response) => {
-    try {
-      const { token } = req.query;
-      
-      if (!token || typeof token !== 'string') {
-        throw new Error('Verification token is required');
-      }
-      
-      const { error } = await supabase.auth.verifyOtp({
-        token_hash: token,
-        type: 'signup'
-      });
-
-      if (error) throw error;
-      
-      res.redirect(`${process.env.CLIENT_URL}/login?verified=true`);
-    } catch (error: unknown) {
-      logger.error('Email verification error:', error);
-      res.redirect(
-        `${process.env.CLIENT_URL}/login?error=${encodeURIComponent(
-          error instanceof Error ? error.message : 'Email verification failed'
-        )}`
-      );
     }
-  }
+  ]
 );
 
-// Resend verification email
-authRouter.post(
-  '/resend-verification',
-  [body('email').isEmail().normalizeEmail()],
-  validateRequest,
-  async (req: Request, res: Response) => {
-    try {
-      const { email } = req.body;
-      const { error } = await supabase.auth.resend({
-        type: 'signup',
-        email,
-        options: {
-          emailRedirectTo: `${process.env.CLIENT_URL}/login`,
-        },
-      });
-
-      if (error) throw error;
-
-      res.json({ 
-        success: true, 
-        message: 'Verification email resent successfully' 
-      });
-    } catch (error: unknown) {
-      logger.error('Resend verification email error:', error);
-      res.status(400).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to resend verification email',
-      });
-    }
-  }
-);
+// ...
 
 // Get active sessions (requires admin role)
-authRouter.get('/sessions', authenticate, async (req: Request, res: Response) => {
+authRouter.get('/sessions', 
+  authenticate as any, 
+  async (req: Request, res: Response) => {
   try {
     // Note: This requires admin privileges
     const { data: { users }, error } = await supabase.auth.admin.listUsers();
@@ -481,8 +385,8 @@ authRouter.get('/sessions', authenticate, async (req: Request, res: Response) =>
         email: user.email,
         lastSignIn: user.last_sign_in_at,
         createdAt: user.created_at,
-        isActive: user.last_sign_in_at !== null
-      }))
+        isActive: user.last_sign_in_at !== null,
+      })),
     });
   } catch (error: unknown) {
     logger.error('Get active sessions error:', error);
@@ -496,10 +400,11 @@ authRouter.get('/sessions', authenticate, async (req: Request, res: Response) =>
 // Revoke a specific session (admin only)
 authRouter.post(
   '/sessions/revoke',
-  authenticate,
-  [body('userId').notEmpty()],
-  validateRequest,
-  async (req: Request, res: Response) => {
+  [
+    authenticate as any,
+    body('userId').notEmpty(),
+    validateRequest as any,
+    async (req: Request, res: Response) => {
     try {
       const { userId } = req.body;
       
@@ -516,5 +421,6 @@ authRouter.post(
         error: error instanceof Error ? error.message : 'Failed to revoke session'
       });
     }
-  }
+    }
+  ]
 );

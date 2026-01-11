@@ -201,7 +201,8 @@ export const apiKeyAuth = (requiredRoles: string[] = []) => {
       const authUser: AuthUser = {
         id: user.id.toString(),
         email: user.email || '',
-        role: user.role || 'user'
+        role: user.role || 'user',
+        email_verified: false // Default to false since we don't have this information from the API key auth
       };
       req.user = authUser;
       

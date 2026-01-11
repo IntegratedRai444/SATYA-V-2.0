@@ -3,7 +3,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import pythonBridgeEnhanced from './python-http-bridge';
 import { fileProcessor } from './file-processor';
-import { webSocketManager } from './websocket/WebSocketManager';
+import { webSocketService } from './websocket/WebSocketManager';
 import { db } from '../db';
 import { users } from '@shared/schema';
 import { logSystemHealth, logger } from '../config/logger';
@@ -235,7 +235,7 @@ class HealthMonitor extends EventEmitter {
    */
   private checkWebSocket(): HealthMetrics['websocket'] {
     try {
-      const stats = webSocketManager.getStats();
+      const stats = webSocketService.getManager().getStats();
       const status = stats.totalConnections > 0 ? 'healthy' : 'degraded';
 
       logSystemHealth('websocket', status, {

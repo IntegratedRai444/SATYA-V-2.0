@@ -315,8 +315,8 @@ class PerformanceOptimizer extends EventEmitter {
    */
   private async getActiveConnections(): Promise<number> {
     try {
-      const { webSocketManager } = await import('./websocket/WebSocketManager');
-      const stats = webSocketManager.getStats();
+      const { webSocketService } = await import('./websocket/WebSocketManager');
+      const stats = webSocketService.getManager().getStats();
       return stats.totalConnections;
     } catch (error) {
       logger.error('Error getting active connections:', { error });

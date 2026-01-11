@@ -2,19 +2,13 @@ import { Request, Response, NextFunction, RequestHandler } from 'express';
 import { RateLimiterMemory, IRateLimiterOptions, RateLimiterRes } from 'rate-limiter-flexible';
 import { errorResponse } from '../utils/apiResponse';
 import { logger } from '../config/logger';
-
-// Define the AuthUser interface
-export interface AuthUser {
-  id: string | number;
-  [key: string]: any;
-}
+import type { AuthUser } from './auth';
 
 // Extend Express Request type
 declare global {
   namespace Express {
     interface Request {
       id?: string;
-      user?: AuthUser;
       ip?: string;
     }
   }
@@ -61,6 +55,7 @@ const rateLimiterOptions: Record<RateLimiterType, IRateLimiterOptions> = {
 // Create rate limiters for different scopes
 const createLimiters = (type: RateLimiterType) => {
   const options = rateLimiterOptions[type];
+  const points = options.points ?? 100; // Default to 100 points if undefined
   const baseConfig = {
     duration: options.duration,
     blockDuration: options.blockDuration,
@@ -70,17 +65,17 @@ const createLimiters = (type: RateLimiterType) => {
   return {
     ip: new RateLimiterMemory({
       ...baseConfig,
-      points: options.points,
+      points,
       keyPrefix: `${options.keyPrefix}_ip`,
     }),
     user: new RateLimiterMemory({
       ...baseConfig,
-      points: options.points,
+      points,
       keyPrefix: `${options.keyPrefix}_user`,
     }),
     global: new RateLimiterMemory({
       ...baseConfig,
-      points: options.points * 5, // Higher limit for global
+      points: points * 5, // Higher limit for global
       keyPrefix: `${options.keyPrefix}_global`,
     }),
   };

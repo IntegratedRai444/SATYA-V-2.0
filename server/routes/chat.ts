@@ -9,7 +9,9 @@ interface AuthenticatedRequest extends Request {
     id: string;
     email: string;
     role: string;
+    email_verified: boolean;
     user_metadata?: Record<string, any>;
+    [key: string]: any; // Allow additional properties
   };
 }
 import { logger } from '../config';

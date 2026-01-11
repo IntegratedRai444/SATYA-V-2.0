@@ -42,10 +42,11 @@ export const supabaseAuth = async (req: Request, res: Response, next: NextFuncti
       id: id || '',
       email: email, // We've already checked this exists
       role: role || 'user',
+      email_verified: user_metadata?.email_verified || false, // Default to false if not provided
       user_metadata: user_metadata || {},
       // Include other Supabase user properties
       ...rest
-    } as const;
+    };
 
     // Attach user to request object
     req.user = authenticatedUser;
