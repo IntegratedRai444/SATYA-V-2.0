@@ -1,23 +1,22 @@
-import axios, { AxiosInstance, AxiosResponse, AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig, AxiosHeaders } from 'axios';
+import axios, { AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { metrics, trackError as logError } from '@/lib/services/metrics';
 import { getCsrfToken } from './services/csrfService';
 
 // Types
-type CacheEntry = {
+interface CacheEntry {
   timestamp: number;
   response: AxiosResponse;
   expiry: number;
-};
+}
 
-type RetryConfig = {
+interface RetryConfig {
   retries: number;
   retryDelay: number;
   retryOn: number[];
   maxRetryDelay: number;
-};
+}
 
-// Extend InternalAxiosRequestConfig to include our custom properties
 export interface RequestConfig extends InternalAxiosRequestConfig {
   id?: string;
   retryCount?: number;
@@ -29,6 +28,11 @@ export interface RequestConfig extends InternalAxiosRequestConfig {
     startTime: number;
     cacheKey?: string;
     fromCache?: boolean;
+    requestKey?: string;
+    source?: {
+      token: any;
+      cancel: (message?: string) => void;
+    };
   };
 }
 
@@ -48,9 +52,9 @@ const pendingRequests = new Map<string, Promise<AxiosResponse>>();
 
 // Helpers
 const generateCacheKey = (config: RequestConfig): string => {
-  const { method, url, params, data, paramsSerializer } = config;
-  const serializedParams = paramsSerializer ? paramsSerializer(params) : JSON.stringify(params);
-  const serializedData = typeof data === 'string' ? data : JSON.stringify(data);
+  const { method, url, params, data } = config;
+  const serializedParams = params ? JSON.stringify(params) : '';
+  const serializedData = data ? (typeof data === 'string' ? data : JSON.stringify(data)) : '';
   return `${method}:${url}:${serializedParams}:${serializedData}`;
 };
 
@@ -185,16 +189,16 @@ const createEnhancedAxiosInstance = (baseURL: string): AxiosInstance => {
   // Response interceptor for caching and error handling
   instance.interceptors.response.use(
     (response) => {
-      const { config, status, statusText, data } = response;
+      const { config } = response;
       const requestConfig = config as RequestConfig;
       const { requestId, cacheKey, startTime } = requestConfig.metadata || {};
       
       // Log successful request
       const duration = startTime ? Date.now() - startTime : 0;
-      console.log(`[${requestId}] ${requestConfig.method?.toUpperCase()} ${requestConfig.url} ${status} (${duration}ms)`);
+      console.log(`[${requestId}] ${requestConfig.method?.toUpperCase()} ${requestConfig.url} ${response.status} (${duration}ms)`);
       
       // Cache successful GET responses
-      if (requestConfig.method?.toUpperCase() === 'GET' && status === 200 && cacheKey) {
+      if (requestConfig.method?.toUpperCase() === 'GET' && response.status === 200 && cacheKey) {
         setCachedResponse(cacheKey, response, requestConfig.cacheTtl);
       }
       
@@ -206,7 +210,7 @@ const createEnhancedAxiosInstance = (baseURL: string): AxiosInstance => {
       return response;
     },
     async (error) => {
-      const { config, response } = error;
+      const { config } = error;
       const requestConfig = config as RequestConfig;
       const { retryCount = 0, retryConfig = {} } = requestConfig;
       const mergedRetryConfig = { ...DEFAULT_RETRY_CONFIG, ...retryConfig };
@@ -242,12 +246,9 @@ const createEnhancedAxiosInstance = (baseURL: string): AxiosInstance => {
 const authApiClient = createEnhancedAxiosInstance(import.meta.env.VITE_AUTH_API_URL);
 const analysisApiClient = createEnhancedAxiosInstance(import.meta.env.VITE_ANALYSIS_API_URL);
 
-// Reference to the auth service for token refresh
-let authService: any = null;
-
-// Function to set the auth service reference
-export const setAuthService = (service: any) => {
-  authService = service;
+// Function to set the auth service reference (kept for backward compatibility)
+export const setAuthService = () => {
+  // No-op: kept for backward compatibility
 };
 
 // Default export is the analysis client for backward compatibility
@@ -269,21 +270,21 @@ const processBatch = async () => {
   batchQueue = [];
   
   try {
-    const batchResponses = await Promise.all(
-      currentBatch.map(({ config }) => 
-        apiClient.request(config)
-          .then(res => ({ success: true, data: res.data }))
-          .catch(error => ({ success: false, error }))
-      )
+    const batchResponses = await Promise.allSettled(
+      currentBatch.map(({ config }) => apiClient.request(config))
     );
     
     // Resolve or reject each promise in the batch
     currentBatch.forEach(({ resolve, reject }, index) => {
-      const response = batchResponses[index];
-      if (response.success) {
+      const result = batchResponses[index];
+      if (result.status === 'fulfilled') {
+        const response = {
+          ...result.value,
+          config: result.value.config as RequestConfig
+        };
         resolve(response.data);
       } else {
-        reject(response.error);
+        reject(result.reason);
       }
     });
   } catch (error) {
@@ -306,7 +307,17 @@ apiClient.interceptors.request.use(
         batchQueue.push({
           key: generateCacheKey(config),
           config,
-          resolve: (data) => resolve({ ...config, data, status: 200, statusText: 'OK', headers: {}, config }),
+          resolve: (data: any) => {
+            const response: AxiosResponse = {
+              data,
+              status: 200,
+              statusText: 'OK',
+              headers: {},
+              config: config as InternalAxiosRequestConfig,
+              request: {}
+            };
+            resolve(response as any);
+          },
           reject
         });
       });
@@ -368,10 +379,15 @@ apiClient.interceptors.request.use(
     
     // Store the request promise for deduplication
     if (isIdempotent) {
-      const requestPromise = axios(requestConfig)
-        .finally(() => {
-          pendingRequests.delete(requestKey);
-        });
+      const requestPromise = axios({
+        ...requestConfig,
+        headers: {
+          ...requestConfig.headers,
+          'X-Request-ID': requestId
+        } as any
+      }).finally(() => {
+        pendingRequests.delete(requestKey);
+      });
       pendingRequests.set(requestKey, requestPromise);
       return requestPromise as any;
     }
@@ -387,16 +403,16 @@ apiClient.interceptors.request.use(
     });
   }
 );
-
-// Response interceptor for handling errors and tracking responses
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => {
-    const { requestId, startTime, requestKey } = (response.config as any).metadata || {};
-    
+    const config = response.config as RequestConfig;
+    const { requestId, startTime } = config.metadata || {};
+    const { status, statusText, data } = response;
+
     if (requestId && startTime) {
       const duration = Date.now() - startTime;
-      
-      // Track successful response
+
+      // Track successful response with all relevant data
       metrics.track({
         type: 'api',
         name: 'api.response',
@@ -404,27 +420,28 @@ apiClient.interceptors.response.use(
         metadata: {
           url: response.config.url,
           method: response.config.method?.toUpperCase(),
-          status: response.status,
-          statusText: response.statusText,
+          status,
+          statusText,
           requestId,
           duration,
           version: API_VERSION,
-          fromCache: response.headers['x-cache'] === 'HIT'
+          fromCache: (response.headers as any)['x-cache'] === 'HIT',
+          data: data ? JSON.stringify(data).substring(0, 200) : undefined
         },
       });
-      
+
       // Clean up request cache
-      if (requestKey) {
-        pendingRequests.delete(requestKey);
+      if (config.metadata?.requestKey) {
+        pendingRequests.delete(config.metadata.requestKey);
       }
     }
-    
+
     return response;
   },
-  async (error: AxiosError) => {
+  async (error) => {
     const originalRequest = error.config as any;
-    const { requestId, startTime, requestKey } = originalRequest?.metadata || {};
-    
+    const { requestId } = originalRequest?.metadata || {};
+
     // If error is not 401 or we've already retried, reject
     if (error.response?.status !== 401 || originalRequest._retry) {
       return Promise.reject(error);
@@ -507,74 +524,61 @@ apiClient.interceptors.response.use(
   }
 );
 
+// Cancel all pending requests is now available as api.cancelAllRequests()
 
-// Helper function to cancel all pending requests
-const cancelAllRequests = (reason = 'User navigated away') => {
-  pendingRequests.forEach((_, key) => {
-    const request = pendingRequests.get(key) as any;
-    if (request?.cancel) {
-      request.cancel(reason);
 export const api = {
-  get: <T = any>(
+  get: async <T = any>(
     url: string, 
     params?: any, 
-    config: RequestConfig = {}
+    config: any = {}
   ): Promise<T> => {
-    return apiClient.get<T>(url, { ...config, params })
-      .then(response => response.data)
-      .catch(handleApiError);
+    const response = await apiClient.get(url, { ...config, params });
+    return response.data;
   },
-  
-  post: <T = any, D = any>(
+
+  post: async <T = any, D = any>(
     url: string, 
     data?: D, 
-    config: RequestConfig = {}
+    config: any = {}
   ): Promise<T> => {
-    return apiClient.post<T>(url, data, config)
-      .then(response => response.data)
-      .catch(handleApiError);
+    const response = await apiClient.post(url, data, config);
+    return response.data;
   },
-  
-  put: <T = any, D = any>(
+
+  put: async <T = any, D = any>(
     url: string, 
     data?: D, 
-    config: RequestConfig = {}
+    config: any = {}
   ): Promise<T> => {
-    return apiClient.put<T>(url, data, config)
-      .then(response => response.data)
-      .catch(handleApiError);
+    const response = await apiClient.put(url, data, config);
+    return response.data;
   },
-  
-  delete: <T = any>(
+
+  delete: async <T = any>(
     url: string, 
-    config: RequestConfig = {}
+    config: any = {}
   ): Promise<T> => {
-    return apiClient.delete<T>(url, config)
-      .then(response => response.data || {} as T)
-      .catch(handleApiError);
+    const response = await apiClient.delete(url, config);
+    return response.data;
   },
-  
+
   // Batch multiple requests
   batch: <T = any>(requests: Array<() => Promise<T>>): Promise<T[]> => {
     return Promise.all(requests.map(fn => fn()));
   },
-  
+
   // Get the current API version
   getVersion: (): string => API_VERSION,
-  
+
   // Set authentication token
   setAuthToken: (token: string | null): void => {
     if (token) {
       apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      authApiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      analysisApiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     } else {
       delete apiClient.defaults.headers.common['Authorization'];
-      delete authApiClient.defaults.headers.common['Authorization'];
-      delete analysisApiClient.defaults.headers.common['Authorization'];
     }
   },
-  
+
   // Cancel a specific request by ID
   cancelRequest: (requestId: string, message: string = 'Request cancelled'): boolean => {
     const pendingRequest = pendingRequests.get(requestId);
@@ -586,68 +590,57 @@ export const api = {
     }
     return false;
   },
-  
+
   // Cancel all pending requests
   cancelAllRequests: (message: string = 'All requests cancelled'): void => {
     pendingRequests.forEach((_, requestId) => {
       api.cancelRequest(requestId, message);
     });
   },
-  
+
   // Clear the request cache
   clearCache: (): void => {
     requestCache.clear();
   },
   
   // Get cache statistics
-  getCacheStats: () => {
-    return {
-      size: requestCache.size,
-      keys: Array.from(requestCache.keys())
-    };
+  getCacheStats: () => ({
+    size: requestCache.size,
+    keys: Array.from(requestCache.keys())
+  }),
+  
+  // Error handling utility
+  handleError: (error: any): never => {
+    if (axios.isCancel(error)) {
+      throw new Error('Request was cancelled');
+    }
+    
+    if (error.response) {
+      const { status, data } = error.response;
+      const message = data?.message || error.message || 'An error occurred';
+      
+      const errorWithStatus = new Error(message) as any;
+      errorWithStatus.status = status;
+      errorWithStatus.data = data;
+      
+      throw errorWithStatus;
+    } else if (error.request) {
+      throw new Error('Network error - no response received');
+    } else {
+      throw new Error(error.message || 'Unknown error');
+    }
   }
 };
 
-// Error handling utility
-const handleApiError = (error: any): never => {
-  if (axios.isCancel(error)) {
-    throw new ApiError('Request was cancelled', 'CANCELLED', 0, error);
-  }
-  
-  if (error.response) {
-    // The request was made and the server responded with a status code
-    // that falls out of the range of 2xx
-    const { status, data, config } = error.response;
-    const message = data?.message || error.message || 'An error occurred';
-    
-    switch (status) {
-      case 400:
-        throw new BadRequestError(message, data, config);
-      case 401:
-        throw new UnauthorizedError(message, config);
-      case 403:
-        throw new ForbiddenError(message, config);
-      case 404:
-        throw new NotFoundError(message, config);
-      case 408:
-        throw new TimeoutError('Request timed out', config);
-      case 429:
-        throw new RateLimitError('Too many requests', config);
-      case 500:
-        throw new ServerError('Internal server error', data, config);
-      default:
-        throw new ApiError(message, 'API_ERROR', status, config);
-    }
-  } else if (error.request) {
-    // The request was made but no response was received
-    throw new NetworkError('Network error - no response received', error.config);
-  } else {
-    // Something happened in setting up the request that triggered an Error
-    throw new ApiError(error.message || 'Unknown error', 'UNKNOWN', 0, error.config);
-  }
-  api as default,
-  apiClient,
-  authApiClient,
-  analysisApiClient,
-  cancelAllRequests 
+// Client instances
+export const clients = {
+  main: apiClient,
+  auth: authApiClient,
+  analysis: analysisApiClient
 };
+
+// Response creation is handled by Axios internally
+
+// Export the API clients
+export { apiClient, authApiClient, analysisApiClient };
+export default api;

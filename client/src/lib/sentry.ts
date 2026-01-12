@@ -34,8 +34,14 @@ const ENVIRONMENT = import.meta.env.MODE || 'development';
 
 // Initialize Sentry
 const initSentry = (): void => {
+  // Skip Sentry initialization in development or if DSN is not configured
+  if (import.meta.env.DEV) {
+    console.log('[Sentry] Running in development mode - Sentry will not be initialized');
+    return;
+  }
+
   if (!SENTRY_DSN) {
-    console.warn('Sentry DSN not configured. Error reporting will be disabled.');
+    console.warn('[Sentry] DSN not configured - error reporting will be disabled');
     return;
   }
 

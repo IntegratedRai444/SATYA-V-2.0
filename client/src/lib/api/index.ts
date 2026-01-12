@@ -1,5 +1,5 @@
 // Core API client
-export { api as default, apiClient, authApiClient, cancelAllRequests } from './client';
+export { api as default, apiClient, authApiClient } from './client';
 
 // Services
 export { default as authService, type AuthResponse, type LoginCredentials, type RegisterData } from './services/authService';

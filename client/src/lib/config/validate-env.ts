@@ -151,17 +151,28 @@ export function validateEnvironment(): void {
  * Checks for hardcoded API URLs in the codebase (development only)
  */
 function checkForHardcodedUrls(): void {
+  // Skip URL checks in development
+  if (import.meta.env.DEV) {
+    return;
+  }
+
   // This is a client-side check, so we can only check the current page
   const scripts = Array.from(document.getElementsByTagName('script'));
   const hardcodedUrls = new Set<string>();
 
   scripts.forEach(script => {
     if (script.src) {
-      ['localhost', '127.0.0.1', 'http://', 'https://'].forEach(term => {
-        if (script.src.includes(term) && !script.src.includes(import.meta.env.VITE_API_URL)) {
-          hardcodedUrls.add(script.src);
-        }
-      });
+      const isViteDevServer = script.src.includes('@vite/client') || 
+                            script.src.includes('src/main.tsx') ||
+                            script.src.includes('@react-refresh');
+      
+      if (!isViteDevServer) {
+        ['localhost', '127.0.0.1', 'http://', 'https://'].forEach(term => {
+          if (script.src.includes(term) && !script.src.includes(import.meta.env.VITE_API_URL)) {
+            hardcodedUrls.add(script.src);
+          }
+        });
+      }
     }
   });
 

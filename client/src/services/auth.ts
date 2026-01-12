@@ -79,7 +79,7 @@ export const login = async (username: string, password: string, role?: 'user' | 
     }
 
     const response = await apiClient.post<AuthResponse>(
-      '/api/auth/login', 
+      '/auth/login', 
       {
         username: sanitizedUsername,
         password,
