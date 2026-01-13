@@ -62,20 +62,41 @@ class Settings(BaseSettings):
             "http://localhost:3000",
             "http://127.0.0.1:3000",
             "http://localhost:5173",
+            "http://127.0.0.1:5173",
             "https://satyaai.app",
+            "https://www.satyaai.app"
         ],
         env=["CORS_ALLOW_ORIGINS", "CORS_ORIGIN"],
     )
     CORS_ALLOW_METHODS: List[str] = Field(
-        default=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        default=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
         env=["CORS_ALLOW_METHODS", "CORS_METHODS"],
     )
-    CORS_ALLOW_HEADERS: List[str] = Field(default=["*"], env="CORS_ALLOW_HEADERS")
+    CORS_ALLOW_HEADERS: List[str] = Field(
+        default=[
+            "*",
+            "Content-Type",
+            "Authorization",
+            "X-Requested-With",
+            "Accept",
+            "X-API-Key",
+            "X-Request-Id",
+            "X-CSRF-Token"
+        ],
+        env="CORS_ALLOW_HEADERS"
+    )
     CORS_EXPOSE_HEADERS: List[str] = Field(
-        default=["X-Request-ID", "X-RateLimit-Limit", "X-RateLimit-Remaining"],
+        default=[
+            "Content-Length",
+            "Content-Type",
+            "X-Request-ID",
+            "X-RateLimit-Limit",
+            "X-RateLimit-Remaining",
+            "X-RateLimit-Reset"
+        ],
         env="CORS_EXPOSE_HEADERS",
     )
-    CORS_MAX_AGE: int = Field(default=600, env="CORS_MAX_AGE")  # 10 minutes
+    CORS_MAX_AGE: int = Field(default=86400, env="CORS_MAX_AGE")  # 24 hours
     CORS_CREDENTIALS: bool = Field(default=True, env="CORS_CREDENTIALS")
 
     # Database

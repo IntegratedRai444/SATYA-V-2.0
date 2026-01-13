@@ -223,24 +223,39 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ALLOW_ORIGINS,
-    allow_credentials=True,
+    allow_credentials=settings.CORS_CREDENTIALS,
     allow_methods=settings.CORS_ALLOW_METHODS,
     allow_headers=settings.CORS_ALLOW_HEADERS,
     expose_headers=settings.CORS_EXPOSE_HEADERS,
     max_age=settings.CORS_MAX_AGE,
 )
 
-
-# Handle OPTIONS method for CORS preflight
-@app.options("/api/{rest_of_path:path}")
-async def preflight_handler(request: Request, rest_of_path: str):
-    response = JSONResponse(content={})
-    response.headers["Access-Control-Allow-Origin"] = request.headers.get("Origin", "*")
-    response.headers["Access-Control-Allow-Methods"] = "POST, GET, DELETE, PUT, OPTIONS"
-    response.headers[
-        "Access-Control-Allow-Headers"
-    ] = "Content-Type, Authorization, X-Requested-With"
+# Handle OPTIONS method for CORS preflight for all routes
+@app.options("/{full_path:path}")
+async def preflight_handler(request: Request, full_path: str):
+    response = JSONResponse(
+        content={"status": "ok"},
+        status_code=200
+    )
+    
+    # Get the origin from the request
+    origin = request.headers.get("Origin")
+    
+    # Set CORS headers
+    if origin in settings.CORS_ALLOW_ORIGINS or any(
+        origin and origin.startswith(domain) 
+        for domain in ["http://localhost", "https://satyaai.app"]
+    ):
+        response.headers["Access-Control-Allow-Origin"] = origin
+    
+    response.headers["Access-Control-Allow-Methods"] = ", ".join(settings.CORS_ALLOW_METHODS)
+    response.headers["Access-Control-Allow-Headers"] = ", ".join(h for h in settings.CORS_ALLOW_HEADERS if h != "*")
     response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Access-Control-Max-Age"] = str(settings.CORS_MAX_AGE)
+    
+    # Add security headers
+    response.headers["Vary"] = "Origin"
+    
     return response
 
 

@@ -25,26 +25,50 @@ export interface AuthResponse {
   user: User;
 }
 
+// Cookie management utilities
+const setCookie = (name: string, value: string, days: number = 7): void => {
+  const date = new Date();
+  date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+  const expires = `expires=${date.toUTCString()}`;
+  document.cookie = `${name}=${value};${expires};path=/;SameSite=Strict${window.location.protocol === 'https:' ? ';Secure' : ''}`;
+};
+
+const getCookie = (name: string): string | null => {
+  const nameEQ = name + '=';
+  const ca = document.cookie.split(';');
+  for (let i = 0; i < ca.length; i++) {
+    let c = ca[i];
+    while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+    if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
+  }
+  return null;
+};
+
+const deleteCookie = (name: string): void => {
+  document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+};
+
 // Token Management
 export const getAuthToken = (): string | null => {
-  return localStorage.getItem(ACCESS_TOKEN_KEY);
+  return getCookie(ACCESS_TOKEN_KEY);
 };
 
 export const getRefreshToken = (): string | null => {
-  return localStorage.getItem(REFRESH_TOKEN_KEY);
+  return getCookie(REFRESH_TOKEN_KEY);
 };
 
-export const setAuthToken = (token: string): void => {
-  localStorage.setItem(ACCESS_TOKEN_KEY, token);};
+export const setAuthToken = (token: string, rememberMe: boolean = false): void => {
+  setCookie(ACCESS_TOKEN_KEY, token, rememberMe ? 30 : 1); // 30 days if remember me, else 1 day
+};
 
-export const setRefreshToken = (token: string): void => {
-  localStorage.setItem(REFRESH_TOKEN_KEY, token);
+export const setRefreshToken = (token: string, rememberMe: boolean = false): void => {
+  setCookie(REFRESH_TOKEN_KEY, token, rememberMe ? 30 : 1);
 };
 
 export const removeAuthToken = (): void => {
-  localStorage.removeItem(ACCESS_TOKEN_KEY);
-  localStorage.removeItem(REFRESH_TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
+  deleteCookie(ACCESS_TOKEN_KEY);
+  deleteCookie(REFRESH_TOKEN_KEY);
+  deleteCookie(USER_KEY);
 };
 
 // User Management
@@ -58,7 +82,19 @@ const setCurrentUser = (user: User): void => {
 };
 
 // Auth Operations
-export const login = async (username: string, password: string, role?: 'user' | 'admin'): Promise<AuthResponse> => {
+export interface LoginCredentials {
+  username: string;
+  password: string;
+  rememberMe?: boolean;
+  role?: 'user' | 'admin';
+}
+
+export const login = async ({
+  username,
+  password,
+  rememberMe = false,
+  role
+}: LoginCredentials): Promise<AuthResponse> => {
   try {
     // Input validation
     if (!username || !password) {
@@ -78,41 +114,63 @@ export const login = async (username: string, password: string, role?: 'user' | 
       throw new Error('Password must be at least 8 characters long');
     }
 
-    const response = await apiClient.post<AuthResponse>(
-      '/auth/login', 
-      {
-        username: sanitizedUsername,
-        password,
-        role
+    // Get CSRF token first
+    const csrfResponse = await fetch(`${import.meta.env.VITE_API_URL}/auth/csrf-token`, {
+      credentials: 'include'
+    });
+    
+    if (!csrfResponse.ok) {
+      throw new Error('Failed to get CSRF token');
+    }
+    
+    const { token: csrfToken } = await csrfResponse.json();
+    
+    // Make login request with CSRF token
+    const response = await fetch(`${import.meta.env.VITE_API_URL}/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': csrfToken
       },
-      {
-        skipAuth: true, // Skip auth header for login request
-        timeout: 15000 // 15 second timeout
-      }
-    );
+      credentials: 'include',
+      body: JSON.stringify({ 
+        username: sanitizedUsername, 
+        password,
+        ...(role && { role })
+      })
+    });
 
-    if (!response.access_token || !response.refresh_token) {
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || 'Login failed');
+    }
+
+    const data = await response.json();
+
+    if (!data.access_token || !data.refresh_token) {
       throw new Error('Invalid response from server');
     }
 
     // Save tokens and user data
-    setAuthToken(response.access_token);
-    setRefreshToken(response.refresh_token);
-    setCurrentUser(response.user);
+    setAuthToken(data.access_token, rememberMe);
+    setRefreshToken(data.refresh_token, rememberMe);
     
-    // Set token timestamp for auto-logout
+    // Store user data in localStorage (excluding sensitive info)
+    const { password: _, ...safeUserData } = data.user;
+    setCurrentUser(safeUserData);
+
+    // Set token timestamp
     localStorage.setItem(TOKEN_TIMESTAMP_KEY, Date.now().toString());
     
-    logger.info('Login successful', { 
-      userId: response.user.id, 
-      role: response.user.role 
-    });
-    
-    return response;
+    logger.info('User logged in successfully');
+    return data;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Login failed';
     logger.error(`Login failed: ${errorMessage}`);
     logger.debug(`Login attempt with username: ${username ? 'provided' : 'not provided'}`);
+    
+    // Clear any partial auth state on failure
+    removeAuthToken();
     throw new Error(errorMessage);
   }
 };
@@ -179,48 +237,62 @@ export const logout = async (): Promise<void> => {
 export const refreshToken = async (): Promise<{ access_token: string; refresh_token?: string }> => {
   const refreshToken = getRefreshToken();
   if (!refreshToken) {
-    logger.warn('Refresh token not available');
     throw new Error('No refresh token available');
   }
 
   try {
-    const response = await apiClient.post<{ 
-      access_token: string; 
-      refresh_token?: string;
-      expires_in?: number;
-    }>(
-      '/api/auth/refresh',
-      { refresh_token: refreshToken },
-      { skipAuth: true, timeout: 10000 }
-    );
+    // Get CSRF token first
+    const csrfResponse = await fetch(`${import.meta.env.VITE_API_URL}/auth/csrf-token`, {
+      credentials: 'include'
+    });
     
-    if (!response.access_token) {
-      throw new Error('Invalid token response');
+    if (!csrfResponse.ok) {
+      throw new Error('Failed to get CSRF token');
     }
     
-    // Update the access token
-    setAuthToken(response.access_token);
+    const { token: csrfToken } = await csrfResponse.json();
     
-    // If a new refresh token is provided, update it
-    if (response.refresh_token) {
-      setRefreshToken(response.refresh_token);
+    // Make refresh token request
+    const response = await fetch(`${import.meta.env.VITE_API_URL}/auth/refresh`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': csrfToken
+      },
+      credentials: 'include',
+      body: JSON.stringify({ refresh_token: refreshToken })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || 'Token refresh failed');
     }
+
+    const data = await response.json();
+
+    if (!data.access_token) {
+      throw new Error('Invalid response from server');
+    }
+
+    // Update tokens
+    const rememberMe = localStorage.getItem(TOKEN_TIMESTAMP_KEY) ? 
+      Date.now() - parseInt(localStorage.getItem(TOKEN_TIMESTAMP_KEY) || '0', 10) > 7 * 24 * 60 * 60 * 1000 : false;
     
+    setAuthToken(data.access_token, rememberMe);
+    if (data.refresh_token) {
+      setRefreshToken(data.refresh_token, rememberMe);
+    }
+
     // Update token timestamp
     localStorage.setItem(TOKEN_TIMESTAMP_KEY, Date.now().toString());
     
-    logger.info('Token refreshed successfully');
-    
-    return {
-      access_token: response.access_token,
-      refresh_token: response.refresh_token
-    };
+    logger.debug('Token refreshed successfully');
+    return data;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Token refresh failed';
     logger.error(`Token refresh failed: ${errorMessage}`);
-    logger.debug(`Refresh token available: ${!!refreshToken}`);
     
-    // Clear auth data on refresh failure
+    // Clear auth state on refresh failure
     removeAuthToken();
     localStorage.removeItem(TOKEN_TIMESTAMP_KEY);
     

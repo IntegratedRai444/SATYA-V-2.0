@@ -233,28 +233,48 @@ const corsOptions = {
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://127.0.0.1:3000',
-      'https://satyaai.app',
-      'https://www.satyaai.app'
-    ];
+    // Get allowed origins from environment or use defaults
+    const allowedOrigins = process.env.CORS_ORIGIN 
+      ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+      : [
+          'http://localhost:3000',
+          'http://localhost:5173',
+          'http://127.0.0.1:3000',
+          'http://127.0.0.1:5173',
+          'https://satyaai.app',
+          'https://www.satyaai.app'
+        ];
     
-    if (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development') {
+    // Allow all subdomains of satyaai.app in production
+    const originPattern = /^https?:\/\/([a-z0-9-]+\.)?satyaai\.app(\/.*)?$/i;
+    
+    if (
+      allowedOrigins.includes(origin) || 
+      originPattern.test(origin) ||
+      process.env.NODE_ENV === 'development'
+    ) {
       callback(null, true);
     } else {
+      console.warn(`Blocked CORS request from origin: ${origin}`);
       callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
   allowedHeaders: [
     'Content-Type',
     'Authorization',
     'X-Requested-With',
     'Accept',
     'X-API-Key',
-    'X-Request-Id'
+    'X-Request-Id',
+    'X-CSRF-Token',
+    'Access-Control-Allow-Headers',
+    'Origin',
+    'Accept',
+    'X-Requested-With',
+    'Access-Control-Request-Method',
+    'Access-Control-Request-Headers'
   ],
   exposedHeaders: [
     'Content-Length',
@@ -262,7 +282,9 @@ const corsOptions = {
     'X-Request-Id',
     'X-RateLimit-Limit',
     'X-RateLimit-Remaining',
-    'X-RateLimit-Reset'
+    'X-RateLimit-Reset',
+    'X-Total-Count',
+    'Link'
   ],
   maxAge: 86400, // 24 hours
   preflightContinue: false,
@@ -270,13 +292,10 @@ const corsOptions = {
 };
 
 // Apply CORS middleware with options
-app.use(cors({
-  ...corsOptions,
-  // Enable preflight requests for all routes
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  credentials: true
-}));
+app.use(cors(corsOptions));
+
+// Handle preflight requests
+app.options('*', cors(corsOptions));
 
 // Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {

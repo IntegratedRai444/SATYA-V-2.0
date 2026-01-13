@@ -1,4 +1,11 @@
-import { db } from '../db';
+import { dbManager } from '../db'; // Database connection manager
+
+type UpdateTaskProgressData = {
+  progress: number;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  startedAt?: Date;
+  metadata?: string;
+};
 import { tasks, type Task, type InsertTask } from '@shared/schema';
 import { eq, and, desc } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
@@ -26,14 +33,31 @@ export interface TaskFilters {
 export interface ErrorInfo {
   message: string;
   code?: string;
-  details?: any;
+  details?: Record<string, unknown>;
+  stack?: string;
+}
+
+export interface DetectionDetail {
+  type: string;
+  confidence: number;
+  location?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  metadata?: Record<string, unknown>;
 }
 
 export interface AnalysisResult {
-  authenticity: string;
+  authenticity: 'real' | 'fake' | 'inconclusive';
   confidence: number;
-  detectionDetails: any[];
-  metadata?: any;
+  detectionDetails: DetectionDetail[];
+  metadata?: {
+    processingTime?: number;
+    modelVersion?: string;
+    [key: string]: unknown;
+  };
 }
 
 export class TaskManager {
@@ -52,10 +76,10 @@ export class TaskManager {
     try {
       const reportCode = this.generateReportCode(type);
       
-      const [task] = await db.insert(tasks).values({
+      const taskData = {
         userId,
         type,
-        status: 'queued',
+        status: 'queued' as const,
         progress: 0,
         fileName: fileInfo.name,
         fileSize: fileInfo.size,
@@ -66,7 +90,8 @@ export class TaskManager {
           originalName: fileInfo.name,
           uploadedAt: new Date().toISOString()
         })
-      }).returning();
+      };
+      const task = await dbManager.create('tasks', taskData) as unknown as Task;
 
       return task;
     } catch (error) {
@@ -82,13 +107,30 @@ export class TaskManager {
    */
   async getTaskStatus(taskId: number): Promise<Task | null> {
     try {
-      const [task] = await db
-        .select()
-        .from(tasks)
-        .where(eq(tasks.id, taskId))
-        .limit(1);
-
-      return task || null;
+      const task = await dbManager.findById('tasks', taskId.toString()) as Record<string, any> | null;
+      
+      if (!task) return null;
+      
+      // Map the database record to Task type
+      return {
+        id: task.id,
+        createdAt: new Date(task.createdAt),
+        updatedAt: task.updatedAt ? new Date(task.updatedAt) : null,
+        userId: task.userId,
+        type: task.type,
+        status: task.status,
+        progress: task.progress,
+        fileName: task.fileName,
+        fileSize: task.fileSize,
+        fileType: task.fileType,
+        filePath: task.filePath,
+        reportCode: task.reportCode,
+        result: task.result ? JSON.parse(task.result) : null,
+        error: task.error ? JSON.parse(task.error) : null,
+        startedAt: task.startedAt ? new Date(task.startedAt) : null,
+        completedAt: task.completedAt ? new Date(task.completedAt) : null,
+        metadata: task.metadata ? JSON.parse(task.metadata) : {}
+      } as Task;
     } catch (error) {
       logger.error('Error getting task status', error as Error);
       throw new Error('Failed to get task status');
@@ -107,7 +149,7 @@ export class TaskManager {
     message?: string
   ): Promise<void> {
     try {
-      const updateData: any = {
+      const updateData: UpdateTaskProgressData = {
         progress: Math.min(100, Math.max(0, progress)),
         status: progress === 0 ? 'queued' : progress === 100 ? 'completed' : 'processing'
       };
@@ -131,10 +173,7 @@ export class TaskManager {
         }
       }
 
-      await db
-        .update(tasks)
-        .set(updateData)
-        .where(eq(tasks.id, taskId));
+      await dbManager.update('tasks', taskId.toString(), updateData);
     } catch (error) {
       logger.error('Error updating task progress', error as Error);
       throw new Error('Failed to update task progress');
@@ -148,15 +187,12 @@ export class TaskManager {
    */
   async completeTask(taskId: number, result: AnalysisResult): Promise<void> {
     try {
-      await db
-        .update(tasks)
-        .set({
-          status: 'completed',
-          progress: 100,
-          result: JSON.stringify(result),
-          completedAt: new Date()
-        })
-        .where(eq(tasks.id, taskId));
+      await dbManager.update('tasks', taskId.toString(), {
+        status: 'completed',
+        progress: 100,
+        result: JSON.stringify(result),
+        completedAt: new Date()
+      });
     } catch (error) {
       logger.error('Error completing task', error as Error);
       throw new Error('Failed to complete task');
@@ -170,14 +206,11 @@ export class TaskManager {
    */
   async failTask(taskId: number, error: ErrorInfo): Promise<void> {
     try {
-      await db
-        .update(tasks)
-        .set({
-          status: 'failed',
-          error: JSON.stringify(error),
-          completedAt: new Date()
-        })
-        .where(eq(tasks.id, taskId));
+      await dbManager.update('tasks', taskId.toString(), {
+        status: 'failed',
+        error: JSON.stringify(error),
+        completedAt: new Date()
+      });
     } catch (error) {
       logger.error('Error failing task', error as Error);
       throw new Error('Failed to mark task as failed');
@@ -190,35 +223,28 @@ export class TaskManager {
    * @param filters - Optional filters
    * @returns Array of tasks
    */
-  async getUserTasks(userId: number, filters?: TaskFilters): Promise<Task[]> {
+  async getUserTasks(userId: number, filters: TaskFilters = {}): Promise<Task[]> {
     try {
-      // Build where conditions
-      const conditions = [eq(tasks.userId, userId)];
+      // Build query options
+      const queryOptions: any = {
+        where: { userId },
+        orderBy: { createdAt: 'desc' }
+      };
       
-      if (filters?.status) {
-        conditions.push(eq(tasks.status, filters.status));
+      // Apply status filter if provided
+      if (filters.status) {
+        queryOptions.where.status = filters.status;
       }
-      
-      if (filters?.type) {
-        conditions.push(eq(tasks.type, filters.type));
-      }
-
-      let query = db
-        .select()
-        .from(tasks)
-        .where(and(...conditions))
-        .orderBy(desc(tasks.createdAt));
 
       // Apply pagination
-      if (filters?.limit) {
-        query = query.limit(filters.limit) as any;
+      if (filters.limit) {
+        queryOptions.limit = filters.limit;
+      }
+      if (filters.offset) {
+        queryOptions.offset = filters.offset;
       }
 
-      if (filters?.offset) {
-        query = query.offset(filters.offset) as any;
-      }
-
-      const userTasks = await query;
+      const userTasks = await dbManager.find('tasks', queryOptions) as unknown as Task[];
       return userTasks;
     } catch (error) {
       logger.error('Error getting user tasks', error as Error);
