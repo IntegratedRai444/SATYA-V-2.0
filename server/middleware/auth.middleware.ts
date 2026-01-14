@@ -415,24 +415,49 @@ export const requireRole = (roles: UserRole | UserRole[]) => {
 };
 
 // CSRF token generation and validation
-const CSRF_TOKEN_SECRET = process.env.CSRF_TOKEN_SECRET || 'your-secret-key';
-const CSRF_TOKEN_AGE = 24 * 60 * 60 * 1000; // 24 hours
+import crypto from 'crypto';
+
+const CSRF_TOKEN_SECRET = process.env.CSRF_TOKEN_SECRET;
+if (!CSRF_TOKEN_SECRET || CSRF_TOKEN_SECRET.length < 32) {
+  throw new Error('CSRF_TOKEN_SECRET must be at least 32 characters long');
+}
+
+const CSRF_TOKEN_AGE = 60 * 60 * 1000; // 1 hour (reduced from 24h)
+const CSRF_TOKEN_LENGTH = 64; // 256 bits
 
 /**
- * Generate a CSRF token
+ * Generate a CSRF token with HMAC
  */
-export const generateCsrfToken = (): { token: string; cookie: string } => {
-  const token = require('crypto').randomBytes(32).toString('hex');
+export const generateCsrfToken = (userId?: string): { token: string; cookie: string } => {
+  const randomBytes = crypto.randomBytes(32);
+  const timestamp = Date.now().toString();
+  const hmac = crypto.createHmac('sha256', CSRF_TOKEN_SECRET);
+  
+  // Include user ID in the token if available for session binding
+  const tokenData = userId ? `${userId}:${timestamp}` : timestamp;
+  hmac.update(tokenData);
+  
+  const token = `${randomBytes.toString('hex')}.${hmac.digest('hex')}`;
   const expires = new Date(Date.now() + CSRF_TOKEN_AGE);
-  const cookie = `csrf_token=${token}; Path=/; HttpOnly; SameSite=Strict; Expires=${expires.toUTCString()}` + 
-    (process.env.NODE_ENV === 'production' ? '; Secure' : '');
+  
+  // Enhanced cookie attributes
+  const cookie = [
+    `__Host-csrf_token=${token}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Strict',
+    'Secure',
+    'Partitioned',
+    `Max-Age=${CSRF_TOKEN_AGE / 1000}`,
+    `Expires=${expires.toUTCString()}`
+  ].join('; ');
   
   return { token, cookie };
 };
 
 /**
  * CSRF Protection Middleware
- * Validates CSRF tokens for state-changing requests using double-submit cookie pattern
+ * Validates CSRF tokens using double-submit cookie pattern with HMAC verification
  */
 export const csrfProtection = (req: Request, res: Response, next: NextFunction) => {
   // Skip CSRF check for safe HTTP methods
@@ -441,16 +466,28 @@ export const csrfProtection = (req: Request, res: Response, next: NextFunction) 
   }
 
   // Skip CSRF check for public endpoints that don't modify state
-  const publicEndpoints = ['/auth/csrf-token'];
+  const publicEndpoints = [
+    '/auth/csrf-token',
+    '/health',
+    '/api/health'
+  ];
+  
   if (publicEndpoints.some(ep => req.path.endsWith(ep))) {
     return next();
   }
 
-  // Get CSRF token from header
+  // Get CSRF token from header and cookie
   const csrfToken = req.headers['x-csrf-token'] as string;
-  const csrfCookie = req.cookies?.csrf_token;
+  const csrfCookie = req.cookies?.['__Host-csrf_token'];
 
   if (!csrfToken || !csrfCookie) {
+    logger.warn('CSRF token missing', {
+      path: req.path,
+      method: req.method,
+      hasToken: !!csrfToken,
+      hasCookie: !!csrfCookie
+    });
+    
     return res.status(403).json({
       success: false,
       code: 'CSRF_TOKEN_REQUIRED',
@@ -458,8 +495,15 @@ export const csrfProtection = (req: Request, res: Response, next: NextFunction) 
     });
   }
 
-  // Verify the token matches the cookie value (double-submit pattern)
+  // Verify tokens match (double-submit)
   if (csrfToken !== csrfCookie) {
+    logger.warn('CSRF token mismatch', {
+      path: req.path,
+      method: req.method,
+      tokenLength: csrfToken?.length,
+      cookieLength: csrfCookie?.length
+    });
+    
     return res.status(403).json({
       success: false,
       code: 'INVALID_CSRF_TOKEN',
@@ -467,6 +511,39 @@ export const csrfProtection = (req: Request, res: Response, next: NextFunction) 
     });
   }
 
+  // Verify token structure and HMAC
+  try {
+    const [randomPart, hmacValue] = csrfToken.split('.');
+    if (!randomPart || !hmacValue || randomPart.length !== 64 || hmacValue.length !== 64) {
+      throw new Error('Invalid token format');
+    }
+
+    // Recalculate HMAC
+    const hmac = crypto.createHmac('sha256', CSRF_TOKEN_SECRET);
+    hmac.update(randomPart);
+    const calculatedHmac = hmac.digest('hex');
+
+    if (!crypto.timingSafeEqual(
+      Buffer.from(hmacValue, 'hex'),
+      Buffer.from(calculatedHmac, 'hex')
+    )) {
+      throw new Error('Invalid token signature');
+    }
+  } catch (error) {
+    logger.warn('CSRF token validation failed', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      path: req.path,
+      method: req.method
+    });
+    
+    return res.status(403).json({
+      success: false,
+      code: 'INVALID_CSRF_TOKEN',
+      message: 'Invalid CSRF token format'
+    });
+  }
+
+  // Token is valid, proceed
   next();
 };
 

@@ -13,32 +13,211 @@ import { logger } from '../config/logger';
 const router = Router();
 const writeFile = promisify(fs.writeFile);
 
-// Configure multer for file uploads
+// Configure multer for secure file uploads with memory storage
 const storage = multer.memoryStorage();
+
+// Define allowed file types with their magic numbers and size limits (in bytes)
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+const ALLOWED_FILE_TYPES = {
+  'image/jpeg': { 
+    ext: '.jpg', 
+    magic: [0xFF, 0xD8, 0xFF],
+    maxSize: 10 * 1024 * 1024 // 10MB for JPEG
+  },
+  'image/png': { 
+    ext: '.png', 
+    magic: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+    maxSize: 10 * 1024 * 1024 // 10MB for PNG
+  },
+  'image/webp': { 
+    ext: '.webp', 
+    magic: [0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50],
+    maxSize: 10 * 1024 * 1024 // 10MB for WebP
+  },
+  'video/mp4': { 
+    ext: '.mp4', 
+    magic: [0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70],
+    maxSize: MAX_FILE_SIZE
+  },
+  'video/webm': { 
+    ext: '.webm', 
+    magic: [0x1A, 0x45, 0xDF, 0xA3],
+    maxSize: MAX_FILE_SIZE
+  },
+} as const;
+
+type AllowedMimeType = keyof typeof ALLOWED_FILE_TYPES;
+
+// Function to check file magic numbers
+const checkMagicNumbers = (buffer: Buffer, expectedMagic: number[]): boolean => {
+  if (buffer.length < expectedMagic.length) return false;
+  
+  for (let i = 0; i < expectedMagic.length; i++) {
+    // For WebP, skip 4 bytes after the first 4 bytes
+    if (i >= 4 && i < 8 && expectedMagic[0] === 0x52) {
+      continue;
+    }
+    if (buffer[i] !== expectedMagic[i] && expectedMagic[i] !== 0) {
+      return false;
+    }
+  }
+  return true;
+};
+
 const upload = multer({
   storage,
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB limit
+    fileSize: MAX_FILE_SIZE,
+    files: 1,
+    fields: 5, // Limit number of form fields
+    headerPairs: 20, // Limit number of header key-value pairs
   },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm'];
-    if (allowedTypes.includes(file.mimetype)) {
+    try {
+      // Validate MIME type
+      const mimeType = file.mimetype as AllowedMimeType;
+      const fileConfig = ALLOWED_FILE_TYPES[mimeType];
+      
+      if (!fileConfig) {
+        return cb(new Error(`Unsupported file type: ${file.mimetype}. Allowed types: ${Object.keys(ALLOWED_FILE_TYPES).join(', ')}`));
+      }
+
+      // Validate file extension
+      const ext = path.extname(file.originalname).toLowerCase();
+      if (ext !== fileConfig.ext) {
+        return cb(new Error(`Invalid file extension. Expected ${fileConfig.ext} for ${file.mimetype}`));
+      }
+
+      // Validate filename
+      const sanitizedFilename = path.basename(file.originalname).replace(/[^a-zA-Z0-9\-_.]/g, '');
+      if (sanitizedFilename !== file.originalname) {
+        return cb(new Error('Invalid characters in filename'));
+      }
+
+      // Check for path traversal
+      if (file.originalname.includes('..') || path.isAbsolute(file.originalname)) {
+        return cb(new Error('Invalid file path'));
+      }
+
+      // For small files, we can check magic numbers immediately
+      req.on('data', (chunk: Buffer) => {
+        if (chunk.length >= fileConfig.magic.length) {
+          const magic = chunk.slice(0, fileConfig.magic.length);
+          if (!checkMagicNumbers(magic, fileConfig.magic)) {
+            return cb(new Error('Invalid file signature'));
+          }
+        }
+      });
+
+      // Check file size against type-specific limit
+      if (file.size > fileConfig.maxSize) {
+        return cb(new Error(`File too large. Maximum size: ${formatBytes(fileConfig.maxSize)}`));
+      }
+
+      // Additional security checks
+      if (file.originalname !== sanitizedFilename) {
+        return cb(new Error('Invalid filename'));
+      }
+
       cb(null, true);
-    } else {
-      cb(new Error('Invalid file type'));
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error during file validation');
+      logger.error('File validation error', { 
+        error: err.message, 
+        filename: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size
+      });
+      cb(err);
     }
   },
 });
 
-// Helper function to handle analysis errors
-const handleAnalysisError = (error: unknown, res: Response) => {
-  const errorMessage = error instanceof Error ? error.message : 'Analysis failed';
-  logger.error('Analysis error:', error);
+// Helper function to format bytes
+function formatBytes(bytes: number, decimals = 2): string {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+// Helper function to handle analysis errors with proper typing and security
+const handleAnalysisError = (error: unknown, res: Response, context: Record<string, any> = {}) => {
+  // Create a safe error object
+  const safeError = error instanceof Error 
+    ? { 
+        name: error.name,
+        message: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      }
+    : { message: 'An unknown error occurred' };
+  
+  // Log the error with context (redacting sensitive data)
+  logger.error('Analysis error', {
+    ...safeError,
+    ...context,
+    // Redact sensitive data from context
+    headers: undefined,
+    body: undefined,
+    file: context.file ? '[REDACTED]' : undefined,
+  });
+
+  // Return a sanitized error response
   return res.status(400).json({
     success: false,
-    error: errorMessage,
+    code: 'ANALYSIS_ERROR',
+    message: 'Analysis failed. Please try again with a different file.',
+    // Only include error details in development
+    ...(process.env.NODE_ENV === 'development' && { error: safeError.message }),
+    // Include a request ID for support
+    requestId: res.locals.requestId,
   });
 };
+
+// Input validation middleware for analysis requests
+const validateAnalysisRequest = [
+  // Check if file exists
+  (req: Request, res: Response, next: NextFunction) => {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        code: 'NO_FILE_PROVIDED',
+        message: 'No file was uploaded',
+      });
+    }
+    next();
+  },
+  
+  // Validate file size
+  (req: Request, res: Response, next: NextFunction) => {
+    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+    if (req.file && req.file.size > MAX_FILE_SIZE) {
+      return res.status(400).json({
+        success: false,
+        code: 'FILE_TOO_LARGE',
+        message: `File size exceeds the limit of ${MAX_FILE_SIZE / (1024 * 1024)}MB`,
+      });
+    }
+    next();
+  },
+  
+  // Validate MIME type
+  (req: Request, res: Response, next: NextFunction) => {
+    if (req.file) {
+      const allowedTypes = Object.keys(ALLOWED_FILE_TYPES);
+      if (!allowedTypes.includes(req.file.mimetype)) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_FILE_TYPE',
+          message: `Invalid file type. Allowed types: ${allowedTypes.join(', ')}`,
+        });
+      }
+    }
+    next();
+  }
+];
 
 // Analyze image
 router.post(

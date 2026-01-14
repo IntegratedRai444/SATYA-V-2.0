@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { logger } from './logger';
 
+// Rate limiting configuration
 export interface RateLimitRule {
   windowMs: number;
   maxRequests: number;
@@ -20,6 +21,7 @@ export interface SecurityConfig {
     refreshTokenExpiry: string | number;
     issuer: string;
     audience: string;
+    algorithm?: string;
   };
   
   // Rate Limiting
@@ -49,10 +51,11 @@ export interface SecurityConfig {
       preload: boolean;
     };
     contentSecurityPolicy: {
-      directives: Record<string, string[]>;
+      directives: Record<string, (string | boolean)[]>;
+      reportOnly?: boolean;
       reportUri?: string;
     };
-    featurePolicy: {
+    featurePolicy?: {
       features: Record<string, string[]>;
     };
   };
@@ -83,13 +86,13 @@ export interface SecurityConfig {
     requireLowercase: boolean;
     requireNumbers: boolean;
     requireSpecialChars: boolean;
-    maxAge: number; // days
-    history: number; // remember last N passwords
+    maxAge: number;
+    history: number;
   };
   
   // Session Management
   session: {
-    name: string;
+    name?: string;
     secret: string;
     resave: boolean;
     saveUninitialized: boolean;
@@ -97,9 +100,12 @@ export interface SecurityConfig {
       httpOnly: boolean;
       secure: boolean;
       sameSite: 'strict' | 'lax' | 'none';
-      maxAge: number;
+      maxAge?: number;
+      path?: string;
+      domain?: string;
     };
-    rolling: boolean;
+    rolling?: boolean;
+    unset?: 'destroy' | 'keep';
   };
   
   // API Security
@@ -120,19 +126,12 @@ export interface SecurityConfig {
   
   // Security Headers
   headers: {
-    // XSS Protection
     xssProtection: boolean;
-    // MIME type sniffing protection
     noSniff: boolean;
-    // Clickjacking protection
     xFrameOptions: boolean;
-    // MIME type security
     xContentTypeOptions: boolean;
-    // Referrer policy
     referrerPolicy: string;
-    // Permissions policy (previously Feature Policy)
     permissionsPolicy: Record<string, string[]>;
-    // Content Security Policy (CSP)
     csp: {
       defaultSrc: string[];
       scriptSrc: string[];
@@ -151,13 +150,11 @@ export interface SecurityConfig {
       reportUri?: string;
       reportOnly: boolean;
     };
-    // HTTP Strict Transport Security (HSTS)
     hsts: {
       maxAge: number;
       includeSubDomains: boolean;
       preload: boolean;
     };
-    // Expect-CT (Certificate Transparency)
     expectCt: {
       maxAge: number;
       enforce: boolean;
@@ -166,20 +163,104 @@ export interface SecurityConfig {
   };
 }
 
+// Validate required environment variables
+const requiredEnvVars = [
+  'JWT_SECRET',
+  'JWT_ISSUER',
+  'JWT_AUDIENCE',
+  'SESSION_SECRET',
+  'CSRF_TOKEN_SECRET'
+];
+
+// Check for missing environment variables
+const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+if (missingVars.length > 0 && process.env.NODE_ENV === 'production') {
+  throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
+}
+
 // Default security configuration
 export const defaultSecurityConfig: SecurityConfig = {
+  // JWT Configuration
+  jwt: {
+    secret: process.env.JWT_SECRET || 'dev-secret-key-change-in-production',
+    accessTokenExpiry: process.env.JWT_ACCESS_EXPIRY || '15m', // 15 minutes
+    refreshTokenExpiry: process.env.JWT_REFRESH_EXPIRY || '7d', // 7 days
+    issuer: process.env.JWT_ISSUER || 'satya-ai',
+    audience: process.env.JWT_AUDIENCE || 'satya-ai-client',
+    algorithm: 'HS256'
+  },
+
+  // Rate Limiting
+  rateLimiting: {
+    enabled: process.env.RATE_LIMIT_ENABLED !== 'false',
+    default: {
+      windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10), // 15 minutes
+      maxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
+      message: 'Too many requests, please try again later.',
+      keyGenerator: (req: Request) => {
+        // Rate limit by IP and user ID if authenticated
+        const ip = req.ip || 'unknown-ip';
+        const userId = req.user?.id || 'anonymous';
+        return `${ip}:${userId}`;
+      }
+    },
+    rules: {
+      // Authentication endpoints
+      login: {
+        windowMs: 15 * 60 * 1000, // 15 minutes
+        maxRequests: 5,
+        message: 'Too many login attempts. Please try again later.'
+      },
+      // Password reset endpoints
+      passwordReset: {
+        windowMs: 60 * 60 * 1000, // 1 hour
+        maxRequests: 3,
+        message: 'Too many password reset attempts. Please try again later.'
+      },
+      // File upload endpoints
+      fileUpload: {
+        windowMs: 5 * 60 * 1000, // 5 minutes
+        maxRequests: 10,
+        message: 'Too many file uploads. Please try again later.'
+      },
+      // API endpoints
+      api: {
+        windowMs: 60 * 1000, // 1 minute
+        maxRequests: 100,
+        message: 'API rate limit exceeded. Please try again later.'
+      }
+    }
+  },
+
+  // CORS Configuration
+  cors: {
+    enabled: true,
+    allowedOrigins: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000'],
+    allowedMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    exposedHeaders: ['X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset'],
+    credentials: true,
+    maxAge: 600 // 10 minutes
+  },
+
   // Security Headers
   securityHeaders: {
-    enabled: true,
+    enabled: process.env.SECURITY_HEADERS_ENABLED !== 'false',
+    // HSTS - Only enable in production with HTTPS
     hsts: {
       maxAge: 31536000, // 1 year in seconds
       includeSubDomains: true,
-      preload: true
+      preload: process.env.NODE_ENV === 'production'
     },
+    // Content Security Policy
     contentSecurityPolicy: {
       directives: {
         'default-src': ["'self'"],
-        'script-src': ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        'script-src': [
+          "'self'",
+          // Add hashes or nonces for inline scripts in production
+          ...(process.env.NODE_ENV === 'development' ? ["'unsafe-inline'", "'unsafe-eval'"] : [])
+        ],
         'style-src': ["'self'", "'unsafe-inline'"],
         'img-src': ["'self'", "data:", "https://*"],
         'connect-src': ["'self'", "https://*"],
@@ -191,6 +272,7 @@ export const defaultSecurityConfig: SecurityConfig = {
         'form-action': ["'self'"],
         'base-uri': ["'self'"]
       },
+      reportOnly: process.env.NODE_ENV === 'development',
       reportUri: process.env.CSP_REPORT_URI
     },
     featurePolicy: {
@@ -204,93 +286,79 @@ export const defaultSecurityConfig: SecurityConfig = {
     }
   },
 
-  // JWT Configuration
-  jwt: {
-    secret: process.env.JWT_SECRET || 'your-secret-key',
-    accessTokenExpiry: '15m', // 15 minutes
-    refreshTokenExpiry: '7d', // 7 days
-    issuer: 'satya-ai',
-    audience: 'satya-ai-client'
-  },
-  
-  // Rate Limiting
-  rateLimiting: {
-    enabled: true,
-    default: {
-      windowMs: 15 * 60 * 1000, // 15 minutes
-      maxRequests: 100,
-      skipSuccessfulRequests: true,
-      skipFailedRequests: false,
-      message: 'Too many requests, please try again later.'
+  // CSRF Protection
+  csrf: {
+    enabled: process.env.NODE_ENV !== 'test',
+    cookie: {
+      name: 'XSRF-TOKEN',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      path: '/',
+      domain: process.env.COOKIE_DOMAIN
     },
-    rules: {
-      // Authentication endpoints (login, register, password reset)
-      auth: {
-        windowMs: 15 * 60 * 1000, // 15 minutes
-        maxRequests: 5,
-        skipSuccessfulRequests: false,
-        skipFailedRequests: false,
-        message: 'Too many login attempts. Please try again later.',
-        keyGenerator: (req) => `auth_${req.ip}`,
-        handler: (req, res) => {
-          logger.warn(`Rate limit reached for authentication endpoint from IP: ${req.ip}`);
-          res.status(429).json({
-            success: false,
-            message: 'Too many login attempts. Please try again in 15 minutes.',
-            retryAfter: 15 * 60 // 15 minutes in seconds
-          });
-        }
-      },
-      // Public API endpoints
-      publicApi: {
-        windowMs: 60 * 1000, // 1 minute
-        maxRequests: 60,
-        skipSuccessfulRequests: true,
-        message: 'Too many requests, please try again later.'
-      },
-      // File upload endpoints
-      fileUpload: {
-        windowMs: 5 * 60 * 1000, // 5 minutes
-        maxRequests: 10,
-        message: 'Too many file uploads. Please try again later.'
-      },
-      // Sensitive operations (password changes, email updates)
-      sensitiveOperations: {
-        windowMs: 60 * 60 * 1000, // 1 hour
-        maxRequests: 5,
-        message: 'Too many attempts. Please try again later.'
-      },
-      // API key based rate limiting
-      apiKey: {
-        windowMs: 60 * 1000, // 1 minute
-        maxRequests: 100,
-        keyGenerator: (req) => req.headers['x-api-key'] as string || 'anonymous',
-        message: 'API rate limit exceeded. Please check your API key usage.'
-      }
-    }
+    protectedMethods: ['POST', 'PUT', 'PATCH', 'DELETE'],
+    exemptRoutes: [
+      '/api/webhooks',
+      '/api/auth/csrf-token',
+      '/health'
+    ],
+    headerName: 'X-CSRF-TOKEN',
+    fieldName: '_csrf',
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
   },
-  
-  // CORS
-  cors: {
-    enabled: true,
-    allowedOrigins: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000'],
-    allowedMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-    exposedHeaders: ['X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset'],
-    credentials: true,
-    maxAge: 600 // 10 minutes
+
+  // Password Policy
+  passwordPolicy: {
+    minLength: 12,
+    requireUppercase: true,
+    requireLowercase: true,
+    requireNumbers: true,
+    requireSpecialChars: true,
+    maxAge: 90, // days
+    history: 5 // remember last 5 passwords
   },
-  
+
+  // Session Management
+  session: {
+    name: 'sessionId',
+    secret: process.env.SESSION_SECRET || 'your-session-secret',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 1 week
+    },
+    rolling: true
+  },
+
+  // API Configuration
+  api: {
+    version: 'v1',
+    prefix: '/api',
+    jsonLimit: '10mb',
+    urlEncoded: true,
+    requestSizeLimit: '10mb'
+  },
+
+  // Logging Configuration
+  logging: {
+    securityEvents: true,
+    failedLoginAttempts: true,
+    sensitiveOperations: true
+  },
+
   // Security Headers
   headers: {
-    // Basic headers
     xssProtection: true,
     noSniff: true,
     xFrameOptions: true,
     xContentTypeOptions: true,
     referrerPolicy: 'strict-origin-when-cross-origin',
     
-    // Permissions Policy (previously Feature Policy)
     permissionsPolicy: {
       'geolocation': ["'none'"],
       'camera': ["'none'"],
@@ -323,34 +391,13 @@ export const defaultSecurityConfig: SecurityConfig = {
       'vertical-scroll': ["'none'"]
     },
     
-    // Content Security Policy (CSP)
     csp: {
       defaultSrc: ["'self'"],
-      scriptSrc: [
-        "'self'",
-        "'unsafe-inline'",
-        "'unsafe-eval'"
-      ],
-      styleSrc: [
-        "'self'",
-        "'unsafe-inline'"
-      ],
-      imgSrc: [
-        "'self'",
-        'data:',
-        'https:',
-        'http:'
-      ],
-      connectSrc: [
-        "'self'",
-        'https://api.example.com',
-        'wss://ws.example.com'
-      ],
-      fontSrc: [
-        "'self'",
-        'data:',
-        'https:'
-      ],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'", 'data:'],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],
       frameSrc: ["'none'"],
@@ -362,88 +409,23 @@ export const defaultSecurityConfig: SecurityConfig = {
       reportOnly: false
     },
     
-    // HTTP Strict Transport Security (HSTS)
     hsts: {
       maxAge: 31536000, // 1 year
       includeSubDomains: true,
       preload: true
     },
     
-    // Expect-CT (Certificate Transparency)
     expectCt: {
       maxAge: 86400, // 1 day
       enforce: true,
       reportUri: '/report-ct-violation'
     }
-  },
-  
-  // CSRF Protection
-  csrf: {
-    enabled: true,
-    cookie: {
-      name: 'XSRF-TOKEN',
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 86400000, // 24 hours
-      domain: process.env.COOKIE_DOMAIN || undefined,
-      path: '/',
-    },
-    protectedMethods: ['POST', 'PUT', 'PATCH', 'DELETE'],
-    exemptRoutes: [
-      '/api/webhooks/',
-      '/api/auth/csrf-token',
-      '/health'
-    ],
-    headerName: 'X-CSRF-TOKEN',
-    fieldName: '_csrf',
-    maxAge: 24 * 60 * 60 * 1000
-  },
-  
-  // Password Policies
-  passwordPolicy: {
-    minLength: 12,
-    requireUppercase: true,
-    requireLowercase: true,
-    requireNumbers: true,
-    requireSpecialChars: true,
-    maxAge: 90, // days
-    history: 5 // remember last 5 passwords
-  },
-  
-  // Session Management
-  session: {
-    name: 'satya.sid',
-    secret: process.env.SESSION_SECRET || 'your-session-secret',
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
-    },
-    rolling: true
-  },
-  
-  // API Security
-  api: {
-    version: 'v1',
-    prefix: '/api',
-    jsonLimit: '10mb',
-    urlEncoded: true,
-    requestSizeLimit: '10mb'
-  },
-  
-  // Logging
-  logging: {
-    securityEvents: true,
-    failedLoginAttempts: true,
-    sensitiveOperations: true
   }
 };
 
-// Export the configuration
-export const getSecurityConfig = () => defaultSecurityConfig;
+// Helper function to get security configuration
+export function getSecurityConfig(): SecurityConfig {
+  return defaultSecurityConfig;
+}
 
 export default defaultSecurityConfig;
