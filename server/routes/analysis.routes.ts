@@ -49,15 +49,11 @@ const ALLOWED_FILE_TYPES = {
 type AllowedMimeType = keyof typeof ALLOWED_FILE_TYPES;
 
 // Function to check file magic numbers
-const checkMagicNumbers = (buffer: Buffer, expectedMagic: number[]): boolean => {
+const checkMagicNumbers = (buffer: Buffer, expectedMagic: readonly number[]): boolean => {
   if (buffer.length < expectedMagic.length) return false;
   
   for (let i = 0; i < expectedMagic.length; i++) {
-    // For WebP, skip 4 bytes after the first 4 bytes
-    if (i >= 4 && i < 8 && expectedMagic[0] === 0x52) {
-      continue;
-    }
-    if (buffer[i] !== expectedMagic[i] && expectedMagic[i] !== 0) {
+    if (buffer[i] !== expectedMagic[i]) {
       return false;
     }
   }
@@ -100,12 +96,27 @@ const upload = multer({
       }
 
       // For small files, we can check magic numbers immediately
+      const chunks: Buffer[] = [];
+      
       req.on('data', (chunk: Buffer) => {
-        if (chunk.length >= fileConfig.magic.length) {
-          const magic = chunk.slice(0, fileConfig.magic.length);
+        chunks.push(chunk);
+        const buffer = Buffer.concat(chunks);
+        
+        if (buffer.length >= fileConfig.magic.length) {
+          const magic = buffer.slice(0, fileConfig.magic.length);
           if (!checkMagicNumbers(magic, fileConfig.magic)) {
             return cb(new Error('Invalid file signature'));
           }
+          // Remove the data listener once we've checked the magic numbers
+          req.removeAllListeners('data');
+        }
+      });
+      
+      req.on('end', () => {
+        // Handle any remaining data
+        const buffer = Buffer.concat(chunks);
+        if (buffer.length > 0 && buffer.length < fileConfig.magic.length) {
+          return cb(new Error('File too small to determine type'));
         }
       });
 

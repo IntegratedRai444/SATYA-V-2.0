@@ -566,11 +566,13 @@ async def websocket_endpoint(websocket: WebSocket):
 if __name__ == "__main__":
     import uvicorn
 
+    from config import settings
+    
     uvicorn.run(
         "main_api:app",
-        host="0.0.0.0",
-        port=3000,  # Changed to 3000 to match API client expectations
-        reload=True,  # Auto-reload on code changes
+        host=settings.HOST,
+        port=settings.PORT,
+        reload=settings.APP_ENV == "development",
         log_level="info",
         access_log=True,
     )

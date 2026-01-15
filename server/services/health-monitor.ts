@@ -4,9 +4,10 @@ import * as os from 'os';
 import pythonBridgeEnhanced from './python-http-bridge';
 import { fileProcessor } from './file-processor';
 import { webSocketService } from './websocket/WebSocketManager';
-import { db } from '../db';
+import { dbManager } from '../db';
 import { users } from '@shared/schema';
-import { logSystemHealth, logger } from '../config/logger';
+import { logger } from '../config/logger';
+const logSystemHealth = logger.info;
 import checkDiskSpace from 'check-disk-space';
 
 interface HealthMetrics {

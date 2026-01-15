@@ -1,8 +1,8 @@
-import { db } from '../db';
+import { dbManager } from '../db';
 import { users } from '@shared/schema';
 import { eq, and } from 'drizzle-orm';
 import crypto from 'crypto';
-import { InferSelectModel } from 'drizzle-orm';
+import type { InferSelectModel } from 'drizzle-orm';
 
 export class ApiKeyService {
   private static readonly KEY_LENGTH = 32;
@@ -42,18 +42,18 @@ export class ApiKeyService {
     try {
       const hashedKey = this.hashKey(apiKey);
       
-      const result = await db
-        .select({
-          id: users.id,
-          email: users.email,
-          role: users.role,
-          apiKey: users.apiKey
-        })
-        .from(users)
-        .where(eq(users.apiKey as any, hashedKey))
-        .limit(1);
+      const result = await dbManager.find('users', {
+        apiKey: hashedKey
+      }, { limit: 1 });
 
-      return result[0] || null;
+      if (!result || result.length === 0) return null;
+      
+      return {
+        id: result[0].id,
+        email: result[0].email,
+        role: result[0].role,
+        apiKey: result[0].apiKey
+      };
     } catch (error) {
       console.error('Error getting user by API key:', error);
       return null;

@@ -291,11 +291,12 @@ const corsOptions = {
   optionsSuccessStatus: 204
 };
 
-// Apply CORS middleware with options
-app.use(cors(corsOptions));
-
-// Handle preflight requests
-app.options('*', cors(corsOptions));
+// Apply CORS middleware with options for all routes
+app.use((req, res, next) => {
+  // Apply CORS headers for all routes
+  const corsHandler = cors(corsOptions);
+  corsHandler(req, res, next);
+});
 
 // Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {

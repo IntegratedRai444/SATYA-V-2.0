@@ -1,26 +1,121 @@
-import { db } from './db';
+import { dbManager, supabase } from './db';
 import { users, scans, userPreferences } from '../shared/schema';
 import * as bcrypt from 'bcrypt';
 import { sql, eq, and } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
+import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import postgres, { type Sql } from 'postgres';
 import path from 'path';
 import * as fs from 'fs';
 import { logger } from './config/logger';
+import { config } from './config/environment';
+
+// Initialize database connection
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  throw new Error('DATABASE_URL environment variable is required');
+}
+
+const client: Sql = postgres(connectionString);
+const db: PostgresJsDatabase = drizzle(client);
+
+// Ensure database schema exists
+async function ensureSchema() {
+  try {
+    logger.info('🔍 Verifying database schema...');
+    
+    // Drop users table if it exists to ensure clean state
+    await client`
+      DROP TABLE IF EXISTS users CASCADE;
+    `;
+    
+    // Create users table with all required columns
+    await client`
+      CREATE TABLE users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(255) NOT NULL UNIQUE,
+        password TEXT NOT NULL,
+        email VARCHAR(255),
+        full_name VARCHAR(255),
+        api_key TEXT UNIQUE,
+        role VARCHAR(50) NOT NULL DEFAULT 'user',
+        failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+        last_failed_login TIMESTAMP,
+        is_locked BOOLEAN NOT NULL DEFAULT false,
+        lockout_until TIMESTAMP,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `;
+    
+    logger.info('✅ Users table created');
+    
+    // Drop scans table if it exists
+    await client`
+      DROP TABLE IF EXISTS scans CASCADE;
+    `;
+    
+    // Create scans table
+    await client`
+      CREATE TABLE scans (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        filename VARCHAR(255) NOT NULL,
+        type VARCHAR(50) NOT NULL,
+        result VARCHAR(50) NOT NULL,
+        confidence_score NUMERIC(5,2) NOT NULL,
+        detection_details JSONB,
+        metadata JSONB,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `;
+    
+    logger.info('✅ Scans table created');
+    
+    // Drop user_preferences table if it exists
+    await client`
+      DROP TABLE IF EXISTS user_preferences CASCADE;
+    `;
+    
+    // Create user_preferences table
+    await client`
+      CREATE TABLE user_preferences (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        theme VARCHAR(50) DEFAULT 'dark',
+        language VARCHAR(50) DEFAULT 'english',
+        confidence_threshold INTEGER DEFAULT 80,
+        enable_notifications BOOLEAN DEFAULT true,
+        auto_analyze BOOLEAN DEFAULT true,
+        sensitivity_level VARCHAR(50) DEFAULT 'medium',
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE(user_id)
+      );
+    `;
+    
+    logger.info('✅ User preferences table created');
+    return true;
+  } catch (error) {
+    logger.error('❌ Failed to ensure database schema:', error);
+    throw error;
+  }
+}
 
 // Initialize database connection and run migrations
 export async function initializeDatabase(): Promise<boolean> {
   try {
     logger.info('🗄️  Initializing SatyaAI database...');
     
-    // Create migrations folder if it doesn't exist
-    const migrationsFolder = path.join(process.cwd(), 'drizzle');
+    // Ensure schema exists first
+    await ensureSchema();
     
-    // Run migrations
-
-    // Set timezone to UTC
-    await db.execute(sql`SET TIME ZONE 'UTC'`);
+    // Initialize the database connection
+    await dbManager.initialize();
+    
+    // Set timezone to UTC using the direct SQL command
+    await client`SET TIME ZONE 'UTC'`;
     logger.info('✓ Database timezone set to UTC');
 
     // Seed initial data if needed
@@ -64,39 +159,45 @@ export async function initializeDatabase(): Promise<boolean> {
 async function seedInitialData(): Promise<void> {
   try {
     // Check if we already have users
-    const existingUsers = await db.select().from(users).limit(1);
+    const { data: existingUsers, error } = await supabase
+      .from('users')
+      .select('*')
+      .limit(1);
     
-    if (existingUsers.length === 0) {
-      console.log('📊 Seeding initial data...');
+    if (error) throw error;
+    
+    if (!existingUsers || existingUsers.length === 0) {
+      logger.info('📊 Seeding initial data...');
       
-      // Create demo user
+      // Create demo user using direct SQL to avoid any ORM issues
       const hashedPassword = await bcrypt.hash('DemoPassword123!', 12);
-      const [newUser] = await db.insert(users).values({
-        username: 'demo',
-        email: 'demo@satyaai.com',
-        password: hashedPassword,
-        fullName: 'Demo User',
-        role: 'user'
-      }).returning();
+      const newUser = await client<Array<{ id: number }>>`
+        INSERT INTO users (username, email, password, full_name, role, failed_login_attempts, is_locked, created_at, updated_at)
+        VALUES ('demo', 'demo@satyaai.com', ${hashedPassword}, 'Demo User', 'user', 0, false, NOW(), NOW())
+        RETURNING id;
+      `;
       
-      console.log('✓ Demo user created (username: demo, password: DemoPassword123!)');
+      if (!newUser || newUser.length === 0) throw new Error('Failed to create demo user');
+      const demoUserId = newUser[0].id;
+      logger.info('✓ Demo user created (username: demo, password: DemoPassword123!)');
       
-      // Create admin user
+      // Create admin user using direct SQL
       const adminPassword = await bcrypt.hash('AdminPassword123!', 12);
-      const [adminUser] = await db.insert(users).values({
-        username: 'admin',
-        email: 'admin@satyaai.com',
-        password: adminPassword,
-        fullName: 'System Administrator',
-        role: 'admin'
-      }).returning();
+      const adminUser = await client<Array<{ id: number }>>`
+        INSERT INTO users (username, email, password, full_name, role, failed_login_attempts, is_locked, created_at, updated_at)
+        VALUES ('admin', 'admin@satyaai.com', ${adminPassword}, 'System Administrator', 'admin', 0, false, NOW(), NOW())
+        RETURNING id;
+      `;
+      
+      if (!adminUser || adminUser.length === 0) throw new Error('Failed to create admin user');
+      const adminUserId = adminUser[0].id;
       
       console.log('✓ Admin user created (username: admin, password: AdminPassword123!)');
       
       // Add sample scans for demo user
       const sampleScans = [
         {
-          userId: newUser.id,
+          userId: demoUserId,
           filename: 'sample_authentic_image.jpg',
           type: 'image',
           result: 'authentic',
@@ -123,7 +224,7 @@ async function seedInitialData(): Promise<void> {
           }
         },
         {
-          userId: newUser.id,
+          userId: demoUserId,
           filename: 'suspicious_video_clip.mp4',
           type: 'video',
           result: 'deepfake',
@@ -151,7 +252,7 @@ async function seedInitialData(): Promise<void> {
           }
         },
         {
-          userId: newUser.id,
+          userId: demoUserId,
           filename: 'voice_sample.wav',
           type: 'audio',
           result: 'authentic',
@@ -196,7 +297,7 @@ async function seedInitialData(): Promise<void> {
       await db.transaction(async (tx) => {
         // Demo user preferences
         await tx.insert(userPreferences).values({
-          userId: newUser.id,
+          userId: demoUserId,
           theme: 'dark',
           language: 'english',
           confidenceThreshold: 80,
@@ -207,7 +308,7 @@ async function seedInitialData(): Promise<void> {
         
         // Admin user preferences
         await tx.insert(userPreferences).values({
-          userId: adminUser.id,
+          userId: adminUserId,
           theme: 'dark',
           language: 'english',
           confidenceThreshold: 85,
@@ -234,13 +335,13 @@ export async function resetDatabase(): Promise<boolean> {
     console.warn('⚠️  Resetting database! This will drop all data!');
     
     // Get all table names
-    const result = await db.execute(sql`
+    const result = await client`
       SELECT tablename 
       FROM pg_tables 
       WHERE schemaname = 'public'
-    `);
+    `;
     
-    const tables = (result as any[]).map((r: any) => r.tablename);
+    const tables = (result as unknown as Array<{ tablename: string }>).map(row => row.tablename);
     
     // Disable foreign key checks temporarily
     await db.execute(sql`SET session_replication_role = 'replica'`);
@@ -275,11 +376,11 @@ export async function checkDatabaseHealth(): Promise<{
 }> {
   try {
     // Check if tables exist
-    const tablesResult = await db.execute(sql`
+    const tablesResult = await client`
       SELECT tablename as name 
       FROM pg_tables 
       WHERE schemaname = 'public'
-    `);
+    `;
     
     // Count users and scans
     const userCount = await db.select().from(users).then(rows => rows.length);

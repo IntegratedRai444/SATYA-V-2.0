@@ -7,9 +7,10 @@ import os
 import secrets
 from typing import Any, Dict, List, Optional
 
-from pydantic import Field, HttpUrl, PostgresDsn, validator
-from pydantic.types import SecretStr
-from pydantic_settings import BaseSettings
+from pydantic import Field, HttpUrl, PostgresDsn, field_validator, model_validator
+from pydantic_core.core_schema import FieldValidationInfo
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Any, Dict, List, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -31,14 +32,15 @@ class Settings(BaseSettings):
     PORT: int = Field(default=8000, env=["PORT", "SERVER_PORT"])
     HOST: str = "0.0.0.0"
     ENVIRONMENT: str = Field(default="development", env=["ENVIRONMENT", "NODE_ENV"])
+    NODE_ENV: str = Field(default="development", env="NODE_ENV")
 
     # API Configuration
-    VITE_API_URL: str = "http://localhost:8000/api/v2"
-    API_BASE_URL: str = "http://localhost:8000"
-    VITE_WS_URL: str = "ws://localhost:8000/ws"
+    VITE_API_URL: str = "http://localhost:5001/api/v2"  # Match Node.js backend port
+    API_BASE_URL: str = "http://localhost:5001"
+    VITE_WS_URL: str = "ws://localhost:5001/ws"
     WS_PATH: str = "/ws"
-    WS_PORT: int = 8000
-    CLIENT_PORT: int = 5173
+    WS_PORT: int = 5001  # Match Node.js backend port
+    CLIENT_PORT: int = 5173  # Vite default port
 
     # File Uploads
     UPLOAD_DIR: str = "./uploads"
@@ -118,6 +120,10 @@ class Settings(BaseSettings):
     PYTHON_SERVER_PORT: int = 8000
     PYTHON_SERVER_TIMEOUT: int = 300000  # 5 minutes
     PYTHON_HEALTH_CHECK_URL: str = "http://localhost:8000/health"
+    
+    # Node.js Server (for reference)
+    NODE_SERVER_URL: str = "http://localhost:5001"
+    NODE_SERVER_PORT: int = 5001
 
     # Rate Limiting
     RATE_LIMIT_WINDOW_MS: int = 900000  # 15 minutes
@@ -137,49 +143,55 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = True
-        extra = "forbid"  # Enable strict mode
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="forbid",
+        env_prefix=""
+    )
 
-        @classmethod
-        def parse_env_var(cls, field_name: str, raw_val: str) -> Any:
-            if field_name in [
-                "CORS_ALLOW_ORIGINS",
-                "CORS_ALLOW_METHODS",
-                "CORS_ALLOW_HEADERS",
-                "CORS_EXPOSE_HEADERS",
-                "CORS_ORIGIN",
-                "CORS_METHODS",
-            ]:  # Added CORS_ORIGIN and CORS_METHODS
-                return [x.strip() for x in raw_val.split(",") if x.strip()]
-            return cls.json_loads(raw_val) if raw_val else raw_val
+    @classmethod
+    def _parse_env_var(cls, field_name: str, raw_val: str) -> Any:
+        if field_name in [
+            "CORS_ALLOW_ORIGINS",
+            "CORS_ALLOW_METHODS",
+            "CORS_ALLOW_HEADERS",
+            "CORS_EXPOSE_HEADERS",
+            "CORS_ORIGIN",
+            "CORS_METHODS",
+        ]:
+            return [x.strip() for x in raw_val.split(",") if x.strip()]
+        return raw_val
 
     # CORS origins are handled by CORS_ALLOW_ORIGINS
 
-    @validator("APP_ENV", "NODE_ENV", "ENVIRONMENT", pre=True)
-    def validate_app_env(cls, v, field):
+    @field_validator("APP_ENV", "NODE_ENV", "ENVIRONMENT", mode='before')
+    @classmethod
+    def validate_app_env(cls, v: Optional[str], info: FieldValidationInfo) -> str:
         if v is None:
-            return v
+            return "development"
         v = v.lower()
         if v not in ["development", "testing", "production"]:
             raise ValueError(
-                f"{field.name} must be one of: development, testing, production"
+                f"{info.field_name} must be one of: development, testing, production"
             )
         return v
 
-    @validator(
+    @field_validator(
         "CORS_ALLOW_ORIGINS",
         "CORS_ALLOW_METHODS",
         "CORS_ALLOW_HEADERS",
         "CORS_EXPOSE_HEADERS",
-        pre=True,
+        mode='before'
     )
-    def parse_comma_separated_list(cls, v):
+    @classmethod
+    def parse_comma_separated_list(cls, v: Union[str, List[str], None]) -> List[str]:
+        if v is None:
+            return []
         if isinstance(v, str):
             return [x.strip() for x in v.split(",") if x.strip()]
-        return v or []
+        return v
 
 
 # Initialize settings

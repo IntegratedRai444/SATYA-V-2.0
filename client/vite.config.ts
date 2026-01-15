@@ -85,7 +85,7 @@ export default defineConfig(({ mode }) => {
       open: true,
       proxy: {
         '/api': {
-          target: 'http://localhost:5001',
+          target: 'http://localhost:5173',
           changeOrigin: true,
           secure: false,
           rewrite: (path) => path.replace(/^\/api/, ''),
@@ -93,7 +93,7 @@ export default defineConfig(({ mode }) => {
       },
       hmr: {
         host: 'localhost',
-        port: 3001,
+        port: 5173,
         protocol: 'ws',
       },
     },

@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Suspense, lazy, useEffect } from 'react';
 import LoadingState from '@/components/ui/LoadingState';
 import ErrorBoundary from '@/components/ui/ErrorBoundary';
+import logger from './logger';
 import { PageTransition } from '@/components/ui/PageTransition';
 
 // Lazy load page components with custom loading
@@ -99,10 +100,12 @@ const AppLayout = () => {
  */
 const ProtectedRoute = ({ 
   children, 
-  redirectPath = '/login' 
+  redirectPath = '/login',
+  level = 'page' as const
 }: { 
   children: React.ReactNode;
   redirectPath?: string;
+  level?: 'app' | 'page' | 'component';
 }) => {
   const { isAuthenticated, isLoading, connectionStatus, initialAuthCheckComplete } = useAuth();
   const location = useLocation();
@@ -123,8 +126,17 @@ const ProtectedRoute = ({
     return <Navigate to={`${redirectPath}?${searchParams.toString()}`} replace />;
   }
 
-  // If authenticated, render the protected content
-  return <>{children}</>;
+  // If authenticated, wrap with error boundary
+  return (
+    <ErrorBoundary 
+      level={level}
+      onError={(error, errorInfo) => {
+        logger.error(`Error in protected route (${level}):`, error, { errorInfo });
+      }}
+    >
+      {children}
+    </ErrorBoundary>
+  );
 };
 
 // Public route component with redirect
@@ -137,7 +149,7 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
   }
 
   // If user is authenticated and trying to access auth pages, redirect to dashboard
-  if (isAuthenticated && ['/login', '/register', '/forgot-password'].includes(location.pathname)) {
+  if (isAuthenticated && ['/login', '/register', '/forgot-password', '/reset-password'].some(path => location.pathname.startsWith(path))) {
     const from = location.state?.from?.pathname || '/dashboard';
     return <Navigate to={from} replace />;
   }
@@ -203,45 +215,45 @@ export const router = createBrowserRouter([
         index: true,
         element: <Navigate to="/dashboard" replace />
       },
-      // Dashboard route
+      // Dashboard route - Single instance with error boundary
       {
         path: 'dashboard',
         element: (
-          <Suspense fallback={<LoadingState message="Loading dashboard..." isLoading={true} />}>
-            <Dashboard />
-          </Suspense>
-        ),
-      },
-      {
-        path: 'dashboard',
-        element: (
-          <Suspense fallback={<LoadingState message="Loading dashboard..." isLoading={true} />}>
-            <Dashboard />
-          </Suspense>
+          <ErrorBoundary level="page">
+            <Suspense fallback={<LoadingState message="Loading dashboard..." />}>
+              <Dashboard />
+            </Suspense>
+          </ErrorBoundary>
         ),
       },
       {
         path: 'home',
         element: (
-          <Suspense fallback={<LoadingState message="Loading..." isLoading={true} />}>
-            <Home />
-          </Suspense>
+          <ErrorBoundary level="page">
+            <Suspense fallback={<LoadingState message="Loading home..." />}>
+              <Home />
+            </Suspense>
+          </ErrorBoundary>
         ),
       },
       {
         path: 'analytics',
         element: (
-          <Suspense fallback={<LoadingState message="Loading analytics..." isLoading={true} />}>
-            <Analytics />
-          </Suspense>
+          <ErrorBoundary level="page">
+            <Suspense fallback={<LoadingState message="Loading analytics..." />}>
+              <Analytics />
+            </Suspense>
+          </ErrorBoundary>
         ),
       },
       {
         path: 'smart-analysis',
         element: (
-          <Suspense fallback={<LoadingState message="Loading Smart Analysis..." isLoading={true} />}>
-            <SmartAnalysis />
-          </Suspense>
+          <ErrorBoundary level="page">
+            <Suspense fallback={<LoadingState message="Loading Smart Analysis..." />}>
+              <SmartAnalysis />
+            </Suspense>
+          </ErrorBoundary>
         ),
       },
       {
@@ -255,73 +267,91 @@ export const router = createBrowserRouter([
       {
         path: 'history',
         element: (
-          <Suspense fallback={<LoadingState message="Loading history..." isLoading={true} />}>
-            <History />
-          </Suspense>
+          <ErrorBoundary level="page">
+            <Suspense fallback={<LoadingState message="Loading history..." />}>
+              <History />
+            </Suspense>
+          </ErrorBoundary>
         ),
       },
       {
         path: 'settings',
         element: (
-          <Suspense fallback={<LoadingState message="Loading settings..." isLoading={true} />}>
-            <Settings />
-          </Suspense>
+          <ErrorBoundary level="page">
+            <Suspense fallback={<LoadingState message="Loading settings..." />}>
+              <Settings />
+            </Suspense>
+          </ErrorBoundary>
         ),
       },
       {
         path: 'help',
         element: (
-          <Suspense fallback={<LoadingState message="Loading help..." isLoading={true} />}>
-            <Help />
-          </Suspense>
+          <ErrorBoundary level="page">
+            <Suspense fallback={<LoadingState message="Loading help..." />}>
+              <Help />
+            </Suspense>
+          </ErrorBoundary>
         ),
       },
       {
         path: 'scan-history',
         element: (
-          <Suspense fallback={<LoadingState message="Loading scan history..." isLoading={true} />}>
-            <History />
-          </Suspense>
+          <ErrorBoundary level="page">
+            <Suspense fallback={<LoadingState message="Loading scan history..." />}>
+              <History />
+            </Suspense>
+          </ErrorBoundary>
         ),
       },
       {
         path: 'ai-assistant',
         element: (
-          <Suspense fallback={<LoadingState message="Loading AI Assistant..." isLoading={true} />}>
-            <AIAssistant />
-          </Suspense>
+          <ErrorBoundary level="page">
+            <Suspense fallback={<LoadingState message="Loading AI Assistant..." />}>
+              <AIAssistant />
+            </Suspense>
+          </ErrorBoundary>
         ),
       },
       {
         path: 'batch-analysis',
         element: (
-          <Suspense fallback={<LoadingState message="Loading batch analysis..." isLoading={true} />}>
-            <BatchAnalysis />
-          </Suspense>
+          <ErrorBoundary level="page">
+            <Suspense fallback={<LoadingState message="Loading batch analysis..." />}>
+              <BatchAnalysis />
+            </Suspense>
+          </ErrorBoundary>
         ),
       },
       {
         path: 'image-analysis',
         element: (
-          <Suspense fallback={<LoadingState message="Loading image analysis..." isLoading={true} />}>
-            <ImageAnalysis />
-          </Suspense>
+          <ErrorBoundary level="page">
+            <Suspense fallback={<LoadingState message="Loading image analysis..." />}>
+              <ImageAnalysis />
+            </Suspense>
+          </ErrorBoundary>
         ),
       },
       {
         path: 'video-analysis',
         element: (
-          <Suspense fallback={<LoadingState message="Loading video analysis..." isLoading={true} />}>
-            <VideoAnalysis />
-          </Suspense>
+          <ErrorBoundary level="page">
+            <Suspense fallback={<LoadingState message="Loading video analysis..." />}>
+              <VideoAnalysis />
+            </Suspense>
+          </ErrorBoundary>
         ),
       },
       {
         path: 'audio-analysis',
         element: (
-          <Suspense fallback={<LoadingState message="Loading audio analysis..." isLoading={true} />}>
-            <AudioAnalysis />
-          </Suspense>
+          <ErrorBoundary level="page">
+            <Suspense fallback={<LoadingState message="Loading audio analysis..." />}>
+              <AudioAnalysis />
+            </Suspense>
+          </ErrorBoundary>
         ),
       },
       {

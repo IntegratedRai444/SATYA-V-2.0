@@ -1,10 +1,10 @@
-import { pgTable, text, integer, serial, timestamp, boolean, varchar } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, boolean, varchar, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 // User schema (PostgreSQL)
 export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
+  id: uuid("id").primaryKey().defaultRandom(),
   username: varchar("username", { length: 255 }).notNull().unique(),
   password: text("password").notNull(),
   email: varchar("email", { length: 255 }),
@@ -21,8 +21,8 @@ export const users = pgTable("users", {
 
 // Scan schema (PostgreSQL)
 export const scans = pgTable("scans", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id),
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").references(() => users.id, { onDelete: 'cascade' }),
   filename: text("filename").notNull(),
   type: varchar("type", { length: 50 }).notNull(), // 'image', 'video', 'audio'
   result: varchar("result", { length: 50 }).notNull(), // 'authentic', 'deepfake'
@@ -34,8 +34,8 @@ export const scans = pgTable("scans", {
 
 // User preferences schema (PostgreSQL)
 export const userPreferences = pgTable("user_preferences", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id).notNull().unique(),
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
   theme: varchar("theme", { length: 50 }).default("dark"),
   language: varchar("language", { length: 50 }).default("english"),
   confidenceThreshold: integer("confidence_threshold").default(75),
@@ -46,8 +46,8 @@ export const userPreferences = pgTable("user_preferences", {
 
 // Tasks schema (PostgreSQL) - for task management system
 export const tasks = pgTable("tasks", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id).notNull(),
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
   type: varchar("type", { length: 50 }).notNull(), // 'image', 'video', 'audio', 'webcam', 'multimodal'
   status: varchar("status", { length: 50 }).notNull().default("queued"), // 'queued', 'processing', 'completed', 'failed'
   progress: integer("progress").notNull().default(0), // 0-100

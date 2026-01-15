@@ -56,11 +56,21 @@ const envSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(32, 'SUPABASE_SERVICE_ROLE_KEY must be at least 32 characters'),
   SUPABASE_JWT_SECRET: z.string().min(32, 'SUPABASE_JWT_SECRET must be at least 32 characters'),
   
-  // Security Configuration (deprecated, kept for backward compatibility)
-  JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters').optional(),
-  JWT_SECRET_KEY: z.string().min(32, 'JWT_SECRET_KEY must be at least 32 characters').optional(),
-  JWT_EXPIRES_IN: z.string().default('1h'),
-  SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 characters').optional(),
+  // Security Configuration
+  JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters')
+    .refine(val => !val.includes('your-secret'), {
+      message: 'JWT_SECRET must be changed from default value'
+    }),
+  JWT_SECRET_KEY: z.string().min(32, 'JWT_SECRET_KEY must be at least 32 characters')
+    .refine(val => !val.includes('your-secret'), {
+      message: 'JWT_SECRET_KEY must be changed from default value'
+    }),
+  JWT_EXPIRES_IN: z.string().default('15m'),
+  REFRESH_TOKEN_EXPIRES_IN: z.string().default('7d'),
+  SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 characters')
+    .refine(val => !val.includes('your-secret'), {
+      message: 'SESSION_SECRET must be changed from default value'
+    }),
   
   // Python AI Engine Configuration
   PYTHON_SERVER_URL: z.string().url().default('http://localhost:8000'),
@@ -125,10 +135,8 @@ function loadEnvironment(): Environment {
     // Parse and validate environment variables
     const parsed = envSchema.parse(processedEnv);
     
-    // Additional validation for production environment
-    if (parsed.NODE_ENV === 'production') {
-      validateProductionConfig(parsed);
-    }
+    // Always validate security configuration
+    validateProductionConfig(parsed);
     
     // Ensure upload directory exists
     ensureDirectoryExists(parsed.UPLOAD_DIR);
@@ -154,30 +162,38 @@ function loadEnvironment(): Environment {
  * Additional validation for production environment
  */
 function validateProductionConfig(config: Environment): void {
-  const productionChecks = [
+  const securityChecks = [
     {
-      condition: config.JWT_SECRET === 'your-super-secret-jwt-key-that-is-at-least-32-characters-long',
-      message: 'JWT_SECRET must be changed from default value in production'
+      condition: config.NODE_ENV === 'production' && config.JWT_SECRET.length < 32,
+      message: 'JWT_SECRET must be at least 32 characters long in production'
     },
     {
-      condition: config.SESSION_SECRET === 'your-super-secret-session-key-that-is-at-least-32-characters-long',
-      message: 'SESSION_SECRET must be changed from default value in production'
+      condition: config.NODE_ENV === 'production' && config.SESSION_SECRET && config.SESSION_SECRET.length < 32,
+      message: 'SESSION_SECRET must be at least 32 characters long in production'
     },
     {
-      condition: config.FLASK_SECRET_KEY === 'your-super-secret-flask-key-that-is-at-least-32-characters-long',
-      message: 'FLASK_SECRET_KEY must be changed from default value in production'
+      condition: config.NODE_ENV === 'production' && config.FLASK_SECRET_KEY.length < 32,
+      message: 'FLASK_SECRET_KEY must be at least 32 characters long in production'
     },
     {
-      condition: config.CORS_ORIGIN.includes('localhost'),
-      message: 'CORS_ORIGIN should not include localhost in production'
+      condition: config.NODE_ENV === 'production' && config.CORS_ORIGIN.includes('*'),
+      message: 'CORS_ORIGIN should not use wildcard (*) in production'
+    },
+    {
+      condition: config.NODE_ENV === 'production' && (!config.JWT_EXPIRES_IN || config.JWT_EXPIRES_IN === '1h'),
+      message: 'JWT_EXPIRES_IN should be set to a secure value (e.g., 15m) in production'
     }
   ];
 
-  const failures = productionChecks.filter(check => check.condition);
+  const failures = securityChecks.filter(check => check.condition);
   
   if (failures.length > 0) {
-    const messages = failures.map(f => f.message).join('\n');
-    throw new ConfigurationError(`Production configuration issues:\n${messages}`);
+    const envPrefix = config.NODE_ENV === 'production' ? 'Production' : 'Development';
+    const messages = failures.map(f => `[${envPrefix}] ${f.message}`).join('\n');
+    if (config.NODE_ENV === 'production') {
+      throw new ConfigurationError(`Security configuration issues:\n${messages}`);
+    }
+    console.warn(`Security warnings (${config.NODE_ENV}):\n${messages}`);
   }
 }
 

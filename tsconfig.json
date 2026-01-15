@@ -5,7 +5,7 @@
     "lib": ["ES2022"],
     "moduleResolution": "node",
     "resolveJsonModule": true,
-    "allowJs": true,
+    "allowJs": false,
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -26,16 +26,14 @@
     ]
   },
   "include": [
-    "server/**/*", 
-    "shared/**/*",
-    "server/types/**/*.d.ts"
+    "**/*.ts",
+    "**/*.tsx"
   ],
   "exclude": [
-    "node_modules", 
-    "dist", 
-    "client", 
-    "server/tests/**/*", 
-    "**/*.test.ts", 
+    "node_modules",
+    "dist",
+    "client",
+    "**/*.test.ts",
     "**/*.spec.ts"
   ]
 }

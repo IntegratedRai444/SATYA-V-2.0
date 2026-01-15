@@ -37,11 +37,22 @@ const rateLimiter = new RateLimiterMemory({
   blockDuration: rateLimitRules.websocket.blockDuration / 1000, // Convert to seconds
 });
 
-// Message size limit (1MB)
-const MAX_MESSAGE_SIZE = 1024 * 1024;
-
-// Message rate limiting (messages per second per connection)
-const MESSAGE_RATE_LIMIT = 10;
+// Message size limits
+const MESSAGE_LIMITS = {
+  MAX_MESSAGE_SIZE: 1024 * 1024, // 1MB max message size
+  MAX_CONNECTIONS_PER_IP: 5, // Max concurrent connections per IP
+  MESSAGES_PER_MINUTE: 100, // Max messages per minute per connection
+  MESSAGE_RATE_WINDOW_MS: 60 * 1000, // 1 minute window
+  BLOCK_DURATION_MS: 5 * 60 * 1000, // 5 minute block duration
+  PING_INTERVAL: 30000, // 30 seconds
+  PONG_TIMEOUT: 10000, // 10 seconds
+  MAX_PAYLOAD_SIZE: 10 * 1024 * 1024, // 10MB max payload size
+  MAX_QUEUE_SIZE: 100, // Max queued messages per client
+  MAX_SUBSCRIPTIONS: 20, // Max subscriptions per connection
+  MAX_CHANNEL_LENGTH: 100, // Max channel name length
+  MAX_HEADER_SIZE: 4096, // 4KB max header size
+  MAX_WEBSOCKET_FRAME: 16 * 1024, // 16KB max WebSocket frame size
+} as const;
 
 // WebSocket message type
 const WebSocketMessageType = {
@@ -226,11 +237,13 @@ const MAX_THROTTLE_ENTRIES = 10000; // Maximum number of throttle entries to kee
 const THROTTLE_CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
 const THROTTLE_MAX_AGE = 15 * 60 * 1000; // 15 minutes
 
-class WebSocketManager {
   private wss: WebSocketServer | null = null;
   private clients: Map<string, Set<WebSocketClient>> = new Map();
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private connectionAttempts: Map<string, { count: number; lastAttempt: number }> = new Map();
+  private messageRates: Map<string, number> = new Map();
+  private count: number = 0;
+  private lastAttempt: number = 0;
   private fileProcessor: FileProcessor;
 
   private progressThrottle = new Map<string, number>();
@@ -255,7 +268,17 @@ class WebSocketManager {
           this.progressThrottle.delete(key);
         }
       }
-    }, 5 * 60 * 1000); // Every 5 minutes
+      
+      // Clean up rate limiting
+      const nowMs = Date.now();
+      const ipAddresses = Array.from(this.connectionAttempts.keys());
+      for (const ip of ipAddresses) {
+        const attempt = this.connectionAttempts.get(ip);
+        if (attempt && (nowMs - attempt.lastAttempt) > MESSAGE_LIMITS.BLOCK_DURATION_MS) {
+          this.connectionAttempts.delete(ip);
+        }
+      }
+    }, 60000); // Cleanup every minute
   }
 
   private setupProcessHandlers(): void {
@@ -435,56 +458,161 @@ class WebSocketManager {
   /**
    * Verify client connection (authentication) - async version
    */
-  private async verifyClientAsync(info: any): Promise<{ valid: boolean; userId?: string; username?: string; reason?: string }> {
-    const req = info.req as AuthenticatedRequest;
-    try {
-      const ip = info.req.headers['x-forwarded-for'] || info.req.socket.remoteAddress;
-      
-      // Apply rate limiting
-      const wsRateLimit = rateLimitRules.websocket;
-      const now = Date.now();
-      const key = `ws:${ip}`;
-      
-      // Clean up old entries
-      this.connectionAttempts.forEach((value, k) => {
-        if (now - value.lastAttempt > wsRateLimit.windowMs) {
-          this.connectionAttempts.delete(k);
-        }
-      });
-      
-      // Extract token from query parameter
-      const token = extractTokenFromQuery(info.req.url || '');
-
-      if (!token) {
-        logger.debug('WebSocket connection rejected: No token provided');
-        return { valid: false, reason: 'No authentication token' };
-      }
-
-      // Verify token
-      const payload = await jwtAuthService.verifyToken(token);
-      if (!payload || !payload.userId) {
-        logger.debug('WebSocket connection rejected: Invalid token or missing userId');
-        return { valid: false, reason: 'Invalid or expired token' };
-      }
-
-      logger.debug('WebSocket authentication successful', {
-        userId: payload.userId,
-        username: payload.username || 'unknown'
-      });
-
-      return {
-        valid: true,
-        userId: payload.userId,
-        username: payload.username || undefined
-      };
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error('WebSocket authentication error', {
-        error: errorMessage
-      });
-      return { valid: false, reason: 'Authentication failed' };
+  private async verifyClientAsync(info: any): Promise<{ 
+    valid: boolean; 
+    userId?: string; 
+    username?: string; 
+    sessionId?: string;
+    reason?: string; 
+  }> {
+    // Check connection count per IP
+    const ip = info.req.headers['x-forwarded-for'] || info.req.connection.remoteAddress;
+    const now = Date.now();
+    
+    // Initialize or update connection attempt count
+    let attempt = this.connectionAttempts.get(ip) || { count: 0, lastAttempt: 0 };
+    
+    // Reset counter if last attempt was more than block duration ago
+    if (now - attempt.lastAttempt > MESSAGE_LIMITS.BLOCK_DURATION_MS) {
+      attempt.count = 0;
     }
-  };
+    
+    // Check connection limit
+    if (attempt.count >= MESSAGE_LIMITS.MAX_CONNECTIONS_PER_IP) {
+      logger.warn(`Connection limit reached for IP: ${ip}`);
+      return { 
+        valid: false, 
+        reason: 'Connection limit exceeded. Please try again later.' 
+      };
+    }
+    
+    // Update attempt counter
+    attempt.count++;
+    attempt.lastAttempt = now;
+    this.connectionAttempts.set(ip, attempt);
+    
+    // Validate token
+    const token = this.extractToken(info);
+    if (!token) {
+      return { 
+        valid: false, 
+        reason: 'Authentication token is required' 
+      };
+    }
+
+    try {
+      const decoded = await jwtAuthService.verifyToken(token);
+      if (!decoded || !decoded.userId) {
+        throw new Error('Invalid token payload');
+      }
+      
+      return { 
+        valid: true, 
+        userId: decoded.userId,
+        username: decoded.username,
+        sessionId: decoded.sessionId
+      };
+    } catch (error) {
+      logger.error('WebSocket authentication failed:', { 
+        error: error.message,
+        ip,
+        userAgent: info.req.headers['user-agent']
+      });
+      return { 
+        valid: false, 
+        reason: 'Authentication failed. Please log in again.' 
+      };
+    }
+  }
+
+  private async handleMessage(ws: WebSocketClient, data: RawData): Promise<void> {
+    // Convert RawData to string and check size
+    const messageStr = data.toString();
+    if (messageStr.length > MESSAGE_LIMITS.MAX_MESSAGE_SIZE) {
+      this.sendError(ws, {
+        code: 'MESSAGE_TOO_LARGE',
+        message: `Message exceeds maximum size of ${MESSAGE_LIMITS.MAX_MESSAGE_SIZE} bytes`
+      });
+      return;
+    }
+
+    // Rate limiting
+    const now = Date.now();
+    const timeWindow = Math.floor(now / MESSAGE_LIMITS.MESSAGE_RATE_WINDOW_MS);
+    const rateKey = `${ws.clientId}:${timeWindow}`;
+    
+    // Get or initialize rate counter
+    const messageCount = (this.messageRates.get(rateKey) || 0) + 1;
+    this.messageRates.set(rateKey, messageCount);
+
+    // Check rate limit
+    if (messageCount > MESSAGE_LIMITS.MESSAGES_PER_MINUTE) {
+      this.sendError(ws, {
+        code: 'RATE_LIMIT_EXCEEDED',
+        message: 'Too many messages. Please slow down.'
+      });
+      return;
+    }
+
+    try {
+      const message = this.parseMessage(data);
+      await this.validateMessage(ws, message);
+      await this.processMessage(ws, message);
+    } catch (error) {
+      this.handleMessageError(ws, error);
+    }
+  }
+
+  private parseMessage(data: string): WebSocketMessage {
+    try {
+      const message = JSON.parse(data) as WebSocketMessage;
+      
+      // Basic message validation
+      if (!message || typeof message !== 'object' || Array.isArray(message)) {
+        throw new Error('Invalid message format');
+      }
+      
+      if (!message.type || typeof message.type !== 'string') {
+        throw new Error('Message type is required');
+      }
+      
+      // Validate message size
+      const messageStr = JSON.stringify(message);
+      if (messageStr.length > MESSAGE_LIMITS.MAX_MESSAGE_SIZE) {
+        throw new Error(`Message exceeds maximum size of ${MESSAGE_LIMITS.MAX_MESSAGE_SIZE} bytes`);
+      }
+      
+      return message;
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new Error('Invalid JSON message');
+      }
+      throw error;
+    }
+  }
+
+  private async validateMessage(ws: WebSocketClient, message: WebSocketMessage): Promise<void> {
+    // TO DO: Implement message validation logic
+  }
+
+  private async processMessage(ws: WebSocketClient, message: WebSocketMessage): Promise<void> {
+    // TO DO: Implement message processing logic
+  }
+
+  private handleMessageError(ws: WebSocketClient, error: unknown): void {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.error('WebSocket message error:', { 
+      error: errorMessage,
+      clientId: ws.clientId,
+      stack: error instanceof Error ? error.stack : undefined
+    });
+
+    this.sendError(ws, {
+      code: 'MESSAGE_PROCESSING_ERROR',
+      message: 'Failed to process message',
+      details: process.env.NODE_ENV === 'development' ? errorMessage : undefined
+    });
+  }
 
   /**
    * Get total number of connections across all users
@@ -552,28 +680,17 @@ class WebSocketManager {
     logger.info('WebSocket server shutdown completed');
   }
 
-  private async handleMessage(ws: WebSocketClient, data: RawData): Promise<void> {
+  private extractToken(info: { req: { url: string } }): string | null {
     try {
-      // Check message size
-      const messageStr = data.toString();
-      if (messageStr.length > MAX_MESSAGE_SIZE) {
-        this.sendError(ws, {
-          code: 'message_too_large',
-          message: 'Message size exceeds limit'
-        });
-        return;
-      }
-
-      // Rate limit message processing
-      try {
-        await messageRateLimiter.consume(ws.clientId);
-      } catch (rateLimiterRes) {
-        this.sendError(ws, {
-          code: 'rate_limit_exceeded',
-          message: 'Too many messages. Please slow down.'
-        });
-        return;
-      }
+      const urlParts = info.req.url?.split('?');
+      if (!urlParts || urlParts.length < 2) return null;
+      
+      const params = new URLSearchParams(urlParts[1]);
+      return params.get('token');
+    } catch (e) {
+      logger.error('Failed to extract token:', e);
+      return null;
+    }
 
       // Parse and validate message
       let message: WebSocketMessage;

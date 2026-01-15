@@ -1,7 +1,34 @@
-import { db } from '../db';
-import { users, scans } from '@shared/schema';
-import { eq, lt, and, desc, sql } from 'drizzle-orm';
-import { logger } from '../config';
+import { dbManager } from '../db';
+import { logger } from '../config/logger';
+
+interface User {
+  id: number;
+  username: string;
+  email: string | null;
+  password: string;
+  full_name: string | null;
+  api_key: string | null;
+  role: string;
+  failed_login_attempts: number;
+  last_failed_login: string | null;
+  is_locked: boolean;
+  lockout_until: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface Scan {
+  id: number;
+  user_id: number | null;
+  filename: string;
+  type: string;
+  result: string;
+  confidence_score: number;
+  detection_details: string | null;
+  metadata: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 interface QueryCache {
   key: string;
@@ -104,12 +131,72 @@ class DatabaseOptimizer {
   }
 
   /**
+   * Set value in cache
+   */
+  private setCache(key: string, data: any, ttl: number = this.defaultTTL): void {
+    if (this.queryCache.size >= this.maxCacheSize) {
+      // Remove the first (oldest) entry to make space
+      const firstKey = this.queryCache.keys().next().value;
+      if (firstKey) {
+        this.queryCache.delete(firstKey);
+      }
+    }
+    this.queryCache.set(key, {
+      key,
+      data,
+      timestamp: Date.now(),
+      ttl
+    });
+  }
+
+  /**
+   * Get from cache
+   */
+  private getFromCache<T>(key: string): T | null {
+    const cached = this.queryCache.get(key);
+    if (!cached) return null;
+    
+    // Check if cache entry has expired
+    if (Date.now() > cached.timestamp + cached.ttl) {
+      this.queryCache.delete(key);
+      return null;
+    }
+    
+    return cached.data as T;
+  }
+
+  /**
+   * Clean up expired cache entries
+   */
+  private cleanupExpiredCache(): void {
+    const now = Date.now();
+    let cleanedCount = 0;
+
+    for (const [key, cached] of this.queryCache.entries()) {
+      if (now > cached.timestamp + cached.ttl) {
+        this.queryCache.delete(key);
+        cleanedCount++;
+      }
+    }
+
+    if (cleanedCount > 0) {
+      logger.info(`Cleaned up ${cleanedCount} expired cache entries`);
+    }
+  }
+
+  /**
    * Get user by ID with caching
    */
-  async getUserById(userId: number): Promise<any> {
-    return this.executeQuery(
+  async getUserById(userId: number): Promise<User> {
+    return this.executeQuery<User>(
       `user:${userId}`,
-      () => db.select().from(users).where(eq(users.id, userId)).limit(1),
+      async () => {
+        const users = await dbManager.find('users', { id: userId }, { limit: 1 });
+        if (!users || users.length === 0) {
+          throw new Error(`User with ID ${userId} not found`);
+        }
+        return users[0] as User;
+      },
       10 * 60 * 1000 // 10 minutes TTL for user data
     );
   }
@@ -121,15 +208,20 @@ class DatabaseOptimizer {
     userId: number, 
     limit: number = 20, 
     offset: number = 0
-  ): Promise<any[]> {
-    return this.executeQuery(
+  ): Promise<Scan[]> {
+    return this.executeQuery<Scan[]>(
       `user_scans:${userId}:${limit}:${offset}`,
-      () => db.select()
-        .from(scans)
-        .where(eq(scans.userId, userId))
-        .orderBy(desc(scans.createdAt))
-        .limit(limit)
-        .offset(offset),
+      async () => {
+        const scans = await dbManager.find('scans', 
+          { user_id: userId },
+          { 
+            orderBy: { column: 'created_at', ascending: false },
+            limit,
+            offset 
+          }
+        );
+        return scans as unknown as Scan[];
+      },
       2 * 60 * 1000 // 2 minutes TTL for scan data
     );
   }
@@ -137,27 +229,35 @@ class DatabaseOptimizer {
   /**
    * Get dashboard statistics with caching
    */
-  async getDashboardStats(userId: number): Promise<any> {
+  async getDashboardStats(userId: string): Promise<{
+    totalScans: number;
+    recentScans: number;
+    lastScanDate: Date | null;
+  }> {
     return this.executeQuery(
       `dashboard_stats:${userId}`,
       async () => {
-        const [userScansCount, recentScans] = await Promise.all([
-          db.select({ count: sql<number>`count(*)` })
-            .from(scans)
-            .where(eq(scans.userId, userId)),
-          db.select()
-            .from(scans)
-            .where(and(
-              eq(scans.userId, userId),
-              lt(scans.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
-            ))
-            .limit(5)
-        ]);
+        // Get total scans count
+        const allScans = await dbManager.find('scans', { user_id: userId });
+        const totalScans = allScans.length;
+        
+        // Get recent scans (last 7 days)
+        const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        const recentScans = await dbManager.find('scans', 
+          { 
+            user_id: userId,
+            created_at: { $gt: oneWeekAgo },
+          },
+          { 
+            orderBy: { column: 'created_at', ascending: false },
+            limit: 5 
+          }
+        ) as Array<{ created_at: string }>;
 
         return {
-          totalScans: userScansCount[0]?.count || 0,
+          totalScans,
           recentScans: recentScans.length,
-          lastScanDate: recentScans[0]?.createdAt || null
+          lastScanDate: recentScans[0]?.created_at ? new Date(recentScans[0].created_at) : null
         };
       },
       5 * 60 * 1000 // 5 minutes TTL
@@ -171,18 +271,27 @@ class DatabaseOptimizer {
     return this.executeQuery(
       'system_stats',
       async () => {
-        const [totalUsersResult, totalScansResult, activeUsersResult, recentScansResult] = await Promise.all([
-          db.select({ count: sql<number>`count(*)` }).from(users),
-          db.select({ count: sql<number>`count(*)` }).from(scans),
-          // Using updatedAt as a proxy for last login time since lastLoginAt doesn't exist
-          db.select({ count: sql<number>`count(distinct ${users.id})` })
-            .from(users)
-            .where(lt(users.updatedAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))),
-          db.select({ count: sql<number>`count(*)` })
-            .from(scans)
-            .where(lt(scans.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000)))
-        ]);
+        // Get total users count
+        const allUsers = await dbManager.find('users', {});
+        const totalUsers = allUsers.length;
+        
+        // Get total scans count
+        const allScans = await dbManager.find('scans', {});
+        const totalScans = allScans.length;
+        
+        // Get active users (logged in within last 7 days)
+        const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        const activeUsers = (await dbManager.find('users', {
+          last_login: { $gt: oneWeekAgo },
+        })).length;
+        
+        // Get recent scans (last 24 hours)
+        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const recentScans = (await dbManager.find('scans', {
+          created_at: { $gt: oneDayAgo },
+        })).length;
 
+        // Calculate average query time and slow queries
         const averageQueryTime = this.queryTimes.length > 0 
           ? this.queryTimes.reduce((a, b) => a + b, 0) / this.queryTimes.length 
           : 0;
@@ -190,10 +299,10 @@ class DatabaseOptimizer {
         const slowQueries = this.queryTimes.filter(time => time > this.slowQueryThreshold).length;
 
         return {
-          totalUsers: totalUsersResult[0]?.count || 0,
-          totalScans: totalScansResult[0]?.count || 0,
-          activeUsers: activeUsersResult[0]?.count || 0,
-          recentScans: recentScansResult[0]?.count || 0,
+          totalUsers,
+          totalScans,
+          activeUsers,
+          recentScans,
           databaseSize: 0, // Would need database-specific implementation
           queryPerformance: {
             averageQueryTime,
@@ -201,167 +310,8 @@ class DatabaseOptimizer {
           }
         };
       },
-      60 * 1000 // 1 minute TTL
+      5 * 60 * 1000 // 5 minutes TTL
     );
-  }
-
-  /**
-   * Optimize database by cleaning up old data
-   */
-  async optimizeDatabase(): Promise<{
-    deletedScans: number;
-    deletedUsers: number;
-    optimizedQueries: number;
-  }> {
-    logger.info('Starting database optimization');
-
-    const results = {
-      deletedScans: 0,
-      deletedUsers: 0,
-      optimizedQueries: 0
-    };
-
-    try {
-      // Clean up old scans (older than 90 days)
-      const oldScansThreshold = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
-      const deletedScans = await db.delete(scans)
-        .where(lt(scans.createdAt, oldScansThreshold))
-        .returning({ count: sql<number>`count(*)` });
-      
-      results.deletedScans = deletedScans[0]?.count || 0;
-
-      // Clean up inactive users (no login for 1 year and no scans)
-      const inactiveUsersThreshold = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
-      
-      // First, find users with no recent activity
-      const inactiveUsers = await db.select({ id: users.id })
-        .from(users)
-        .where(and(
-          lt(users.updatedAt, inactiveUsersThreshold),
-          sql`${users.id} NOT IN (SELECT DISTINCT user_id FROM scans WHERE created_at > ${inactiveUsersThreshold})`
-        ));
-
-      // Delete inactive users
-      if (inactiveUsers.length > 0) {
-        const userIds = inactiveUsers.map(u => u.id);
-        for (const userId of userIds) {
-          await db.delete(users).where(eq(users.id, userId));
-          results.deletedUsers++;
-        }
-      }
-
-      // Clear query cache to force fresh data
-      this.clearCache();
-      results.optimizedQueries = this.queryCache.size;
-
-      logger.info('Database optimization completed', results);
-
-      return results;
-    } catch (error) {
-      logger.error('Database optimization failed', {
-        error: (error as Error).message
-      });
-      throw error;
-    }
-  }
-
-  /**
-   * Create database indexes for better performance
-   */
-  async createOptimalIndexes(): Promise<void> {
-    try {
-      // Note: Index creation would be database-specific
-      // For SQLite, you might use raw SQL queries
-      
-      const indexQueries = [
-        'CREATE INDEX IF NOT EXISTS idx_scans_user_id ON scans(user_id)',
-        'CREATE INDEX IF NOT EXISTS idx_scans_created_at ON scans(created_at)',
-        'CREATE INDEX IF NOT EXISTS idx_users_updated_at ON users(updated_at)',
-        'CREATE INDEX IF NOT EXISTS idx_scans_user_created ON scans(user_id, created_at)'
-      ];
-
-      for (const query of indexQueries) {
-        await db.execute(sql.raw(query));
-      }
-
-      logger.info('Database indexes created successfully');
-    } catch (error) {
-      logger.error('Failed to create database indexes', {
-        error: (error as Error).message
-      });
-    }
-  }
-
-  /**
-   * Get from cache
-   */
-  private getFromCache<T>(key: string): T | null {
-    const cached = this.queryCache.get(key);
-    if (!cached) return null;
-
-    if (Date.now() > cached.timestamp + cached.ttl) {
-      this.queryCache.delete(key);
-      return null;
-    }
-
-    return cached.data as T;
-  }
-
-  /**
-   * Set cache
-   */
-  private setCache(key: string, data: any, ttl: number): void {
-    // Implement LRU eviction if cache is full
-    if (this.queryCache.size >= this.maxCacheSize) {
-      const oldestKey = this.queryCache.keys().next().value;
-      if (oldestKey) {
-        this.queryCache.delete(oldestKey);
-      }
-    }
-
-    this.queryCache.set(key, {
-      key,
-      data,
-      timestamp: Date.now(),
-      ttl
-    });
-  }
-
-  /**
-   * Clear cache
-   */
-  clearCache(pattern?: string): void {
-    if (pattern) {
-      const regex = new RegExp(pattern);
-      for (const [key] of this.queryCache) {
-        if (regex.test(key)) {
-          this.queryCache.delete(key);
-        }
-      }
-    } else {
-      this.queryCache.clear();
-    }
-
-    logger.info('Database cache cleared', { pattern });
-  }
-
-  /**
-   * Clean up expired cache entries
-   */
-  private cleanupExpiredCache(): void {
-    const now = Date.now();
-    let cleanedCount = 0;
-
-    for (const [key, cached] of this.queryCache) {
-      if (now > cached.timestamp + cached.ttl) {
-        this.queryCache.delete(key);
-        cleanedCount++;
-      }
-    }
-
-    if (cleanedCount > 0) {
-      logger.debug('Cleaned up expired cache entries', { cleanedCount });
-    }
   }
 
   /**

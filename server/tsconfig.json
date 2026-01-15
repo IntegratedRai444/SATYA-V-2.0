@@ -28,20 +28,20 @@
   "include": [
     "src/**/*.ts",
     "config/**/*.ts",
-    "../shared/**/*.ts",
-    "../shared/**/*.ts",
-    "services/**/*.ts",
     "middleware/**/*.ts",
     "routes/**/*.ts",
-    "api/**/*.ts",
+    "services/**/*.ts",
     "utils/**/*.ts",
-    "index.ts"
+    "app.ts",
+    "server.ts"
   ],
   "exclude": [
     "node_modules",
     "dist",
     "**/*.test.ts",
-    "**/__tests__/**",
-    "**/__mocks__/**"
+    "**/*.spec.ts",
+    "**/__tests__/**/*",
+    "**/__mocks__/**",
+    "test-connection.js"
   ]
 }
