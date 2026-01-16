@@ -125,13 +125,13 @@ class DeepfakeClassifier(nn.Module):
 
     @torch.no_grad()
     def predict_image(
-        self, image: Union[Image.Image, np.ndarray, torch.Tensor]
+        self, image: Union[np.ndarray, torch.Tensor]
     ) -> Dict[str, Any]:
         """
         Predict if an image is real or fake.
 
         Args:
-            image: PIL Image, numpy array, or torch.Tensor
+            image: Input image as numpy array or torch.Tensor
 
         Returns:
             Dict containing:
@@ -171,7 +171,7 @@ class DeepfakeClassifier(nn.Module):
 
     @torch.no_grad()
     def predict_batch(
-        self, images: List[Union[Image.Image, np.ndarray, torch.Tensor]]
+        self, images: List[Union[np.ndarray, torch.Tensor]]
     ) -> List[Dict[str, Any]]:
         """
         Predict on a batch of images.
@@ -302,7 +302,7 @@ def get_classifier(
 
 
 def predict_image(
-    image: Union[Image.Image, np.ndarray, torch.Tensor],
+    image: Union[np.ndarray, torch.Tensor],
     model_type: str = "efficientnet",
     device: str = None,
 ) -> Dict[str, Any]:

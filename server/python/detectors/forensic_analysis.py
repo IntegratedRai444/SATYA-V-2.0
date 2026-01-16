@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 import torch
 import torch.nn as nn
-from PIL import Image
+from PIL import Image as PILImage
 
 logger = logging.getLogger(__name__)
 
@@ -22,20 +22,20 @@ def analyze_ela(image_path: str, quality: int = 90) -> Dict:
 
     Args:
         image_path: Path to image
-        quality: JPEG quality for resave (default 90%)
+        quality: JPEG quality for resaving (1-100)
 
     Returns:
-        Dictionary with ELA score and artifact map
+        Dictionary with ELA analysis results
     """
     try:
-        # Load original image
-        original = Image.open(image_path).convert("RGB")
+        # Open image using PILImage
+        image = PILImage.open(image_path).convert("RGB")
 
         # Resave at specified quality
         buffer = io.BytesIO()
-        original.save(buffer, "JPEG", quality=quality)
+        image.save(buffer, "JPEG", quality=quality)
         buffer.seek(0)
-        resaved = Image.open(buffer)
+        resaved = PILImage.open(buffer)
 
         # Convert to numpy
         orig_np = np.array(original, dtype=np.float32)
@@ -83,7 +83,7 @@ def analyze_prnu(image_np: np.ndarray) -> Dict:
     Detects camera sensor noise fingerprint inconsistencies
 
     Args:
-        image_np: Image as numpy array
+        image_np: Input image as numpy array
 
     Returns:
         Dictionary with PRNU analysis results

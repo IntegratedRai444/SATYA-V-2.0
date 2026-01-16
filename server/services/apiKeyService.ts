@@ -43,7 +43,7 @@ export class ApiKeyService {
       const hashedKey = this.hashKey(apiKey);
       
       const result = await dbManager.find('users', {
-        apiKey: hashedKey
+        api_key: hashedKey
       }, { limit: 1 });
 
       if (!result || result.length === 0) return null;
@@ -52,7 +52,7 @@ export class ApiKeyService {
         id: result[0].id,
         email: result[0].email,
         role: result[0].role,
-        apiKey: result[0].apiKey
+        apiKey: result[0].api_key
       };
     } catch (error) {
       console.error('Error getting user by API key:', error);

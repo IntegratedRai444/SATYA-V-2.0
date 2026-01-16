@@ -140,9 +140,18 @@ class MultimodalFusionDetector:
             # Image analysis
             if image_path and self.image_detector:
                 logger.info("📸 Analyzing image...")
-                image_result = self.image_detector.detect(image_path)
+                # Load image and convert to numpy array
+                from PIL import Image as PILImage
+                image_pil = PILImage.open(image_path).convert("RGB")
+                image_array = np.array(image_pil)
+                image_result = self.image_detector.analyze(image_array)
                 results["individual_results"]["image"] = image_result
-                modality_scores["image"] = image_result.get("authenticity_score", 0.5)
+                # Extract authenticity score properly
+                if isinstance(image_result, dict):
+                    modality_scores["image"] = image_result.get("authenticity_score", 0.5)
+                else:
+                    # Fallback if image_result is not a dict
+                    modality_scores["image"] = 0.5
                 results["modalities_analyzed"].append("image")
 
             # Video analysis

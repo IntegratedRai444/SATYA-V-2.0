@@ -185,12 +185,12 @@ class HealthMonitor extends EventEmitter {
     try {
       const startTime = Date.now();
       
-      // Try direct PostgreSQL connection first
+      // Try direct database connection using dbManager
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Database query timeout')), 3000)
       );
       
-      const queryPromise = db.select().from(users).limit(1);
+      const queryPromise = dbManager.find('users', {}, { limit: 1 });
       
       try {
         await Promise.race([queryPromise, timeoutPromise]);
@@ -199,7 +199,7 @@ class HealthMonitor extends EventEmitter {
         logSystemHealth('database', status, { responseTime, method: 'postgresql' });
         return { status, responseTime };
       } catch (pgError) {
-        // PostgreSQL failed, mark as unhealthy
+        // Database check failed, mark as unhealthy
         logger.error('Database health check failed:', pgError);
         const restStartTime = Date.now();
         const isHealthy = false;

@@ -18,12 +18,12 @@ logger = logging.getLogger(__name__)
 
 # Import the centralized ML classifier
 try:
-    from ..models.deepfake_classifier import get_model_info, predict_image
+    from models.deepfake_classifier import get_model_info, predict_image
     ML_CLASSIFIER_AVAILABLE = True
 except ImportError as e:
     ML_CLASSIFIER_AVAILABLE = False
     logger.error(f"Failed to import ML classifier: {e}")
-    raise
+    # Don't raise - just continue without ML
 
 # Import forensic analysis (non-ML analysis)
 try:
@@ -77,7 +77,7 @@ class ImageDetector:
         Detect faces in an image using the configured face detector.
         
         Args:
-            image: Image as numpy array (RGB)
+            image: Input image as numpy array (RGB)
             
         Returns:
             List of face dictionaries with bounding boxes and confidence
@@ -137,9 +137,9 @@ class ImageDetector:
     def _preprocess_for_detection(self, image: np.ndarray) -> np.ndarray:
         """Preprocess image for better face detection."""
         # Enhance contrast and normalize lighting
-        from PIL import Image, ImageEnhance
+        from PIL import Image as PILImage, ImageEnhance
         
-        pil_image = Image.fromarray(image)
+        pil_image = PILImage.fromarray(image)
         
         # Enhance contrast
         enhancer = ImageEnhance.Contrast(pil_image)
@@ -281,7 +281,7 @@ class ImageDetector:
             logger.error(f"Error in model classification: {e}")
             raise RuntimeError(f"Failed to classify image: {e}")
     
-    def analyze_metadata(self, image_pil: Image.Image) -> Dict[str, Any]:
+    def analyze_metadata(self, image_pil) -> Dict[str, Any]:
         """
         Analyze image metadata for manipulation signs.
         
@@ -652,7 +652,7 @@ class ImageDetector:
             RuntimeError: If analysis fails
             ValueError: If input is invalid
         """
-        if not isinstance(image, (np.ndarray, Image.Image)):
+        if not isinstance(image, (np.ndarray, PILImage.Image)):
             raise ValueError("Input must be a numpy array or PIL Image")
         
         try:
@@ -691,12 +691,11 @@ class ImageDetector:
                 'processing_timestamp': datetime.utcnow().isoformat(),
                 'detect_faces': detect_faces,
                 'analyze_forensics': analyze_forensics,
-                'return_face_data': return_face_data
             }
             
             # Return only signals and metadata - NO VERDICTS
             result = {
-                'image': image_pil,  # Return the preprocessed image
+                'image': image_pil,  # Return PIL Image object
                 'signals': signals,
                 'metadata': metadata
             }
@@ -744,24 +743,12 @@ class ImageDetector:
         
         return max(0.0, min(1.0, score))
             
-            # Natural images typically have certain statistical properties
-            if 50 < mean_val < 200:  # Reasonable brightness
-                score += 0.2
-            if 20 < std_val < 80:   # Reasonable contrast
-                score += 0.2
-            if -1 < skewness < 1:   # Not too skewed
-                score += 0.1
-            if 2 < kurtosis < 6:    # Reasonable kurtosis
-                score += 0.1
-            
-            return max(0.0, min(1.0, score))
-            
         try:
             # Analyze JPEG compression artifacts
-            if hasattr(image, 'format') and image.format == 'JPEG':
+            if hasattr(image_pil, 'format') and image_pil.format == 'JPEG':
                 # Real images typically have natural compression patterns
                 import numpy as np
-                img_array = np.array(image)
+                img_array = np.array(image_pil)
 
                 # Check for over-compression (common in manipulated images)
             

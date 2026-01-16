@@ -120,6 +120,62 @@ type Database = {
           sensitivity_level?: string;
         };
       };
+      tasks: {
+        Row: {
+          id: string;
+          user_id: string;
+          type: string;
+          status: string;
+          progress: number;
+          file_name: string;
+          file_size: number;
+          file_type: string;
+          file_path: string;
+          report_code: string | null;
+          result: string | null;
+          error: string | null;
+          metadata: string | null;
+          created_at: string;
+          started_at: string | null;
+          completed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          type: string;
+          status?: string;
+          progress?: number;
+          file_name: string;
+          file_size: number;
+          file_type: string;
+          file_path: string;
+          report_code?: string | null;
+          result?: string | null;
+          error?: string | null;
+          metadata?: string | null;
+          created_at?: string;
+          started_at?: string | null;
+          completed_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          type?: string;
+          status?: string;
+          progress?: number;
+          file_name?: string;
+          file_size?: number;
+          file_type?: string;
+          file_path?: string;
+          report_code?: string | null;
+          result?: string | null;
+          error?: string | null;
+          metadata?: string | null;
+          created_at?: string;
+          started_at?: string | null;
+          completed_at?: string | null;
+        };
+      };
     };
   };
 };
@@ -128,7 +184,7 @@ type Database = {
 type Tables = Database['public']['Tables'];
 
 // Table name type (string literal)
-type TableName = keyof Tables & string;
+export type TableName = keyof Tables & string;
 
 // Row type for a table
 type TableRow<T extends TableName> = Tables[T] extends { Row: infer R } ? R : never;

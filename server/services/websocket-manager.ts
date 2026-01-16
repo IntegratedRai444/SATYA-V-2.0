@@ -90,6 +90,8 @@ type WebSocketMessage = {
     code: string;
     message: string;
     timestamp?: number;
+    requestId?: string;
+    details?: any;
   };
   data?: unknown;
 };
@@ -231,11 +233,75 @@ interface AuthenticatedRequest extends IncomingMessage {
 
 // WebSocket message type is defined by webSocketMessageSchema
 
-// Constants for throttling and rate limiting
-// Moved to class properties to avoid redeclaration
-const MAX_THROTTLE_ENTRIES = 10000; // Maximum number of throttle entries to keep
-const THROTTLE_CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
-const THROTTLE_MAX_AGE = 15 * 60 * 1000; // 15 minutes
+export class WebSocketManager {
+  // Generate a unique client ID
+  private generateClientId(): string {
+    return `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  // Parse incoming WebSocket message
+  private parseMessage(data: RawData): WebSocketMessage | null {
+    try {
+      const message = JSON.parse(data.toString());
+      return messageSchema.parse(message);
+    } catch (error) {
+      logger.error('Failed to parse WebSocket message', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        data: data.toString().substring(0, 100) // Log first 100 chars to avoid huge logs
+      });
+      return null;
+    }
+  }
+
+  // Add missing method implementations
+  private handleDisconnect(ws: WebSocketClient): void {
+    if (!ws.userId) return;
+
+    const userClients = this.clients.get(ws.userId);
+    if (userClients) {
+      userClients.delete(ws);
+      if (userClients.size === 0) {
+        this.clients.delete(ws.userId);
+      }
+    }
+
+    logger.info('Client disconnected', {
+      clientId: ws.clientId,
+      userId: ws.userId,
+      remainingConnections: this.getTotalConnections()
+    });
+  }
+
+  private handleSubscribe(ws: WebSocketClient, channel: string): void {
+    if (!ws.subscribedChannels) {
+      ws.subscribedChannels = new Set();
+    }
+    ws.subscribedChannels.add(channel);
+
+    logger.debug('Client subscribed to channel', {
+      clientId: ws.clientId,
+      userId: ws.userId,
+      channel
+    });
+  }
+
+  private handleUnsubscribe(ws: WebSocketClient, channel: string): void {
+    if (ws.subscribedChannels) {
+      ws.subscribedChannels.delete(channel);
+
+      logger.debug('Client unsubscribed from channel', {
+        clientId: ws.clientId,
+        userId: ws.userId,
+        channel
+      });
+    }
+  }
+
+  // Constants for throttling and rate limiting
+  private static readonly MAX_THROTTLE_ENTRIES = 10000; // Maximum number of throttle entries to keep
+  private static readonly THROTTLE_CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
+  private static readonly THROTTLE_MAX_AGE = 15 * 60 * 1000; // 15 minutes
+  private static readonly PROGRESS_THROTTLE_MS = 100;
 
   private wss: WebSocketServer | null = null;
   private clients: Map<string, Set<WebSocketClient>> = new Map();
@@ -264,11 +330,11 @@ const THROTTLE_MAX_AGE = 15 * 60 * 1000; // 15 minutes
     this.throttleCleanupInterval = setInterval(() => {
       const now = Date.now();
       for (const [key, timestamp] of this.progressThrottle.entries()) {
-        if (now - timestamp > this.PROGRESS_THROTTLE_MS * 10) {
+        if (now - timestamp > WebSocketManager.PROGRESS_THROTTLE_MS * 10) {
           this.progressThrottle.delete(key);
         }
       }
-      
+
       // Clean up rate limiting
       const nowMs = Date.now();
       const ipAddresses = Array.from(this.connectionAttempts.keys());
@@ -283,15 +349,20 @@ const THROTTLE_MAX_AGE = 15 * 60 * 1000; // 15 minutes
 
   private setupProcessHandlers(): void {
     // Handle process events for graceful shutdown
-    const shutdown = () => this.shutdown();
-    process.on('SIGINT', shutdown);
-    process.on('SIGTERM', shutdown);
-    
+    const shutdown = (signal: string) => {
+      logger.info(`Received ${signal}, shutting down gracefully...`);
+      this.shutdown();
+      process.exit(0);
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+
     // Handle uncaught exceptions
     process.on('uncaughtException', (error) => {
       logger.error('Uncaught exception in WebSocketManager:', error);
     });
-    
+
     // Handle unhandled promise rejections
     process.on('unhandledRejection', (reason, promise) => {
       logger.error('Unhandled rejection at:', promise, 'reason:', reason);
@@ -299,16 +370,16 @@ const THROTTLE_MAX_AGE = 15 * 60 * 1000; // 15 minutes
   }
 
   private setupFileProcessorListeners(): void {
-    const emitter = this.fileProcessor as unknown as NodeJS.EventEmitter;
-    
-    emitter.on('jobProgress', (job: ProcessingJob) => {
+    // Setup file processor event listeners
+    this.fileProcessor.on('progress', (job: ProcessingJob) => {
       if (job.userId) {
         this.sendToUser(job.userId, {
           type: WebSocketMessageType.JOB_PROGRESS,
           jobId: job.id,
           payload: {
             progress: job.progress,
-            status: job.status
+            status: job.status,
+            message: job.status === 'processing' ? 'Processing...' : 'Completed'
           }
         });
       }
@@ -319,11 +390,11 @@ const THROTTLE_MAX_AGE = 15 * 60 * 1000; // 15 minutes
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
     }
-    
+
     this.heartbeatInterval = setInterval(() => {
       const now = Date.now();
       const disconnectedClients: WebSocketClient[] = [];
-      
+
       // Check all clients for timeouts
       for (const clientSet of this.clients.values()) {
         for (const client of clientSet) {
@@ -337,7 +408,7 @@ const THROTTLE_MAX_AGE = 15 * 60 * 1000; // 15 minutes
           }
         }
       }
-      
+
       // Clean up disconnected clients
       for (const client of disconnectedClients) {
         client.terminate();
@@ -345,45 +416,8 @@ const THROTTLE_MAX_AGE = 15 * 60 * 1000; // 15 minutes
     }, 10000); // Check every 10 seconds
   }
 
-  private handleConnection(ws: WebSocketClient): void {
-    ws.isAlive = true;
-    ws.lastActivity = Date.now();
-    
-    // Add ping/pong handlers
-    ws.on('pong', () => {
-      ws.isAlive = true;
-      ws.lastActivity = Date.now();
-    });
-    
-    // Add message handler
-    ws.on('message', (data: RawData) => {
-      this.handleMessage(ws, data).catch(error => {
-        logger.error('Error handling WebSocket message:', error);
-      });
-    });
-    
-    // Add error handler
-    ws.on('error', (error) => {
-      logger.error('WebSocket error:', error);
-      ws.terminate();
-    });
-    
-    // Add close handler
-    ws.on('close', () => {
-      // Clean up client from tracking
-      if (ws.userId) {
-        const clients = this.clients.get(ws.userId);
-        if (clients) {
-          clients.delete(ws);
-          if (clients.size === 0) {
-            this.clients.delete(ws.userId);
-          }
-        }
-      }
-    });
-  }
 
-  private sendError(ws: WebSocketClient, error: { code: string; message: string }): void {
+  private sendError(ws: WebSocketClient, error: { code: string; message: string; requestId?: string; details?: any }): void {
     this.sendToClient(ws, {
       type: WebSocketMessageType.ERROR,
       error: {
@@ -397,15 +431,15 @@ const THROTTLE_MAX_AGE = 15 * 60 * 1000; // 15 minutes
   private sendToClient(ws: WebSocketClient, message: WebSocketMessage): void {
     try {
       if (ws.readyState === WebSocket.OPEN) {
-        const messageStr = JSON.stringify({
-          ...message,
-          timestamp: message.timestamp || Date.now()
-        });
+        const messageStr = JSON.stringify(message);
         ws.send(messageStr);
       }
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      logger.error('Error sending message to client:', errorMessage);
+    } catch (error) {
+      logger.error('Error sending message to client:', {
+        error: error instanceof Error ? error.message : String(error),
+        clientId: ws.clientId,
+        messageType: message?.type
+      });
     }
   }
 
@@ -512,9 +546,10 @@ const THROTTLE_MAX_AGE = 15 * 60 * 1000; // 15 minutes
         username: decoded.username,
         sessionId: decoded.sessionId
       };
-    } catch (error) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       logger.error('WebSocket authentication failed:', { 
-        error: error.message,
+        error: errorMessage,
         ip,
         userAgent: info.req.headers['user-agent']
       });
@@ -526,68 +561,15 @@ const THROTTLE_MAX_AGE = 15 * 60 * 1000; // 15 minutes
   }
 
   private async handleMessage(ws: WebSocketClient, data: RawData): Promise<void> {
-    // Convert RawData to string and check size
-    const messageStr = data.toString();
-    if (messageStr.length > MESSAGE_LIMITS.MAX_MESSAGE_SIZE) {
-      this.sendError(ws, {
-        code: 'MESSAGE_TOO_LARGE',
-        message: `Message exceeds maximum size of ${MESSAGE_LIMITS.MAX_MESSAGE_SIZE} bytes`
-      });
-      return;
-    }
-
-    // Rate limiting
-    const now = Date.now();
-    const timeWindow = Math.floor(now / MESSAGE_LIMITS.MESSAGE_RATE_WINDOW_MS);
-    const rateKey = `${ws.clientId}:${timeWindow}`;
-    
-    // Get or initialize rate counter
-    const messageCount = (this.messageRates.get(rateKey) || 0) + 1;
-    this.messageRates.set(rateKey, messageCount);
-
-    // Check rate limit
-    if (messageCount > MESSAGE_LIMITS.MESSAGES_PER_MINUTE) {
-      this.sendError(ws, {
-        code: 'RATE_LIMIT_EXCEEDED',
-        message: 'Too many messages. Please slow down.'
-      });
-      return;
-    }
-
     try {
       const message = this.parseMessage(data);
+      if (!message) {
+        throw new Error('Failed to parse message');
+      }
       await this.validateMessage(ws, message);
       await this.processMessage(ws, message);
     } catch (error) {
       this.handleMessageError(ws, error);
-    }
-  }
-
-  private parseMessage(data: string): WebSocketMessage {
-    try {
-      const message = JSON.parse(data) as WebSocketMessage;
-      
-      // Basic message validation
-      if (!message || typeof message !== 'object' || Array.isArray(message)) {
-        throw new Error('Invalid message format');
-      }
-      
-      if (!message.type || typeof message.type !== 'string') {
-        throw new Error('Message type is required');
-      }
-      
-      // Validate message size
-      const messageStr = JSON.stringify(message);
-      if (messageStr.length > MESSAGE_LIMITS.MAX_MESSAGE_SIZE) {
-        throw new Error(`Message exceeds maximum size of ${MESSAGE_LIMITS.MAX_MESSAGE_SIZE} bytes`);
-      }
-      
-      return message;
-    } catch (error) {
-      if (error instanceof SyntaxError) {
-        throw new Error('Invalid JSON message');
-      }
-      throw error;
     }
   }
 
@@ -600,18 +582,27 @@ const THROTTLE_MAX_AGE = 15 * 60 * 1000; // 15 minutes
   }
 
   private handleMessageError(ws: WebSocketClient, error: unknown): void {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    
     logger.error('WebSocket message error:', { 
       error: errorMessage,
-      clientId: ws.clientId,
-      stack: error instanceof Error ? error.stack : undefined
+      stack: errorStack,
+      clientId: ws?.clientId || 'unknown'
     });
 
-    this.sendError(ws, {
-      code: 'MESSAGE_PROCESSING_ERROR',
-      message: 'Failed to process message',
-      details: process.env.NODE_ENV === 'development' ? errorMessage : undefined
-    });
+    try {
+      this.sendError(ws, {
+        code: 'MESSAGE_PROCESSING_ERROR',
+        message: 'Failed to process message',
+        details: errorMessage
+      });
+    } catch (sendError) {
+      logger.error('Failed to send error message to client:', {
+        error: sendError instanceof Error ? sendError.message : String(sendError),
+        clientId: ws?.clientId || 'unknown'
+      });
+    }
   }
 
   /**
@@ -691,39 +682,6 @@ const THROTTLE_MAX_AGE = 15 * 60 * 1000; // 15 minutes
       logger.error('Failed to extract token:', e);
       return null;
     }
-
-      // Parse and validate message
-      let message: WebSocketMessage;
-      try {
-        const parsed = JSON.parse(messageStr);
-        // Basic validation since we're not using Zod schema anymore
-        if (!parsed || typeof parsed !== 'object' || !parsed.type) {
-          throw new Error('Invalid message format');
-        }
-        message = parsed as WebSocketMessage;
-      } catch (error) {
-        this.sendError(ws, {
-          code: 'invalid_message',
-          message: 'Invalid message format'
-        });
-        return;
-      }
-
-      // Handle custom message types here
-      if (message.type === 'ping') {
-        this.sendToClient(ws, { 
-          type: 'pong', 
-          timestamp: Date.now() 
-        });
-      }
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      const errorStack = error instanceof Error ? error.stack : undefined;
-      logger.error('Error handling WebSocket message', { 
-        error: errorMessage,
-        stack: errorStack
-      });
-    }
   }
 
   private handleCustomMessage(ws: WebSocketClient, message: WebSocketMessage): void {
@@ -742,29 +700,117 @@ const THROTTLE_MAX_AGE = 15 * 60 * 1000; // 15 minutes
     });
   }
 
-  /**
-   * Send message to all clients of a user
-   */
+  private handleConnection(ws: WebSocketClient, req: IncomingMessage): void {
+    try {
+      const clientId = this.generateClientId();
+      const authReq = req as AuthenticatedRequest;
+      
+      // Initialize client properties
+      ws.clientId = clientId;
+      ws.userId = authReq.userId;
+      ws.username = authReq.username || '';
+      ws.sessionId = authReq.sessionId;
+      ws.ipAddress = authReq.ipAddress || '';
+      ws.isAlive = true;
+      ws.lastActivity = Date.now();
+      ws.messageQueue = [];
+      ws.maxQueueSize = MESSAGE_LIMITS.MAX_QUEUE_SIZE;
+      ws.subscribedChannels = new Set();
+      ws.messageCount = 0;
+      ws.lastMessageTime = Date.now();
+
+      // Add client to tracking
+      const userClients = this.clients.get(ws.userId) || new Set<WebSocketClient>();
+      userClients.add(ws);
+      this.clients.set(ws.userId, userClients);
+
+      logger.info('New WebSocket connection established', { 
+        clientId,
+        userId: ws.userId,
+        username: ws.username,
+        sessionId: ws.sessionId,
+        ipAddress: ws.ipAddress
+      });
+
+      // Setup ping/pong for connection health
+      ws.on('pong', () => {
+        ws.isAlive = true;
+        ws.lastActivity = Date.now();
+      });
+
+      // Handle incoming messages
+      ws.on('message', (data: RawData) => {
+        this.handleMessage(ws, data).catch(error => {
+          logger.error('Error handling WebSocket message:', error);
+        });
+      });
+
+      // Handle connection close
+      ws.on('close', () => {
+        this.handleDisconnect(ws);
+      });
+
+      // Handle errors
+      ws.on('error', (error) => {
+        logger.error('WebSocket error:', error);
+        this.handleDisconnect(ws);
+      });
+
+      // Send welcome message
+      this.sendToClient(ws, {
+        type: WebSocketMessageType.CONNECTED,
+        timestamp: Date.now(),
+        payload: {
+          clientId,
+          userId: ws.userId,
+          message: 'Connection established successfully'
+        }
+      });
+    } catch (error) {
+      logger.error('Error in WebSocket connection handler:', error);
+      ws.terminate();
+    }
+  }
+
   private sendToUser(userId: string, message: WebSocketMessage): void {
     const userClients = this.clients.get(userId);
     if (userClients) {
+      let sentCount = 0;
       userClients.forEach(ws => {
-        this.sendToClient(ws, message);
+        try {
+          if (ws.readyState === WebSocket.OPEN) {
+            this.sendToClient(ws, message);
+            sentCount++;
+          }
+        } catch (error) {
+          logger.error('Error sending message to client:', {
+            error: error instanceof Error ? error.message : String(error),
+            clientId: ws.clientId,
+            userId,
+            messageType: message.type
+          });
+        }
+      });
+
+      logger.debug('Message sent to user clients', {
+        userId,
+        messageType: message.type,
+        recipients: sentCount,
+        totalClients: userClients.size
       });
     }
   }
 }
 
-// Create a singleton instance
+// Create and export a single instance
 const webSocketManager = new WebSocketManager(fileProcessor);
-
-export { webSocketManager as default, WebSocketManager };
+export default webSocketManager;
 
 // Add global error handler for uncaught exceptions
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught exception in WebSocket manager', {
-    error: error.message,
-    stack: error.stack
+    error: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined
   });
   // Don't exit the process, let the application handle it
 });
@@ -778,12 +824,12 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 // Add event listeners for process cleanup
-process.on('SIGTERM', () => {
-  logger.info('SIGTERM received, cleaning up WebSocket manager...');
+// Handle graceful shutdown
+const shutdown = (signal: string) => {
+  logger.info(`${signal} received, cleaning up WebSocket manager...`);
   webSocketManager.shutdown();
-});
+  process.exit(0);
+};
 
-process.on('SIGINT', () => {
-  logger.info('SIGINT received, cleaning up WebSocket manager...');
-  webSocketManager.shutdown();
-});
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

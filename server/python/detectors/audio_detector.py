@@ -68,31 +68,100 @@ class AudioDetector:
     7. Frequency domain analysis
     """
 
-    def __init__(self, device="cpu", config: Optional[Dict] = None):
-        """Initialize comprehensive audio detector"""
-        self.device = device
-        self.config = config or self._default_config()
+    def __init__(self, device=None, config: Optional[Dict] = None):
+        """
+        Initialize comprehensive audio detector with enhanced model loading.
+        
+        Args:
+            device: Device to run models on ('cuda', 'cpu', or None for auto-detect)
+            config: Optional configuration dictionary
+        """
+        # Auto-detect device if not specified
+        self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
+        self.config = self._validate_config(config or self._default_config())
         self.sample_rate = 16000
-
-        logger.info(f"🎵 Initializing Enhanced Audio Detector on {device}")
-
-        # ML models
-        self.model = None
-        self.processor = None
-        self.models_loaded = False
-
-        # Analysis weights
-        self.analysis_weights = {
+        self.model_version = "1.0.0"
+        
+        # Initialize logging
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging.INFO)
+        
+        # Model registry
+        self.models = {}
+        self.processors = {}
+        self.model_metadata = {}
+        
+        # Analysis configuration
+        self.analysis_weights = self.config.get('analysis_weights', {
             "ml_classification": 0.40,
             "spectral_analysis": 0.20,
             "prosody_analysis": 0.15,
             "voice_quality": 0.10,
             "artifact_detection": 0.10,
             "temporal_consistency": 0.05,
+        })
+        
+        # Initialize model health metrics
+        self.model_health = {
+            'total_requests': 0,
+            'failed_requests': 0,
+            'avg_inference_time': 0.0,
+            'last_checked': None
         }
-
-        # Load models
-        self._load_pretrained_model()
+        
+        # Load models asynchronously
+        self._init_models()
+        
+        self.logger.info(f"🎵 Initialized AudioDetector v{self.model_version} on {self.device}")
+    
+    def _validate_config(self, config: Dict) -> Dict:
+        """Validate and normalize configuration."""
+        if not isinstance(config, dict):
+            self.logger.warning("Invalid config, using defaults")
+            return self._default_config()
+            
+        # Ensure required sections exist
+        config.setdefault('models', {})
+        config.setdefault('analysis', {})
+        config.setdefault('thresholds', {})
+        config.setdefault('audio_processing', {})
+        
+        # Set default model options if not specified
+        config['models'].setdefault('wav2vec2', {
+            'enabled': True,
+            'model_options': [
+                "Andyrasika/wav2vec2-large-xlsr-53-deepfake-detection",
+                "facebook/wav2vec2-base",
+            ]
+        })
+        
+        return config
+        
+    def _init_models(self):
+        """Initialize all required models asynchronously."""
+        import threading
+        
+        def _load_models():
+            try:
+                self.logger.info("🔄 Loading ML models...")
+                
+                # Load Wav2Vec2 models
+                if self.config['models'].get('wav2vec2', {}).get('enabled', True):
+                    self._load_wav2vec2_models()
+                
+                # Load other models as needed
+                # self._load_other_models()
+                
+                self.logger.info("✅ All models loaded successfully")
+                self.models_loaded = True
+                
+            except Exception as e:
+                self.logger.error(f"❌ Failed to load models: {str(e)}")
+                self.models_loaded = False
+        
+        # Start model loading in background
+        self.model_loading_thread = threading.Thread(target=_load_models, daemon=True)
+        self.model_loading_thread.start()
 
     def _default_config(self) -> Dict:
         """Default configuration"""
@@ -159,33 +228,69 @@ class AudioDetector:
             logger.error(f"❌ Failed to load models: {e}")
             return False
 
-    def detect(self, audio_path: str) -> Dict:
+    def _validate_audio_file(self, audio_path: str) -> None:
+        """Validate audio file before processing."""
+        if not os.path.exists(audio_path):
+            raise FileNotFoundError(f"Audio file not found: {audio_path}")
+            
+        # Check file size (max 100MB)
+        max_size = 100 * 1024 * 1024  # 100MB
+        file_size = os.path.getsize(audio_path)
+        if file_size > max_size:
+            raise ValueError(f"File too large: {file_size/1024/1024:.2f}MB (max 100MB)")
+            
+        # Check file extension
+        valid_extensions = {'.wav', '.mp3', '.ogg', '.flac'}
+        if not any(audio_path.lower().endswith(ext) for ext in valid_extensions):
+            raise ValueError(f"Invalid file format. Supported formats: {', '.join(valid_extensions)}")
+
+    def detect(self, audio_path: str, timeout: int = 30) -> Dict:
         """
-        Comprehensive audio analysis
+        Comprehensive audio analysis with enhanced security and error handling.
 
         Args:
             audio_path: Path to audio file
+            timeout: Maximum processing time in seconds
 
         Returns:
             Comprehensive detection results
+            
+        Raises:
+            FileNotFoundError: If audio file doesn't exist
+            ValueError: If file is invalid or too large
+            TimeoutError: If processing takes too long
         """
+        start_time = time.time()
+        
         try:
+            # Validate input
+            self._validate_audio_file(audio_path)
             logger.info(f"🔍 Analyzing audio: {audio_path}")
 
-            # Load audio
-            if LIBROSA_AVAILABLE:
-                audio_array, sr = librosa.load(audio_path, sr=self.sample_rate)
-            else:
-                # Fallback: basic loading
-                import wave
-
-                with wave.open(audio_path, "rb") as wav_file:
-                    sr = wav_file.getframerate()
-                    frames = wav_file.readframes(wav_file.getnframes())
-                    audio_array = (
-                        np.frombuffer(frames, dtype=np.int16).astype(np.float32)
-                        / 32768.0
-                    )
+            # Load audio with timeout
+            def load_audio():
+                if LIBROSA_AVAILABLE:
+                    return librosa.load(audio_path, sr=self.sample_rate)
+                else:
+                    import wave
+                    with wave.open(audio_path, "rb") as wav_file:
+                        sr = wav_file.getframerate()
+                        frames = wav_file.readframes(wav_file.getnframes())
+                        return (
+                            np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0,
+                            sr
+                        )
+            
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(load_audio)
+                try:
+                    audio_array, sr = future.result(timeout=timeout/2)  # Half the timeout for loading
+                except concurrent.futures.TimeoutError:
+                    raise TimeoutError("Audio loading timed out")
+            
+            # Check processing time
+            if time.time() - start_time > timeout * 0.9:  # Use 90% of timeout for processing
+                raise TimeoutError("Processing taking too long")
 
             duration = len(audio_array) / sr
             logger.info(f"📊 Audio: {duration:.2f}s, {sr}Hz")

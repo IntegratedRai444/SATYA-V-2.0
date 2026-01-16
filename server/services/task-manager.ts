@@ -1,4 +1,4 @@
-import { dbManager } from '../db'; // Database connection manager
+import { dbManager, type TableName } from '../db'; // Database connection manager
 
 type UpdateTaskProgressData = {
   progress: number;
@@ -71,21 +71,21 @@ export class TaskManager {
   async createTask(
     type: string,
     fileInfo: FileMetadata,
-    userId: number
+    userId: string
   ): Promise<Task> {
     try {
       const reportCode = this.generateReportCode(type);
       
       const taskData = {
-        userId,
+        user_id: userId,
         type,
         status: 'queued' as const,
         progress: 0,
-        fileName: fileInfo.name,
-        fileSize: fileInfo.size,
-        fileType: fileInfo.type,
-        filePath: fileInfo.path,
-        reportCode,
+        file_name: fileInfo.name,
+        file_size: fileInfo.size,
+        file_type: fileInfo.type,
+        file_path: fileInfo.path,
+        report_code: reportCode,
         metadata: JSON.stringify({
           originalName: fileInfo.name,
           uploadedAt: new Date().toISOString()
@@ -114,21 +114,21 @@ export class TaskManager {
       // Map the database record to Task type
       return {
         id: task.id,
-        createdAt: new Date(task.createdAt),
-        updatedAt: task.updatedAt ? new Date(task.updatedAt) : null,
-        userId: task.userId,
+        createdAt: new Date(task.created_at),
+        updatedAt: task.updated_at ? new Date(task.updated_at) : null,
+        userId: task.user_id,
         type: task.type,
         status: task.status,
         progress: task.progress,
-        fileName: task.fileName,
-        fileSize: task.fileSize,
-        fileType: task.fileType,
-        filePath: task.filePath,
-        reportCode: task.reportCode,
+        fileName: task.file_name,
+        fileSize: task.file_size,
+        fileType: task.file_type,
+        filePath: task.file_path,
+        reportCode: task.report_code,
         result: task.result ? JSON.parse(task.result) : null,
         error: task.error ? JSON.parse(task.error) : null,
-        startedAt: task.startedAt ? new Date(task.startedAt) : null,
-        completedAt: task.completedAt ? new Date(task.completedAt) : null,
+        startedAt: task.started_at ? new Date(task.started_at) : null,
+        completedAt: task.completed_at ? new Date(task.completed_at) : null,
         metadata: task.metadata ? JSON.parse(task.metadata) : {}
       } as Task;
     } catch (error) {
@@ -191,7 +191,7 @@ export class TaskManager {
         status: 'completed',
         progress: 100,
         result: JSON.stringify(result),
-        completedAt: new Date()
+        completed_at: new Date().toISOString()
       });
     } catch (error) {
       logger.error('Error completing task', error as Error);
@@ -209,7 +209,7 @@ export class TaskManager {
       await dbManager.update('tasks', taskId.toString(), {
         status: 'failed',
         error: JSON.stringify(error),
-        completedAt: new Date()
+        completed_at: new Date().toISOString()
       });
     } catch (error) {
       logger.error('Error failing task', error as Error);
@@ -223,12 +223,12 @@ export class TaskManager {
    * @param filters - Optional filters
    * @returns Array of tasks
    */
-  async getUserTasks(userId: number, filters: TaskFilters = {}): Promise<Task[]> {
+  async getUserTasks(userId: string, filters: TaskFilters = {}): Promise<Task[]> {
     try {
       // Build query options
       const queryOptions: any = {
-        where: { userId },
-        orderBy: { createdAt: 'desc' }
+        where: { user_id: userId },
+        orderBy: { column: 'created_at', ascending: false }
       };
       
       // Apply status filter if provided
@@ -278,7 +278,7 @@ export class TaskManager {
    * @param userId - User ID
    * @returns Task statistics
    */
-  async getTaskStatistics(userId: number): Promise<{
+  async getTaskStatistics(userId: string): Promise<{
     total: number;
     queued: number;
     processing: number;
