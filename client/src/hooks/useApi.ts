@@ -122,6 +122,7 @@ export function useEnhancedMutation<TData = any, TVariables = any, TError = Erro
   options?: Omit<UseMutationOptions<TData, TError, TVariables>, 'mutationFn'>
 ) {
   const { state, dispatch } = useAppContext();
+  const queryClient = useQueryClient();
   
   return useMutation<TData, TError, TVariables>({
     mutationFn: async (variables) => {
@@ -453,7 +454,7 @@ export function useImageAnalysis() {
     },
     onSuccess: (data) => {
       // Update cache
-      useQueryClient.invalidateQueries({ queryKey: ['analysis', 'image'] });
+      queryClient.invalidateQueries();
       
       // Show success notification
       toast({
