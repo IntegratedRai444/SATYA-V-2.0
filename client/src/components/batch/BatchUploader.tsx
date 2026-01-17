@@ -6,6 +6,7 @@ import { Progress } from '@/components/ui/progress';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useBatchProcessing, type BatchFile } from '@/hooks/useBatchProcessing';
 import { formatFileSize } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 const BatchUploader: React.FC = () => {
   const { files, addFiles, removeFile, processBatch, isProcessing } = useBatchProcessing();

@@ -22,7 +22,7 @@ async function testConnection() {
     const result = await client.query('SELECT current_database(), current_user, version()');
     console.log('Database Info:', result.rows[0]);
   } catch (err) {
-    console.error(' Connection error:', err.message);
+    console.error(' Connection error:', (err as Error).message);
   } finally {
     client.release();
     await pool.end();

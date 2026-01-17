@@ -1,4 +1,4 @@
-import { get } from '@/lib/api/client';
+import { api } from '@/lib/api/client';
 import { useState, useEffect } from 'react';
 import { metrics } from './metrics';
 
@@ -63,7 +63,7 @@ class HealthService {
     const startTime = performance.now();
     
     try {
-      const result = await get<HealthCheckResult>('/api/health');
+      const result = await api.get<HealthCheckResult>('/api/health');
       this.lastCheck = result;
       
       // Track health check metrics

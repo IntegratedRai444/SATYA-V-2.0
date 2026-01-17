@@ -24,7 +24,12 @@ interface UserPreferences {
 }
 
 // Define user type with preferences
-export interface User extends AuthUser, Partial<UserPreferences> {}
+export interface User extends AuthUser, Partial<UserPreferences> {
+  language?: string;
+  timezone?: string;
+  dateFormat?: string;
+  timeFormat?: '12h' | '24h';
+}
 
 // Re-export types for backward compatibility
 export type { AnalysisResult, User as UserProfile };
@@ -79,7 +84,6 @@ export function useEnhancedQuery<TData = any, TError = Error>(
   }
 ) {
   const { offlineCache = true, ...queryOptions } = options;
-  const queryClient = useQueryClient();
   
   return useQuery<TData, TError>({
     ...queryOptions,
@@ -117,7 +121,6 @@ export function useEnhancedMutation<TData = any, TVariables = any, TError = Erro
   mutationFn: (variables: TVariables) => Promise<TData>,
   options?: Omit<UseMutationOptions<TData, TError, TVariables>, 'mutationFn'>
 ) {
-  const queryClient = useQueryClient();
   const { state, dispatch } = useAppContext();
   
   return useMutation<TData, TError, TVariables>({
@@ -152,14 +155,13 @@ export function useEnhancedMutation<TData = any, TVariables = any, TError = Erro
       return mutationFn(variables);
     },
     ...options,
-    onSuccess: (data, variables, context) => {
+    onSuccess: (data, variables, context, unknown) => {
       // Invalidate and refetch any queries that might be affected by this mutation
-      queryClient.invalidateQueries();
       if (options?.onSuccess) {
         options.onSuccess(data, variables, context);
       }
     },
-    onError: (error, variables, context) => {
+    onError: (error, variables, context, unknown) => {
       console.error('Mutation Error:', error);
       if (options?.onError) {
         options.onError(error, variables, context);
@@ -169,7 +171,6 @@ export function useEnhancedMutation<TData = any, TVariables = any, TError = Erro
 }
 
 export function useAuth() {
-  const queryClient = useQueryClient();
   const { state, dispatch } = useAppContext();
   
   // Check if user is authenticated
@@ -214,16 +215,16 @@ export function useAuth() {
         ...response,
         user: {
           ...response.user,
-          language: response.user.language || 'en-US',
-          timezone: response.user.timezone || 'UTC',
-          dateFormat: response.user.dateFormat || 'YYYY-MM-DD',
-          timeFormat: (response.user.timeFormat || '24h') as '12h' | '24h'
+          language: (response.user as any).language || 'en-US',
+          timezone: (response.user as any).timezone || 'UTC',
+          dateFormat: (response.user as any).dateFormat || 'YYYY-MM-DD',
+          timeFormat: ((response.user as any).timeFormat || '24h') as '12h' | '24h'
         }
       };
     },
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       // Update user preferences after successful login
-      dispatch({ 
+      dispatch({
         type: 'UPDATE_USER_PREFERENCES', 
         payload: {
           language: data.user.language || 'en-US',
@@ -232,7 +233,7 @@ export function useAuth() {
           timeFormat: data.user.timeFormat || '24h' as const
         } 
       });
-      queryClient.invalidateQueries();
+      useQueryClient.invalidateQueries();
     },
   });
   
@@ -250,7 +251,7 @@ export function useAuth() {
           timeFormat: '24h' as const
         } 
       });
-      queryClient.clear();
+      useQueryClient.clear();
     },
   });
   
@@ -262,14 +263,14 @@ export function useAuth() {
         ...response,
         user: {
           ...response.user,
-          language: response.user.language || 'en-US',
-          timezone: response.user.timezone || 'UTC',
-          dateFormat: response.user.dateFormat || 'YYYY-MM-DD',
-          timeFormat: (response.user.timeFormat || '24h') as '12h' | '24h'
+          language: (response.user as any).language || 'en-US',
+          timezone: (response.user as any).timezone || 'UTC',
+          dateFormat: (response.user as any).dateFormat || 'YYYY-MM-DD',
+          timeFormat: ((response.user as any).timeFormat || '24h') as '12h' | '24h'
         }
       };
     },
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       // Update user preferences after successful registration
       dispatch({ 
         type: 'UPDATE_USER_PREFERENCES', 
@@ -280,7 +281,7 @@ export function useAuth() {
           timeFormat: data.user.timeFormat || '24h' as const
         } 
       });
-      queryClient.invalidateQueries();
+      useQueryClient.invalidateQueries();
     },
   });
   
@@ -294,10 +295,10 @@ export function useAuth() {
           const userData = await authService.getCurrentUser();
           const userWithPreferences = {
             ...userData,
-            language: state.userPreferences?.language || 'en',
-            timezone: state.userPreferences?.timezone || 'UTC',
-            dateFormat: state.userPreferences?.dateFormat || 'YYYY-MM-DD',
-            timeFormat: (state.userPreferences?.timeFormat as '12h' | '24h') || '24h'
+            language: (userData as any).language || 'en',
+            timezone: (userData as any).timezone || 'UTC',
+            dateFormat: (userData as any).dateFormat || 'YYYY-MM-DD',
+            timeFormat: (((userData as any).timeFormat as '12h' | '24h') || '24h')
           };
           setCurrentUser(userWithPreferences);
         } catch (error) {
@@ -332,10 +333,10 @@ export function useAuth() {
     checkAuth,
     
     // Loading states
-    isLoading: loginMutation.isLoading || logoutMutation.isLoading || registerMutation.isLoading,
-    isLoggingIn: loginMutation.isLoading,
-    isLoggingOut: logoutMutation.isLoading,
-    isRegistering: registerMutation.isLoading,
+    isLoading: loginMutation.isPending || logoutMutation.isPending || registerMutation.isPending,
+    isLoggingIn: loginMutation.isPending,
+    isLoggingOut: logoutMutation.isPending,
+    isRegistering: registerMutation.isPending,
     
     // Errors
     error: loginMutation.error || logoutMutation.error || registerMutation.error,
@@ -348,28 +349,8 @@ export function useAuth() {
 interface ModelInfo {
   id: string;
   name: string;
-  version: string;
-  description: string;
-  isActive: boolean;
-}
-
-interface AnalysisHistoryItem {
-  id: string;
-  type: 'image' | 'video' | 'audio' | 'multimodal';
-  result: any;
-  timestamp: string;
-  isOffline?: boolean;
-}
-
-type SystemStatus = {
-  status: 'healthy' | 'degraded' | 'unhealthy';
-  timestamp: string;
-  uptime: number;
-  version: string;
-}
 
 export function useDarkwebCheck() {
-  const queryClient = useQueryClient();
   
   const checkDarkweb = useMutation({
     mutationFn: async ({ contentId }: { contentId: string }) => {
@@ -386,7 +367,7 @@ export function useDarkwebCheck() {
     onError: (error) => {
       toast({
         title: 'Darkweb Check Failed',
-        description: error.message,
+        description: error instanceof Error ? error.message : 'Unknown error occurred',
         variant: 'destructive',
       });
     },
@@ -396,7 +377,6 @@ export function useDarkwebCheck() {
 }
 
 export function useVideoAnalysis() {
-  const queryClient = useQueryClient();
   
   const analyzeVideo = useMutation({
     mutationFn: (file: File) => {
@@ -404,7 +384,7 @@ export function useVideoAnalysis() {
     },
     onSuccess: () => {
       // Update cache with the new analysis result
-      queryClient.invalidateQueries({ queryKey: ['analysis', 'video'] });
+      useQueryClient.invalidateQueries();
       
       // Show success notification
       toast({
@@ -465,16 +445,15 @@ export function useStatus() {
 }
 
 export function useImageAnalysis() {
-  const queryClient = useQueryClient();
   
   const analyzeImage = useMutation({
     mutationFn: async (file: File) => {
       // Call the analysis service to analyze the image
       return analysisService.analyzeImage(file);
     },
-    onSuccess: (result) => {
-      // Update cache with the new analysis result
-      queryClient.invalidateQueries({ queryKey: ['analysis', 'image'] });
+    onSuccess: (data) => {
+      // Update cache
+      useQueryClient.invalidateQueries({ queryKey: ['analysis', 'image'] });
       
       // Show success notification
       toast({
@@ -489,7 +468,6 @@ export function useImageAnalysis() {
 }
 
 export function useBlockchainVerification() {
-  const queryClient = useQueryClient();
   
   const verifyOnBlockchain = useMutation({
     mutationFn: async (data: { hash: string; metadata: any }) => {
@@ -512,7 +490,7 @@ export function useBlockchainVerification() {
     },
     onSuccess: (result) => {
       // Update cache
-      queryClient.invalidateQueries({ queryKey: ['blockchain'] });
+      useQueryClient.invalidateQueries({ queryKey: ['blockchain'] });
       
       // Show success notification
       toast({
@@ -527,7 +505,6 @@ export function useBlockchainVerification() {
 }
 
 export function useEmotionConflictAnalysis() {
-  const queryClient = useQueryClient();
   
   const analyzeEmotionConflict = useMutation({
     mutationFn: async (data: { text: string; audioFile?: File; videoFile?: File }) => {
@@ -563,7 +540,7 @@ export function useEmotionConflictAnalysis() {
     },
     onSuccess: (result) => {
       // Update cache
-      queryClient.invalidateQueries({ queryKey: ['analysis', 'emotion-conflict'] });
+      useQueryClient.invalidateQueries({ queryKey: ['analysis', 'emotion-conflict'] });
       
       // Show result notification
       toast({
@@ -606,12 +583,11 @@ export function useModelsInfo() {
   });
 }
 
-// Custom hook for analysis history (local storage based)
+// Custom hook for analysis history (API-based)
 export function useAnalysisHistory() {
   const { state } = useAppContext();
-  const queryClient = useQueryClient();
   
-  // Define AnalysisHistoryItem type for local storage
+  // Define AnalysisHistoryItem type for API response
   type AnalysisHistoryItem = {
     id: string;
     type: 'image' | 'video' | 'audio' | 'text' | 'multimodal';
@@ -620,115 +596,70 @@ export function useAnalysisHistory() {
     error?: string;
     timestamp: string;
     metadata?: Record<string, unknown>;
+    jobId?: string;
+    reportCode?: string;
   };
   
-  const getHistory = (): AnalysisHistoryItem[] => {
-    if (typeof window === 'undefined') return [];
-    const history = localStorage.getItem('analysisHistory');
-    return history ? JSON.parse(history) : [];
-  };
-
-  const saveToHistory = (item: Omit<AnalysisHistoryItem, 'id' | 'timestamp'>) => {
-    if (!state.isOnline) {
-      // Queue the save operation for when we're back online
-      const offlineQueue = JSON.parse(localStorage.getItem('offlineQueue') || '[]');
-      offlineQueue.push({
-        type: 'saveToHistory',
-        data: item,
-        timestamp: new Date().toISOString(),
-      });
-      localStorage.setItem('offlineQueue', JSON.stringify(offlineQueue));
-      
-      // Return a temporary ID for UI purposes
-      return {
-        ...item,
-        id: `offline-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        isOffline: true,
-      };
-    }
-    
-    const history = getHistory();
-    const newItem = {
-      ...item,
-      id: crypto.randomUUID(),
-      timestamp: new Date().toISOString(),
-    };
-    const newHistory = [newItem, ...history].slice(0, 50); // Keep only the last 50 items
-    localStorage.setItem('analysisHistory', JSON.stringify(newHistory));
-    return newItem;
-  };
-
-  const clearHistory = () => {
-    if (!state.isOnline) {
-      // Queue the clear operation for when we're back online
-      const offlineQueue = JSON.parse(localStorage.getItem('offlineQueue') || '[]');
-      offlineQueue.push({
-        type: 'clearHistory',
-        timestamp: new Date().toISOString(),
-      });
-      localStorage.setItem('offlineQueue', JSON.stringify(offlineQueue));
-      return;
-    }
-    localStorage.removeItem('analysisHistory');
-  };
-
-  const deleteFromHistory = (id: string) => {
-    if (!state.isOnline) {
-      // Queue the delete operation for when we're back online
-      const offlineQueue = JSON.parse(localStorage.getItem('offlineQueue') || '[]');
-      offlineQueue.push({
-        type: 'deleteFromHistory',
-        data: { id },
-        timestamp: new Date().toISOString(),
-      });
-      localStorage.setItem('offlineQueue', JSON.stringify(offlineQueue));
-      
-      // Return the current history without the deleted item for immediate UI update
-      const history = getHistory();
-      return history.filter((item) => item.id !== id);
-    }
-    
-    const history = getHistory();
-    const newHistory = history.filter((item) => item.id !== id);
-    localStorage.setItem('analysisHistory', JSON.stringify(newHistory));
-    return newHistory;
-  };
-  
-  // Process offline queue when coming back online
-  React.useEffect(() => {
-    if (!state.isOnline) return;
-    
-    const processOfflineQueue = async () => {
-      const offlineQueue = JSON.parse(localStorage.getItem('offlineQueue') || '[]');
-      if (offlineQueue.length === 0) return;
-      
-      try {
-        for (const item of offlineQueue) {
-          switch (item.type) {
-            case 'saveToHistory':
-              await saveToHistory(item.data);
-              break;
-            case 'clearHistory':
-              await clearHistory();
-              break;
-            case 'deleteFromHistory':
-              await deleteFromHistory(item.data.id);
-              break;
-          }
-        }
-        // Clear the queue after processing
-        localStorage.removeItem('offlineQueue');
-      } catch (error) {
-        console.error('Error processing offline queue:', error);
+  // Fetch history from API
+  const { data: history, error, isLoading } = useQuery({
+    queryKey: ['analysis-history'],
+    queryFn: async (): Promise<AnalysisHistoryItem[]> => {
+      const response = await fetch('/api/v2/history');
+      if (!response.ok) {
+        throw new Error('Failed to fetch analysis history');
       }
-    };
-    
-    processOfflineQueue();
-  }, [state.isOnline, state]);
+      const data = await response.json();
+      return data.success ? data.data : [];
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
 
+  const saveToHistory = async (item: Omit<AnalysisHistoryItem, 'id' | 'timestamp' | 'jobId' | 'reportCode'>) => {
+    // This is now handled automatically by the backend after analysis
+    // No need to manually save to history anymore
+    console.log('History is now saved automatically by the backend');
+  };
+
+  const clearHistory = async () => {
+    try {
+      const response = await fetch('/api/v2/history', {
+        method: 'DELETE'
+      });
+      if (!response.ok) {
+        throw new Error('Failed to clear analysis history');
+      }
+      const data = await response.json();
+      if (data.success) {
+        useQueryClient.invalidateQueries({ queryKey: ['analysis-history'] });
+      }
+    } catch (error) {
+      console.error('Failed to clear history:', error);
+    }
+  };
+
+  const deleteFromHistory = async (jobId: string) => {
+    try {
+      const response = await fetch(`/api/v2/history/${jobId}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to delete history item: ${jobId}`);
+      }
+      const data = await response.json();
+      if (data.success) {
+        useQueryClient.invalidateQueries({ queryKey: ['analysis-history'] });
+      }
+      return true;
+    } catch (error) {
+      console.error(`Failed to delete history item ${jobId}:`, error);
+      return false;
+    }
+  };
+  
   return {
-    history: getHistory(),
+    history: history || [],
+    isLoading,
+    error,
     saveToHistory,
     clearHistory,
     deleteFromHistory,

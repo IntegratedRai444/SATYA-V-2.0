@@ -1,4 +1,26 @@
-import { dbManager, type TableName } from '../db'; // Database connection manager
+import { supabase } from '../config/supabase';
+import { logger } from '../config/logger';
+import { v4 as uuidv4 } from 'uuid';
+
+export interface Task {
+  id: string;
+  createdAt: Date;
+  updatedAt: Date | null;
+  userId: string;
+  type: string;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  progress: number;
+  fileName: string;
+  fileSize: number;
+  fileType: string;
+  filePath: string;
+  reportCode: string;
+  result: AnalysisResult | null;
+  error: ErrorInfo | null;
+  startedAt: Date | null;
+  completedAt: Date | null;
+  metadata: Record<string, unknown>;
+}
 
 type UpdateTaskProgressData = {
   progress: number;
@@ -6,10 +28,6 @@ type UpdateTaskProgressData = {
   startedAt?: Date;
   metadata?: string;
 };
-import { tasks, type Task, type InsertTask } from '@shared/schema';
-import { eq, and, desc } from 'drizzle-orm';
-import { v4 as uuidv4 } from 'uuid';
-import { logger } from '../config';
 
 /**
  * Task Manager Service
@@ -91,9 +109,17 @@ export class TaskManager {
           uploadedAt: new Date().toISOString()
         })
       };
-      const task = await dbManager.create('tasks', taskData) as unknown as Task;
+      const { data: task, error } = await supabase
+        .from('tasks')
+        .insert(taskData)
+        .select('*')
+        .single();
 
-      return task;
+      if (error || !task) {
+        throw new Error(`Failed to create task: ${error?.message}`);
+      }
+
+      return task as Task;
     } catch (error) {
       logger.error('Error creating task', error as Error);
       throw new Error('Failed to create task');
@@ -105,11 +131,15 @@ export class TaskManager {
    * @param taskId - Task ID
    * @returns Task object
    */
-  async getTaskStatus(taskId: number): Promise<Task | null> {
+  async getTaskStatus(taskId: string): Promise<Task | null> {
     try {
-      const task = await dbManager.findById('tasks', taskId.toString()) as Record<string, any> | null;
+      const { data: task, error } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('id', taskId)
+        .single();
       
-      if (!task) return null;
+      if (error || !task) return null;
       
       // Map the database record to Task type
       return {
@@ -144,7 +174,7 @@ export class TaskManager {
    * @param message - Optional progress message
    */
   async updateTaskProgress(
-    taskId: number,
+    taskId: string,
     progress: number,
     message?: string
   ): Promise<void> {
@@ -166,14 +196,26 @@ export class TaskManager {
       if (message) {
         const task = await this.getTaskStatus(taskId);
         if (task) {
-          const metadata = task.metadata ? JSON.parse(task.metadata) : {};
+          const metadata = task.metadata ? JSON.parse(JSON.stringify(task.metadata)) : {};
           metadata.lastMessage = message;
           metadata.lastUpdate = new Date().toISOString();
           updateData.metadata = JSON.stringify(metadata);
         }
       }
 
-      await dbManager.update('tasks', taskId.toString(), updateData);
+      const { error } = await supabase
+        .from('tasks')
+        .update({
+          progress: updateData.progress,
+          status: updateData.status,
+          started_at: updateData.startedAt?.toISOString(),
+          metadata: updateData.metadata
+        })
+        .eq('id', taskId);
+
+      if (error) {
+        throw new Error(`Failed to update task progress: ${error.message}`);
+      }
     } catch (error) {
       logger.error('Error updating task progress', error as Error);
       throw new Error('Failed to update task progress');
@@ -185,14 +227,21 @@ export class TaskManager {
    * @param taskId - Task ID
    * @param result - Analysis result
    */
-  async completeTask(taskId: number, result: AnalysisResult): Promise<void> {
+  async completeTask(taskId: string, result: AnalysisResult): Promise<void> {
     try {
-      await dbManager.update('tasks', taskId.toString(), {
-        status: 'completed',
-        progress: 100,
-        result: JSON.stringify(result),
-        completed_at: new Date().toISOString()
-      });
+      const { error } = await supabase
+        .from('tasks')
+        .update({
+          status: 'completed',
+          progress: 100,
+          result: JSON.stringify(result),
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', taskId);
+
+      if (error) {
+        throw new Error(`Failed to complete task: ${error.message}`);
+      }
     } catch (error) {
       logger.error('Error completing task', error as Error);
       throw new Error('Failed to complete task');
@@ -204,16 +253,23 @@ export class TaskManager {
    * @param taskId - Task ID
    * @param error - Error information
    */
-  async failTask(taskId: number, error: ErrorInfo): Promise<void> {
+  async failTask(taskId: string, error: ErrorInfo): Promise<void> {
     try {
-      await dbManager.update('tasks', taskId.toString(), {
-        status: 'failed',
-        error: JSON.stringify(error),
-        completed_at: new Date().toISOString()
-      });
+      const { error: updateError } = await supabase
+        .from('tasks')
+        .update({
+          status: 'failed',
+          error: JSON.stringify(error),
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', taskId);
+
+      if (updateError) {
+        throw new Error(`Failed to fail task: ${updateError.message}`);
+      }
     } catch (error) {
       logger.error('Error failing task', error as Error);
-      throw new Error('Failed to mark task as failed');
+      throw new Error('Failed to fail task');
     }
   }
 
@@ -225,27 +281,33 @@ export class TaskManager {
    */
   async getUserTasks(userId: string, filters: TaskFilters = {}): Promise<Task[]> {
     try {
-      // Build query options
-      const queryOptions: any = {
-        where: { user_id: userId },
-        orderBy: { column: 'created_at', ascending: false }
-      };
+      // Build query
+      let query = supabase
+        .from('tasks')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
       
       // Apply status filter if provided
       if (filters.status) {
-        queryOptions.where.status = filters.status;
+        query = query.eq('status', filters.status);
       }
 
       // Apply pagination
       if (filters.limit) {
-        queryOptions.limit = filters.limit;
+        query = query.limit(filters.limit);
       }
       if (filters.offset) {
-        queryOptions.offset = filters.offset;
+        query = query.range(filters.offset, filters.offset + (filters.limit || 10) - 1);
       }
 
-      const userTasks = await dbManager.find('tasks', queryOptions) as unknown as Task[];
-      return userTasks;
+      const { data: userTasks, error } = await query;
+
+      if (error) {
+        throw new Error(`Failed to get user tasks: ${error.message}`);
+      }
+
+      return userTasks as Task[];
     } catch (error) {
       logger.error('Error getting user tasks', error as Error);
       throw new Error('Failed to get user tasks');

@@ -1,7 +1,33 @@
 import axios, { AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { metrics, trackError as logError } from '@/lib/services/metrics';
-import { getCsrfToken } from './services/csrfService';
+import { fetchCsrfToken as getCsrfToken } from './services/csrfService';
+
+// Export types needed by services
+export interface ApiResponse<T = any> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+
+export interface DashboardStats {
+  totalScans: number;
+  manipulatedScans: number;
+  averageConfidence: number;
+  scanRate: number;
+}
+
+export interface ExtendedDashboardStats {
+  analyzedMedia: { count: number; growth: string };
+  detectedDeepfakes: { count: number; growth: string };
+  avgDetectionTime: { time: string; improvement: string };
+  detectionAccuracy: { percentage: number; improvement: string };
+  dailyActivity: Array<{
+    date: string;
+    analyses: number;
+    deepfakes: number;
+  }>;
+}
 
 // Types
 interface CacheEntry {
@@ -195,7 +221,8 @@ const createEnhancedAxiosInstance = (baseURL: string): AxiosInstance => {
       
       // Log successful request
       const duration = startTime ? Date.now() - startTime : 0;
-      console.log(`[${requestId}] ${requestConfig.method?.toUpperCase()} ${requestConfig.url} ${response.status} (${duration}ms)`);
+      const message = `[${requestId}] ${requestConfig.method?.toUpperCase()} ${requestConfig.url} ${response.status} (${duration}ms)`;
+      console.log(message);
       
       // Cache successful GET responses
       if (requestConfig.method?.toUpperCase() === 'GET' && response.status === 200 && cacheKey) {
@@ -562,28 +589,14 @@ export const api = {
     return response.data;
   },
 
-  // Batch multiple requests
-  batch: <T = any>(requests: Array<() => Promise<T>>): Promise<T[]> => {
-    return Promise.all(requests.map(fn => fn()));
-  },
-
-  // Get the current API version
-  getVersion: (): string => API_VERSION,
-
-  // Set authentication token
-  setAuthToken: (token: string | null): void => {
-    if (token) {
-      apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-    } else {
-      delete apiClient.defaults.headers.common['Authorization'];
-    }
-  },
-
-  // Cancel a specific request by ID
-  cancelRequest: (requestId: string, message: string = 'Request cancelled'): boolean => {
-    const pendingRequest = pendingRequests.get(requestId);
-    if (pendingRequest) {
-      const source = createCancellableSource();
+// Cancel a specific request by ID
+cancelRequest: (requestId: string, message: string = 'Request cancelled'): boolean => {
+  const pendingRequest = pendingRequests.get(requestId);
+  if (pendingRequest) {
+    const source = createCancellableSource();
+    source.cancel(message);
+    pendingRequests.delete(requestId);
+    return true;
       source.cancel(message);
       pendingRequests.delete(requestId);
       return true;

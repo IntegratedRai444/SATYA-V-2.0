@@ -229,7 +229,7 @@ export default function AudioAnalysis() {
           </button>
         </div>
 
-        {
+        {activeTab === 'upload' && (
           <div className="bg-[#2a2e39] border border-gray-700/50 rounded-xl p-8 mb-6">
             <div className="text-center mb-6">
               <h2 className="text-xl font-semibold text-white mb-2">Upload Audio for Analysis</h2>
@@ -349,16 +349,9 @@ export default function AudioAnalysis() {
                   )}
                 </div>
               </div>
-
-              <div className="flex items-center gap-2 mt-4 text-sm text-gray-400">
-                <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span>Only audio files are accepted • Maximum file size: 50MB</span>
-              </div>
             </div>
 
-            {/* Analysis Results */}
+            )}
             {analysisState.status === 'error' && (
               <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-6">
                 <div className="flex items-center gap-2 text-red-400">
@@ -368,6 +361,7 @@ export default function AudioAnalysis() {
               </div>
             )}
 
+            {/* Analysis Results */}
             {analysisState.status === 'success' && analysisState.result && (
               <div className="bg-[#2a2e39] border border-gray-700/50 rounded-xl p-8 mb-6">
                 <div className="flex items-center gap-4 mb-6">
@@ -469,8 +463,6 @@ export default function AudioAnalysis() {
                 </div>
               </div>
             )}
-          </>
-        )}
 
         {/* Analysis Options */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

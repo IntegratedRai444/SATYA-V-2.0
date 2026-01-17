@@ -147,7 +147,7 @@ class AudioDetector:
                 
                 # Load Wav2Vec2 models
                 if self.config['models'].get('wav2vec2', {}).get('enabled', True):
-                    self._load_wav2vec2_models()
+                    self._load_pretrained_model()
                 
                 # Load other models as needed
                 # self._load_other_models()

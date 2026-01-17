@@ -10,18 +10,26 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from config import Config
+from config import Settings
+
+# Initialize settings
+settings = Settings()
 
 # Configure logging with proper encoding for Windows
 if sys.platform == "win32":
@@ -35,14 +43,9 @@ if sys.platform == "win32":
 # Configure logging
 handlers = [logging.StreamHandler()]
 
-# Add file handler if LOG_FILE is specified
-if hasattr(Config, "LOG_FILE") and Config.LOG_FILE:
-    file_handler = logging.FileHandler(Config.LOG_FILE, encoding="utf-8")
-    handlers.append(file_handler)
-
 logging.basicConfig(
-    level=getattr(logging, Config.LOG_LEVEL),
-    format=Config.LOG_FORMAT,
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=handlers,
 )
 logger = logging.getLogger(__name__)
@@ -526,7 +529,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     # Placeholder for text analysis until TextDetector is fully exposed in core
                     response["result"] = {
                         "authenticity": "REAL",
-                        "confidence": 0.95,
+                        "confidence": 0.85,  # Moderate confidence for placeholder text analysis
                         "details": "Text analysis completed",
                     }
                 else:

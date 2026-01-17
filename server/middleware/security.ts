@@ -1,4 +1,4 @@
-import type { Request, Response, NextFunction, RequestHandler } from 'express';
+import type { Request, Response, NextFunction, RequestHandler, ErrorRequestHandler } from 'express';
 import { createHmac, timingSafeEqual, randomBytes } from 'crypto';
 import { logger } from '../config/logger';
 import { ApiKeyService } from '../services/apiKeyService';
@@ -244,8 +244,8 @@ export const securityHeaders = ({
     fontSrc: ["'self'"]
   },
   maxRequestBodySize = '10mb'
-}: SecurityHeadersOptions = {}): RequestHandler[] => {
-  return [
+}: SecurityHeadersOptions = {}): { middleware: RequestHandler[], errorHandlers: ErrorRequestHandler[] } => {
+  const middleware: RequestHandler[] = [
     // Parse JSON bodies with size limit
     express.json({
       limit: maxRequestBodySize,
@@ -277,16 +277,12 @@ export const securityHeaders = ({
       preload: true,
     }) : (req, res, next) => next(),
     ieNoOpen(),
-    enableNoSniff ? noSniff() : (req, res, next) => next(),
+    noSniff(),
     originAgentCluster(),
-    referrerPolicy({
-      policy: 'strict-origin-when-cross-origin',
-    }),
-    enableXSS ? xssFilter() : (req, res, next) => next(),
-    enableFrameOptions ? frameguard({ action: 'deny' }) : (req, res, next) => next(),
-    hidePoweredBy(),
+    referrerPolicy(),
+    xssFilter(),
 
-    // Prevent HTTP Parameter Pollution
+    // Prevent parameter pollution
     hpp({
       whitelist: [
         'filter',
@@ -328,19 +324,6 @@ export const securityHeaders = ({
       next();
     },
 
-    // Request validation error handler
-    ((err: any, req: Request, res: Response, next: NextFunction) => {
-      if (err instanceof SyntaxError && 'body' in err) {
-        return res.status(400).json({
-          success: false,
-          code: 'INVALID_JSON',
-          message: 'Invalid JSON payload',
-          requestId: req.id,
-        });
-      }
-      next(err);
-    }) as express.ErrorRequestHandler,
-
     // Rate limiting for auth endpoints
     rateLimit({
       windowMs: 15 * 60 * 1000, // 15 minutes
@@ -355,6 +338,23 @@ export const securityHeaders = ({
       },
     }),
   ];
+
+  const errorHandlers: ErrorRequestHandler[] = [
+    // Request validation error handler
+    (err: any, req: Request, res: Response, next: NextFunction) => {
+      if (err instanceof SyntaxError && 'body' in err) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_JSON',
+          message: 'Invalid JSON payload',
+          requestId: req.id,
+        });
+      }
+      next(err);
+    },
+  ];
+
+  return { middleware, errorHandlers };
 };
 
 // ... (rest of the code remains the same)

@@ -1,8 +1,6 @@
-import { dbManager } from '../db';
-import { users } from '@shared/schema';
-import { eq, and } from 'drizzle-orm';
+import { supabase } from '../config/supabase';
+import { logger } from '../config/logger';
 import crypto from 'crypto';
-import type { InferSelectModel } from 'drizzle-orm';
 
 export class ApiKeyService {
   private static readonly KEY_LENGTH = 32;
@@ -38,15 +36,17 @@ export class ApiKeyService {
   /**
    * Get user by API key
    */
-  static async getUserByApiKey(apiKey: string): Promise<{ id: number; email: string | null; role: string; apiKey: string | null } | null> {
+  static async getUserByApiKey(apiKey: string): Promise<{ id: string; email: string | null; role: string; apiKey: string | null } | null> {
     try {
       const hashedKey = this.hashKey(apiKey);
       
-      const result = await dbManager.find('users', {
-        api_key: hashedKey
-      }, { limit: 1 });
+      const { data: result, error } = await supabase
+        .from('users')
+        .select('id, email, role, api_key')
+        .eq('api_key', hashedKey)
+        .limit(1);
 
-      if (!result || result.length === 0) return null;
+      if (error || !result || result.length === 0) return null;
       
       return {
         id: result[0].id,

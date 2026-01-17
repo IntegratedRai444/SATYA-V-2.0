@@ -1,8 +1,7 @@
 import 'dotenv/config';
 import bcrypt from 'bcrypt';
 import { db } from '../server/db';
-import { users } from '../shared/schema';
-import { eq } from 'drizzle-orm';
+import { supabase } from '../server/config/supabase';
 
 async function createUser() {
   try {
@@ -15,46 +14,62 @@ async function createUser() {
     console.log(`Username: ${username}`);
     console.log(`Email: ${email}`);
 
-    // Check if user already exists
-    const existingUser = await db.select()
-      .from(users)
-      .where(eq(users.username, username))
+    // Check if user already exists in Supabase auth
+    const { data: existingUser, error: checkError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('username', username)
       .limit(1);
 
-    if (existingUser.length > 0) {
+    if (checkError) {
+      console.error('Error checking existing user:', checkError);
+      return;
+    }
+
+    if (existingUser && existingUser.length > 0) {
       console.log('⚠️  User already exists. Updating password...');
       
       // Hash new password
       const saltRounds = 12;
       const hashedPassword = await bcrypt.hash(password, saltRounds);
       
-      // Update user
-      await db.update(users)
-        .set({ 
-          password: hashedPassword,
+      // Update user in Supabase
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ 
           email: email,
-          fullName: fullName,
-          updatedAt: new Date()
+          full_name: fullName,
+          updated_at: new Date().toISOString()
         })
-        .where(eq(users.username, username));
+        .eq('username', username);
       
-      console.log('✅ User password updated successfully!');
+      if (updateError) {
+        console.error('Error updating user:', updateError);
+        return;
+      }
+      
+      console.log('✅ User updated successfully!');
     } else {
-      // Hash password
-      const saltRounds = 12;
-      const hashedPassword = await bcrypt.hash(password, saltRounds);
-
-      // Create user
-      const [newUser] = await db.insert(users).values({
-        username: username,
-        password: hashedPassword,
+      // Create user in Supabase auth first
+      const { data: authData, error: authError } = await supabase.auth.signUp({
         email: email,
-        fullName: fullName,
-        role: 'user'
-      }).returning();
+        password: password,
+        options: {
+          data: {
+            username: username,
+            full_name: fullName,
+            role: 'user'
+          }
+        }
+      });
+
+      if (authError) {
+        console.error('Error creating auth user:', authError);
+        return;
+      }
 
       console.log('✅ User created successfully!');
-      console.log(`User ID: ${newUser.id}`);
+      console.log(`User ID: ${authData.user?.id}`);
     }
 
     console.log('\n📋 Login credentials:');

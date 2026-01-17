@@ -412,19 +412,6 @@ class ModelManager:
         """Ensure resources are cleaned up on deletion."""
         if hasattr(self, 'is_running') and self.is_running:
             asyncio.create_task(self.close())
-            "status": self.models_config[model_name].get("status", "unknown"),
-            "created_at": model_version.created_at,
-            "is_active": model_version.is_active,
-            "compatibility": model_version.compatibility or {},
-            "metadata": model_version.metadata or {}
-        }
-        
-        # Add validation results if available
-        validation_history = self.validator.get_validation_history(model_name, limit=1)
-        if validation_history:
-            info["last_validation"] = validation_history[0]
-            
-        return info
     
     def list_models(self) -> List[Dict[str, Any]]:
         """

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Form, FormField, FormItem, FormLabel, FormMessage } from '../../components/ui/form';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 
 // Simple spinner icon component
 const Spinner = ({ className }: { className?: string }) => (
@@ -32,11 +33,6 @@ const Spinner = ({ className }: { className?: string }) => (
     />
   </svg>
 );
-
-// Helper function to combine class names
-function cn(...classes: (string | undefined)[]) {
-  return classes.filter(Boolean).join(' ');
-}
 
 type FormValues = {
   email: string;
@@ -176,7 +172,7 @@ export function RegisterForm() {
             <FormField
               control={form.control as any}
               name="email"
-              render={({ field }) => (
+              render={({ field }: any) => (
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <Input
@@ -193,7 +189,7 @@ export function RegisterForm() {
             <FormField
               control={form.control as any}
               name="password"
-              render={({ field }) => (
+              render={({ field }: any) => (
                 <FormItem>
                   <div className="flex items-center justify-between">
                     <FormLabel>Password</FormLabel>
@@ -229,7 +225,7 @@ export function RegisterForm() {
             <FormField
               control={form.control as any}
               name="confirmPassword"
-              render={({ field }) => (
+              render={({ field }: any) => (
                 <FormItem>
                   <FormLabel>Confirm Password</FormLabel>
                   <Input

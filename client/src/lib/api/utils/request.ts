@@ -66,12 +66,14 @@ export const handleRequestError = (error: AxiosError): never => {
   }
 
   const { status, data, config } = error.response;
-  const message = data?.message || error.message || API_CONFIG.ERROR_MESSAGES.UNKNOWN;
+  const message = (data && typeof data === 'object' && 'message' in data && typeof data.message === 'string') 
+    ? data.message 
+    : error.message || API_CONFIG.ERROR_MESSAGES.UNKNOWN;
 
   switch (status) {
     case 400:
-      if (data?.errors) {
-        throw new ValidationError(API_CONFIG.ERROR_MESSAGES.VALIDATION, data.errors, data, config);
+      if (data && typeof data === 'object' && 'errors' in data) {
+        throw new ValidationError(API_CONFIG.ERROR_MESSAGES.VALIDATION, data.errors as Record<string, string[]>, data, config);
       }
       throw new BadRequestError(message, data, config);
     case 401:

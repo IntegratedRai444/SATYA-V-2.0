@@ -4,8 +4,7 @@ import * as os from 'os';
 import pythonBridgeEnhanced from './python-http-bridge';
 import { fileProcessor } from './file-processor';
 import { webSocketService } from './websocket/WebSocketManager';
-import { dbManager } from '../db';
-import { users } from '@shared/schema';
+import { supabase } from '../config/supabase';
 import { logger } from '../config/logger';
 const logSystemHealth = logger.info;
 import checkDiskSpace from 'check-disk-space';
@@ -190,7 +189,7 @@ class HealthMonitor extends EventEmitter {
         setTimeout(() => reject(new Error('Database query timeout')), 3000)
       );
       
-      const queryPromise = dbManager.find('users', {}, { limit: 1 });
+      const queryPromise = supabase.from('users').select('id').limit(1);
       
       try {
         await Promise.race([queryPromise, timeoutPromise]);

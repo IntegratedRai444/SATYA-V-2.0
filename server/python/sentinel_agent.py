@@ -431,35 +431,78 @@ class SentinelAgent:
 
     async def _analyze_video_internal(self, request: AnalysisRequest) -> Dict[str, Any]:
         """Internal video analysis implementation with ML execution"""
-        # Actual video analysis implementation here
-        # This is a simplified version - in a real implementation, you would:
-        # 1. Load the video
-        # 2. Extract frames
-        # 3. Process each frame with ML models
-        # 4. Perform temporal analysis
-        # 5. Generate results with evidence
+        # Validate input
+        if not request.content and not request.content_uri:
+            raise ValueError("No video content or URI provided for analysis")
 
-        # For now, we'll simulate a successful analysis
-        return {
-            "conclusions": [
-                {
-                    "text": "Video analysis completed",
-                    "confidence": 0.95,
-                    "tags": ["video_analysis"],
-                    "metadata": {},
-                }
-            ],
-            "evidence_ids": [f"video_evidence_{request.request_id}"],
-            "confidence": 0.95,
-            "frames_analyzed": 30,  # Example: analyzed 30 frames
-            "metadata": {
+        # Check if video detector is available and models are loaded
+        if not hasattr(self, "video_detector") or not self.video_detector:
+            from .detectors.video_detector import VideoDetector
+            self.video_detector = VideoDetector()
+
+        if not getattr(self.video_detector, "models_loaded", False):
+            raise RuntimeError("Video analysis failed: ML models failed to load")
+
+        # Create analysis context
+        analysis_id = f"video_{uuid.uuid4().hex[:8]}"
+        analysis_start = datetime.utcnow()
+
+        try:
+            # Log analysis start
+            logger.info(f"🎥 Starting video analysis {analysis_id}")
+
+            # Execute real ML analysis
+            analysis_result = self.video_detector.analyze(request.content)
+
+            # Validate ML results
+            required_fields = ["is_deepfake", "confidence", "model_info"]
+            if not all(field in analysis_result for field in required_fields):
+                missing = [f for f in required_fields if f not in analysis_result]
+                raise RuntimeError(f"Video analysis missing required fields: {', '.join(missing)}")
+
+            is_deepfake = bool(analysis_result["is_deepfake"])
+            confidence = float(analysis_result["confidence"])
+            model_info = analysis_result["model_info"]
+
+            # Create evidence (only after successful ML execution)
+            evidence_id = self.reasoning_engine.add_evidence(
+                evidence_type=EvidenceType.VIDEO_ANALYSIS,
+                data={
+                    "is_deepfake": is_deepfake,
+                    "confidence": confidence,
+                    "model_info": model_info,
+                    "metadata": {
+                        "analysis_type": "video",
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "model_version": model_info.get("version", "unknown"),
+                    },
+                },
+                source="video_analyzer",
+                reliability=min(0.9, confidence),
+            )
+
+            # Generate conclusions
+            conclusions = self.reasoning_engine.reason({
                 "analysis_type": "video",
-                "duration_seconds": 10.0,
-                "frame_count": 30,
-                "fps": 3.0,
-                "analysis_timestamp": datetime.utcnow().isoformat(),
-            },
-        }
+                "is_deepfake": is_deepfake,
+                "confidence": confidence,
+                "model_info": model_info,
+            })
+
+            return {
+                "conclusions": conclusions,
+                "evidence_ids": [evidence_id],
+                "confidence": confidence,
+                "metadata": {
+                    "analysis_type": "video",
+                    "analysis_timestamp": datetime.utcnow().isoformat(),
+                    "model_version": model_info.get("version", "unknown"),
+                },
+            }
+
+        except Exception as e:
+            logger.error(f"Video analysis failed: {str(e)}", exc_info=True)
+            raise RuntimeError(f"Video analysis failed: {str(e)}")
         if getattr(self.video_detector, "config", {}).get("use_temporal_model", True):
             if not getattr(self.video_detector, "temporal_model", None):
                 logger.error(
@@ -616,40 +659,14 @@ class SentinelAgent:
 
     async def _analyze_audio_internal(self, request: AnalysisRequest) -> Dict[str, Any]:
         """Internal audio analysis implementation with ML execution"""
-        # Actual audio analysis implementation here
-        # This is a simplified version - in a real implementation, you would:
-        # 1. Load the audio file
-        # 2. Extract features
-        # 3. Process with ML models
-        # 4. Generate results with evidence
-
-        # For now, we'll simulate a successful analysis
-        return {
-            "conclusions": [
-                {
-                    "text": "Audio analysis completed",
-                    "confidence": 0.92,
-                    "tags": ["audio_analysis"],
-                    "metadata": {},
-                }
-            ],
-            "evidence_ids": [f"audio_evidence_{request.request_id}"],
-            "confidence": 0.92,
-            "metadata": {
-                "analysis_type": "audio",
-                "duration_seconds": 5.7,
-                "sample_rate": 16000,
-                "channels": 1,
-                "analysis_timestamp": datetime.utcnow().isoformat(),
-            },
-        }
         # Validate input
         if not request.content and not request.content_uri:
             raise ValueError("No audio content or URI provided for analysis")
 
         # Check if audio detector is available and models are loaded
         if not hasattr(self, "audio_detector") or not self.audio_detector:
-            raise RuntimeError("Audio analysis is not available: ML model not loaded")
+            from .detectors.audio_detector import AudioDetector
+            self.audio_detector = AudioDetector(device='cpu')
 
         if not getattr(self.audio_detector, "models_loaded", False):
             raise RuntimeError("Audio analysis failed: ML models failed to load")
@@ -660,10 +677,60 @@ class SentinelAgent:
 
         try:
             # Log analysis start
-            logger.info(f"Starting audio analysis {analysis_id}")
+            logger.info(f"🎵 Starting audio analysis {analysis_id}")
 
-            # Create temporary file if content is provided directly
-            temp_file = None
+            # Execute real ML analysis
+            analysis_result = self.audio_detector.analyze(request.content)
+
+            # Validate ML results
+            required_fields = ["is_deepfake", "confidence", "model_info"]
+            if not all(field in analysis_result for field in required_fields):
+                missing = [f for f in required_fields if f not in analysis_result]
+                raise RuntimeError(f"Audio analysis missing required fields: {', '.join(missing)}")
+
+            is_deepfake = bool(analysis_result["is_deepfake"])
+            confidence = float(analysis_result["confidence"])
+            model_info = analysis_result["model_info"]
+
+            # Create evidence (only after successful ML execution)
+            evidence_id = self.reasoning_engine.add_evidence(
+                evidence_type=EvidenceType.AUDIO_ANALYSIS,
+                data={
+                    "is_deepfake": is_deepfake,
+                    "confidence": confidence,
+                    "model_info": model_info,
+                    "metadata": {
+                        "analysis_type": "audio",
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "model_version": model_info.get("version", "unknown"),
+                    },
+                },
+                source="audio_analyzer",
+                reliability=min(0.9, confidence),
+            )
+
+            # Generate conclusions
+            conclusions = self.reasoning_engine.reason({
+                "analysis_type": "audio",
+                "is_deepfake": is_deepfake,
+                "confidence": confidence,
+                "model_info": model_info,
+            })
+
+            return {
+                "conclusions": conclusions,
+                "evidence_ids": [evidence_id],
+                "confidence": confidence,
+                "metadata": {
+                    "analysis_type": "audio",
+                    "analysis_timestamp": datetime.utcnow().isoformat(),
+                    "model_version": model_info.get("version", "unknown"),
+                },
+            }
+
+        except Exception as e:
+            logger.error(f"Audio analysis failed: {str(e)}", exc_info=True)
+            raise RuntimeError(f"Audio analysis failed: {str(e)}")
             audio_path = None
 
             try:

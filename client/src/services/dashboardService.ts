@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import apiClient, { DashboardStats as ApiDashboardStats } from '../lib/api';
+import api, { DashboardStats as ApiDashboardStats } from '../lib/api';
 import logger from '../lib/logger';
 import type { Detection } from '../types/dashboard';
-import { toast } from '../components/ui/use-toast';
 import type { ApiResponse } from '../lib/api';
+import { toast } from '../components/ui/use-toast';
 
 // Zod schemas for runtime validation
 const StatItemSchema = z.object({
@@ -109,11 +109,11 @@ export const fetchDashboardData = async (_params: {
     }>;
     type ActivityApiResponse = ApiResponse<{ history: Detection[] }>;
 
-    // Fetch all dashboard data in parallel using the apiClient methods
+    // Fetch all dashboard data in parallel using apiClient methods
     const [statsRes, analyticsRes, activityRes] = await Promise.all([
-      apiClient.getDashboardStats() as Promise<StatsApiResponse>,
-      apiClient.getUserAnalytics() as Promise<AnalyticsApiResponse>,
-      apiClient.getAnalysisHistory({ limit: 5 }) as Promise<ActivityApiResponse>
+      api.getDashboardStats() as Promise<ApiResponse<ApiDashboardStats>>,
+      api.getUserAnalytics() as Promise<ApiResponse<any>>,
+      api.getAnalysisHistory({ limit: 5 }) as Promise<ApiResponse<any>>
     ]);
 
     // Validate and transform responses

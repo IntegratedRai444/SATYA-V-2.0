@@ -26,7 +26,7 @@ interface AnalysisStateItem {
   error?: string;
 }
 
-const SmartAnalysis: React.FC = () => {
+const MultimodalAnalysis: React.FC = () => {
   const [activeMode, setActiveMode] = useState<'single' | 'multimodal' | 'webcam'>('single');
   const [selectedType, setSelectedType] = useState<'image' | 'video' | 'audio'>('image');
   const [results, setResults] = useState<AnalysisStateItem[]>([]);
@@ -36,48 +36,52 @@ const SmartAnalysis: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // File upload handlers
-  const handleFileUpload = useCallback(async (files: FileList | null, type: string) => {
-    if (!files || files.length === 0) return;
-
+  const handleFileUpload = useCallback(async (files: FileList | null) => {
     setIsAnalyzing(true);
-    const newResults: AnalysisStateItem[] = [];
+    const resultId = `multimodal-${Date.now()}`;
+    
+    const result: AnalysisStateItem = {
+      id: resultId,
+      filename: `Multimodal Analysis (${Object.keys(files || {}).length} files)`,
+      type: 'multimodal',
+      status: 'analyzing'
+    };
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const resultId = `${Date.now()}-${i}`;
+    setResults(prev => [...prev, result]);
 
-      const result: AnalysisStateItem = {
-        id: resultId,
-        filename: file.name,
-        type: type as any,
-        status: 'analyzing'
-      };
+    try {
+      const formData = new FormData();
+      Object.entries(files || {}).forEach(([key, file]) => {
+        formData.append(key, file);
+      });
 
-      newResults.push(result);
-      setResults(prev => [...prev, result]);
+      const response = await apiClient.post<AnalysisResult>('/api/analysis/multimodal', formData);
 
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-
-        const endpoint = `/api/analysis/${type}`;
-        const response = await apiClient.client.post<AnalysisResult>(endpoint, formData);
-
-        setResults(prev => prev.map(r =>
-          r.id === resultId
-            ? { ...r, status: 'completed', result: response.data }
-            : r
-        ));
-      } catch (error: any) {
-        setResults(prev => prev.map(r =>
-          r.id === resultId
-            ? { ...r, status: 'error', error: error.message }
-            : r
-        ));
-      }
+      setResults(prev => prev.map(r =>
+        r.id === resultId
+          ? { ...r, status: 'completed', result: response }
+          : r
+      ));
+      
+      logger.info('Multimodal analysis completed successfully', {
+        isDeepfake: !response?.result?.isAuthentic,
+        confidence: response?.result?.confidence
+      });
+      
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'Multimodal analysis failed. Please try again.';
+      
+      logger.error('Multimodal analysis failed: ' + errorMessage);
+      setResults(prev => prev.map(r =>
+        r.id === resultId
+          ? { ...r, status: 'error', error: errorMessage }
+          : r
+      ));
+    } finally {
+      setIsAnalyzing(false);
     }
-
-    setIsAnalyzing(false);
   }, []);
 
   // Multimodal analysis
@@ -100,11 +104,11 @@ const SmartAnalysis: React.FC = () => {
         formData.append(key, file);
       });
 
-      const response = await apiClient.client.post<AnalysisResult>('/api/analysis/multimodal', formData);
+      const response = await apiClient.post<AnalysisResult>('/api/analysis/multimodal', formData);
 
       setResults(prev => prev.map(r =>
         r.id === resultId
-          ? { ...r, status: 'completed', result: response.data }
+          ? { ...r, status: 'completed', result: response }
           : r
       ));
     } catch (error: any) {
@@ -174,11 +178,11 @@ const SmartAnalysis: React.FC = () => {
         const formData = new FormData();
         formData.append('file', blob, 'webcam-capture.jpg');
 
-        const response = await apiClient.client.post<AnalysisResult>('/api/analysis/webcam', formData);
+        const response = await apiClient.post<AnalysisResult>('/api/analysis/webcam', formData);
 
         setResults(prev => prev.map(r =>
           r.id === resultId
-            ? { ...r, status: 'completed', result: response.data }
+            ? { ...r, status: 'completed', result: response }
             : r
         ));
       } catch (error: any) {
@@ -196,7 +200,7 @@ const SmartAnalysis: React.FC = () => {
   const getResultIcon = (result: AnalysisStateItem) => {
     if (result.status === 'analyzing') return <Loader2 className="w-5 h-5 animate-spin text-blue-500" />;
     if (result.status === 'error') return <AlertCircle className="w-5 h-5 text-red-500" />;
-    if (result.result?.result?.authenticity === 'AUTHENTIC MEDIA') return <CheckCircle className="w-5 h-5 text-green-500" />;
+    if (result.result?.result?.isAuthentic) return <CheckCircle className="w-5 h-5 text-green-500" />;
     return <AlertCircle className="w-5 h-5 text-red-500" />;
   };
 
@@ -216,7 +220,7 @@ const SmartAnalysis: React.FC = () => {
               <Brain className="w-6 h-6 text-white" />
             </div>
             <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-              Smart Analysis
+              Multimodal Analysis
             </h1>
           </div>
           <p className="text-gray-400 text-lg max-w-2xl mx-auto">
@@ -321,17 +325,17 @@ const SmartAnalysis: React.FC = () => {
                           {result.status === 'completed' && result.result && (
                             <div className="mt-2">
                               <div className="flex items-center gap-2 mb-1">
-                                <span className={`text-sm font-medium ${result.result.result?.authenticity === 'AUTHENTIC MEDIA' ? 'text-green-400' : 'text-red-400'
+                                <span className={`text-sm font-medium ${result.result.result?.isAuthentic ? 'text-green-400' : 'text-red-400'
                                   }`}>
-                                  {result.result.result?.authenticity}
+                                  {result.result.result?.isAuthentic ? 'AUTHENTIC MEDIA' : 'MANIPULATED MEDIA'}
                                 </span>
                                 <span className={`text-sm ${getConfidenceColor(result.result.result?.confidence || 0)}`}>
                                   {result.result.result?.confidence}%
                                 </span>
                               </div>
-                              {result.result.result?.keyFindings && result.result.result.keyFindings.length > 0 && (
+                              {result.result.result?.details && (
                                 <p className="text-xs text-gray-400 truncate">
-                                  {result.result.result.keyFindings[0] || 'Analysis complete'}
+                                  Analysis complete
                                 </p>
                               )}
                             </div>
@@ -658,4 +662,4 @@ const WebcamCapture: React.FC<{
   );
 };
 
-export default SmartAnalysis;
+export default MultimodalAnalysis;

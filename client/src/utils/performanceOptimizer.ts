@@ -3,201 +3,47 @@
  */
 
 /**
- * Debounce function calls
+ * Performance monitoring and optimization
  */
-export function debounce<T extends (...args: any[]) => any>(
-  func: T,
-  wait: number
-): (...args: Parameters<T>) => void {
-  let timeout: NodeJS.Timeout;
-  
-  return (...args: Parameters<T>) => {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => func(...args), wait);
-  };
-}
-
-/**
- * Throttle function calls
- */
-export function throttle<T extends (...args: any[]) => any>(
-  func: T,
-  limit: number
-): (...args: Parameters<T>) => void {
-  let inThrottle: boolean;
-  
-  return (...args: Parameters<T>) => {
-    if (!inThrottle) {
-      func(...args);
-      inThrottle = true;
-      setTimeout(() => inThrottle = false, limit);
-    }
-  };
-}
-
-/**
- * Memoization for expensive calculations
- */
-export function memoize<T extends (...args: any[]) => any>(
-  func: T,
-  getKey?: (...args: Parameters<T>) => string
-): T {
-  const cache = new Map<string, ReturnType<T>>();
-  
-  return ((...args: Parameters<T>) => {
-    const key = getKey ? getKey(...args) : JSON.stringify(args);
-    
-    if (cache.has(key)) {
-      return cache.get(key);
-    }
-    
-    const result = func(...args);
-    cache.set(key, result);
-    
-    return result;
-  }) as T;
-}
-
-/**
- * Virtual scrolling for large lists
- */
-export class VirtualScroller {
-  private container: HTMLElement;
-  private itemHeight: number;
-  private visibleCount: number;
-  private totalCount: number;
-  private scrollTop = 0;
-  private renderCallback: (startIndex: number, endIndex: number) => void;
-
-  constructor(
-    container: HTMLElement,
-    itemHeight: number,
-    totalCount: number,
-    renderCallback: (startIndex: number, endIndex: number) => void
-  ) {
-    this.container = container;
-    this.itemHeight = itemHeight;
-    this.totalCount = totalCount;
-    this.renderCallback = renderCallback;
-    this.visibleCount = Math.ceil(container.clientHeight / itemHeight) + 2; // Buffer
-
-    this.setupScrollListener();
-    this.updateVisibleItems();
-  }
-
-  private setupScrollListener() {
-    const throttledScroll = throttle(() => {
-      this.scrollTop = this.container.scrollTop;
-      this.updateVisibleItems();
-    }, 16); // ~60fps
-
-    this.container.addEventListener('scroll', throttledScroll);
-  }
-
-  private updateVisibleItems() {
-    const startIndex = Math.floor(this.scrollTop / this.itemHeight);
-    const endIndex = Math.min(startIndex + this.visibleCount, this.totalCount);
-    
-    this.renderCallback(startIndex, endIndex);
-  }
-
-  updateTotalCount(count: number) {
-    this.totalCount = count;
-    this.updateVisibleItems();
-  }
-}
-
-/**
- * Image optimization utilities
- */
-export class ImageOptimizer {
-  /**
-   * Create responsive image srcset
-   */
-  static createSrcSet(baseUrl: string, sizes: number[]): string {
-    return sizes
-      .map(size => `${baseUrl}?w=${size} ${size}w`)
-      .join(', ');
-  }
-
-  /**
-   * Get optimal image size based on container
-   */
-  static getOptimalSize(containerWidth: number, devicePixelRatio = 1): number {
-    const targetWidth = containerWidth * devicePixelRatio;
-    const sizes = [320, 640, 768, 1024, 1280, 1920, 2560];
-    
-    return sizes.find(size => size >= targetWidth) || sizes[sizes.length - 1];
-  }
-
-  /**
-   * Preload critical images
-   */
-  static preloadImages(urls: string[]): Promise<void[]> {
-    return Promise.all(
-      urls.map(url => 
-        new Promise<void>((resolve, reject) => {
-          const img = new Image();
-          img.onload = () => resolve();
-          img.onerror = reject;
-          img.src = url;
-        })
-      )
-    );
-  }
-}
-
-/**
- * Bundle size analyzer
- */
-export class BundleAnalyzer {
-  private static loadTimes = new Map<string, number>();
-
-  static trackChunkLoad(chunkName: string, startTime: number) {
-    const loadTime = performance.now() - startTime;
-    this.loadTimes.set(chunkName, loadTime);
-    
-    // Log slow chunks
-    if (loadTime > 1000) {
-      console.warn(`Slow chunk load: ${chunkName} took ${loadTime.toFixed(2)}ms`);
-    }
-  }
-
-  static getLoadTimes(): Record<string, number> {
-    return Object.fromEntries(this.loadTimes);
-  }
-
-  static getAverageLoadTime(): number {
-    const times = Array.from(this.loadTimes.values());
-    return times.length > 0 ? times.reduce((a, b) => a + b, 0) / times.length : 0;
-  }
-}
-
-/**
- * Performance monitoring
- */
-export class PerformanceMonitor {
+export class PerformanceOptimizer {
   private static metrics = new Map<string, number[]>();
 
-  static mark(name: string) {
-    performance.mark(name);
+  /**
+   * Start timing a performance metric
+   */
+  static startTiming(name: string): void {
+    performance.mark(`${name}-start`);
   }
 
-  static measure(name: string, startMark: string, endMark?: string) {
-    if (endMark) {
-      performance.measure(name, startMark, endMark);
-    } else {
-      performance.measure(name, startMark);
+  /**
+   * End timing a performance metric
+   */
+  static endTiming(name: string): number {
+    performance.mark(`${name}-end`);
+    performance.measure(name, `${name}-start`, `${name}-end`);
+    
+    const entries = performance.getEntriesByName(name);
+    if (entries.length > 0) {
+      const duration = entries[entries.length - 1].duration;
+      this.recordMetric(name, duration);
+      return duration;
     }
-
-    const measure = performance.getEntriesByName(name, 'measure')[0];
-    if (measure) {
-      const existing = this.metrics.get(name) || [];
-      existing.push(measure.duration);
-      this.metrics.set(name, existing);
-    }
+    return 0;
   }
 
+  /**
+   * Record a performance metric
+   */
+  static recordMetric(name: string, duration: number): void {
+    if (!this.metrics.has(name)) {
+      this.metrics.set(name, []);
+    }
+    this.metrics.get(name)!.push(duration);
+  }
+
+  /**
+   * Get metrics summary
+   */
   static getMetrics(): Record<string, { avg: number; min: number; max: number; count: number }> {
     const result: Record<string, any> = {};
     
@@ -238,7 +84,103 @@ export class MemoryMonitor {
   static logMemoryUsage(label: string) {
     const memory = this.getMemoryUsage();
     if (memory) {
-      console.log(`${label} - Memory: ${memory.used}MB / ${memory.total}MB (limit: ${memory.limit}MB)`);
+      const message = `${label} - Memory: ${memory.used}MB / ${memory.total}MB (limit: ${memory.limit}MB)`;
+      console.log(message);
     }
+  }
+}
+
+/**
+ * Performance monitoring for tracking app performance
+ */
+export class PerformanceMonitor {
+  private static instance: PerformanceMonitor;
+  private metrics: Map<string, number[]> = new Map();
+  private observers: PerformanceObserver[] = [];
+
+  private constructor() {
+    this.setupObservers();
+  }
+
+  static getInstance(): PerformanceMonitor {
+    if (!PerformanceMonitor.instance) {
+      PerformanceMonitor.instance = new PerformanceMonitor();
+    }
+    return PerformanceMonitor.instance;
+  }
+
+  static mark(name: string): void {
+    performance.mark(name);
+  }
+
+  private setupObservers(): void {
+    if ('PerformanceObserver' in window) {
+      // Observe navigation timing
+      try {
+        const observer = new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            this.recordMetric('navigation', entry.duration);
+          }
+        });
+        observer.observe({ entryTypes: ['navigation'] });
+        this.observers.push(observer);
+      } catch (error) {
+        console.warn('Performance observer not supported:', error);
+      }
+
+      // Observe resource timing
+      try {
+        const resourceObserver = new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            this.recordMetric('resource', entry.duration);
+          }
+        });
+        resourceObserver.observe({ entryTypes: ['resource'] });
+        this.observers.push(resourceObserver);
+      } catch (error) {
+        console.warn('Resource observer not supported:', error);
+      }
+    }
+  }
+
+  recordMetric(name: string, duration: number): void {
+    if (!this.metrics.has(name)) {
+      this.metrics.set(name, []);
+    }
+    this.metrics.get(name)!.push(duration);
+  }
+
+  getMetrics(): Record<string, { avg: number; min: number; max: number; count: number }> {
+    const result: Record<string, any> = {};
+    
+    for (const [name, durations] of this.metrics) {
+      result[name] = {
+        avg: durations.reduce((a, b) => a + b, 0) / durations.length,
+        min: Math.min(...durations),
+        max: Math.max(...durations),
+        count: durations.length
+      };
+    }
+    
+    return result;
+  }
+
+  clearMetrics(): void {
+    this.metrics.clear();
+    performance.clearMarks();
+    performance.clearMeasures();
+  }
+
+  getMemoryUsage(): any {
+    return MemoryMonitor.getMemoryUsage();
+  }
+
+  logMemoryUsage(label: string): void {
+    MemoryMonitor.logMemoryUsage(label);
+  }
+
+  disconnect(): void {
+    this.observers.forEach(observer => observer.disconnect());
+    this.observers = [];
   }
 }

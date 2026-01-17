@@ -1,5 +1,3 @@
-import apiClient from './api';
-
 export interface UploadProgress {
   fileId: string;
   fileName: string;
@@ -49,10 +47,10 @@ export class FileUploadManager {
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch(`${apiClient.getBaseURL()}/api/upload/${type}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/upload/${type}`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${apiClient.getAuthToken()}`,
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
         },
         body: formData,
         signal: controller.signal,

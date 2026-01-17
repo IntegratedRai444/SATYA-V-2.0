@@ -2,12 +2,10 @@
 
 /**
  * Database Migration Runner
- * Runs all pending database migrations
+ * Runs all pending database migrations using Supabase
  */
 
-import { drizzle } from 'drizzle-orm/postgres-js';
-import { migrate } from 'drizzle-orm/postgres-js/migrator';
-import postgres from 'postgres';
+import { supabase } from '../server/config/supabase';
 import { config } from 'dotenv';
 import { resolve } from 'path';
 
@@ -22,25 +20,25 @@ if (!DATABASE_URL) {
 }
 
 async function runMigrations() {
-  console.log('🔄 Starting database migrations...\n');
-
-  const migrationClient = postgres(DATABASE_URL!, { max: 1 });
-  const db = drizzle(migrationClient);
+  console.log('🔄 Checking database connection...\n');
 
   try {
-    console.log('📂 Looking for migrations in: ./server/db/migrations');
+    // Test Supabase connection
+    const { data, error } = await supabase.from('users').select('count').limit(1);
     
-    await migrate(db, {
-      migrationsFolder: './server/db/migrations',
-    });
+    if (error) {
+      console.error('❌ Database connection failed:', error);
+      process.exit(1);
+    }
 
-    console.log('\n✅ All migrations completed successfully!');
+    console.log('✅ Database connection successful');
+    console.log('📋 Supabase migrations are handled through the Supabase dashboard');
+    console.log('🔗 Visit: https://app.supabase.com/project/ftbpbghcebwgzqfsgmxk/database');
+    console.log('\n✅ Database is ready!');
     
   } catch (error) {
-    console.error('\n❌ Migration failed:', error);
+    console.error('\n❌ Database check failed:', error);
     process.exit(1);
-  } finally {
-    await migrationClient.end();
   }
 }
 

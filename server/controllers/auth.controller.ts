@@ -1,24 +1,19 @@
 import type { Request as ExpressRequest, Response as ExpressResponse } from 'express';
 import { supabase } from '../config/supabase';
 import { logger } from '../config/logger';
-import { db } from '../db';
-import { and, eq } from 'drizzle-orm/expressions';
-import { sessions, users } from '../db/schema';
-import type { User, Session } from '../db/schema';
-import { sql } from 'drizzle-orm';
 import * as authService from '../services/authService';
 import { generateTokenPair, rotateRefreshToken } from '../services/auth/tokenService';
 import { rateLimiter } from '../middleware/rateLimiter';
 import jwt from 'jsonwebtoken';
-// Remove redis import as it's not used directly in this file
 import { addMinutes } from 'date-fns';
 import { validatePassword } from '../../shared/utils/password';
 
-interface Request extends ExpressRequest {
+interface AuthRequest extends ExpressRequest {
   user?: {
     id: string;
     email: string;
     role: string;
+    email_verified: boolean;
     user_metadata?: Record<string, any>;
   };
 }
@@ -26,7 +21,7 @@ interface Request extends ExpressRequest {
 type Response = ExpressResponse;
 
 export const authController = {
-  async register(req: Request, res: Response) {
+  async register(req: AuthRequest, res: Response) {
     try {
       const { email, password, user_metadata } = req.body;
       
@@ -86,10 +81,10 @@ export const authController = {
     }
   },
 
-  async login(req: Request, res: Response) {
+  async login(req: AuthRequest, res: Response) {
     try {
       const { email, password: userPassword } = req.body;
-      const clientIp = req.ip || req.socket.remoteAddress || 'unknown-ip';
+      const clientIp = req.ip || req.socket?.remoteAddress || 'unknown-ip';
       
       // Input validation
       if (!email || !userPassword) {
@@ -100,18 +95,23 @@ export const authController = {
         });
       }
 
-      // Check if account is locked
-      const [dbUser] = await db
-        .select()
-        .from(users)
-        .where(eq(users.email, email.trim()));
-        
-      const user = dbUser as (typeof users.$inferSelect & { failedLoginAttempts?: number; lastFailedLogin?: Date | null; isActive?: boolean }) | undefined;
+      // Check if user exists in our users table
+      const { data: dbUser, error: userError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', email.trim())
+        .limit(1);
+
+      if (userError) {
+        logger.error('Database error checking user:', userError);
+      }
+
+      const user = dbUser?.[0];
 
       if (user) {
         // Check if account is locked
-        if (user.failedLoginAttempts >= 5) {
-          const lastFailedLogin = user.lastFailedLogin ? new Date(user.lastFailedLogin) : null;
+        if (user.failed_login_attempts >= 5) {
+          const lastFailedLogin = user.last_failed_login ? new Date(user.last_failed_login) : null;
           const lockoutExpires = lastFailedLogin ? new Date(lastFailedLogin.getTime() + 15 * 60 * 1000) : null;
           
           if (lockoutExpires && lockoutExpires > new Date()) {
@@ -124,19 +124,19 @@ export const authController = {
             });
           } else {
             // Reset failed attempts if lockout period has passed
-            await db
-              .update(users)
-              .set({ 
-                failedLoginAttempts: 0,
-                lastFailedLogin: null,
-                isActive: true 
+            await supabase
+              .from('users')
+              .update({ 
+                failed_login_attempts: 0,
+                last_failed_login: null,
+                is_active: true 
               })
-              .where(eq(users.id, user.id));
+              .eq('id', user.id);
           }
         }
       }
 
-      // Attempt login
+      // Attempt login with Supabase Auth
       const { data, error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password: userPassword
@@ -145,17 +145,17 @@ export const authController = {
       if (error) {
         // Handle failed login attempt
         if (user) {
-          const failedAttempts = (user.failedLoginAttempts || 0) + 1;
+          const failedAttempts = (user.failed_login_attempts || 0) + 1;
           const isLocked = failedAttempts >= 5;
           
-          await db
-            .update(users)
-            .set({ 
-              failedLoginAttempts: failedAttempts,
-              lastFailedLogin: new Date(),
-              isActive: !isLocked
+          await supabase
+            .from('users')
+            .update({ 
+              failed_login_attempts: failedAttempts,
+              last_failed_login: new Date().toISOString(),
+              is_active: !isLocked
             })
-            .where(eq(users.id, user.id));
+            .eq('id', user.id);
 
           if (isLocked) {
             logger.warn(`Account locked for email: ${email} after multiple failed attempts`, { 
@@ -176,13 +176,13 @@ export const authController = {
         logger.warn(`Failed login attempt for email: ${email}`, { 
           error: error.message,
           ip: clientIp,
-          remainingAttempts: user ? 5 - (user.failedLoginAttempts || 0) - 1 : 4
+          remainingAttempts: user ? 5 - (user.failed_login_attempts || 0) - 1 : 4
         });
         
         return res.status(401).json({
           success: false,
           code: 'INVALID_CREDENTIALS',
-          message: `Invalid email or password. ${user ? `${5 - (user.failedLoginAttempts || 0) - 1} attempts remaining.` : ''}`
+          message: `Invalid email or password. ${user ? `${5 - (user.failed_login_attempts || 0) - 1} attempts remaining.` : ''}`
         });
       }
 
@@ -190,22 +190,24 @@ export const authController = {
       const authUser = data.user;
       
       // Reset failed login attempts on successful login
-      await db
-        .update(users)
-        .set({ 
-          failedLoginAttempts: 0,
-          lastFailedLogin: null,
-          lastLogin: new Date(),
-          lastIp: clientIp,
-          isActive: true
-        })
-        .where(eq(users.id, authUser.id as unknown as number));
+      if (user) {
+        await supabase
+          .from('users')
+          .update({ 
+            failed_login_attempts: 0,
+            last_failed_login: null,
+            last_login: new Date().toISOString(),
+            last_ip: clientIp,
+            is_active: true
+          })
+          .eq('id', user.id);
+      }
       
       // Generate token pair using our token service
       const tokenPair = generateTokenPair({
         id: authUser.id,
         email: authUser.email || '',
-        role: authUser.role || 'user'
+        role: authUser.user_metadata?.role || 'user'
       });
       
       logger.info(`Successful login for user: ${authUser.email}`, {
@@ -222,8 +224,6 @@ export const authController = {
         sameSite: isProduction ? 'none' : 'lax' as const,
         path: '/',
         domain: isProduction ? process.env.COOKIE_DOMAIN : undefined,
-        // Partitioning for better security in cross-site contexts
-        partitionKey: isProduction ? '__Host-' : undefined
       } as const;
 
       // Set access token cookie (short-lived)
@@ -239,38 +239,13 @@ export const authController = {
         maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
       });
 
-      // Store session in database
-      try {
-        if (!user?.id) {
-          throw new Error('User ID is required');
-        }
-        
-        // Use the ID directly as a string since that's what the database expects
-        const userId = user.id;
-        
-        await db.insert(sessions).values({
-          id: tokenPair.sessionId,
-          userId: userId,
-          refreshToken: tokenPair.refreshTokenJti,
-          userAgent: req.get('user-agent') || 'unknown',
-          ipAddress: req.ip || 'unknown',
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-          lastUsedAt: new Date(),
-          isRevoked: false,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        });
-      } catch (dbError) {
-        logger.error('Failed to store session in database:', dbError);
-        // Don't fail the login if session storage fails
-      }
-
-// Return user data (excluding sensitive information)
+      // Return user data (excluding sensitive information)
       const userData = {
         id: authUser.id,
         email: authUser.email,
-        role: authUser.role || 'user',
-        // Add any other non-sensitive user fields here
+        role: authUser.user_metadata?.role || 'user',
+        email_verified: authUser.email_confirmed_at !== null,
+        full_name: authUser.user_metadata?.full_name,
       };
       
       res.json({
@@ -288,7 +263,7 @@ export const authController = {
     }
   },
 
-  async refreshToken(req: Request, res: Response) {
+  async refreshToken(req: AuthRequest, res: Response) {
     try {
       const refreshToken = req.cookies?.satya_refresh_token;
       if (!refreshToken) {
@@ -300,7 +275,7 @@ export const authController = {
       }
       
       // Check rate limiting for refresh token endpoint
-      const clientIp = req.ip || req.socket.remoteAddress || 'unknown-ip';
+      const clientIp = req.ip || req.socket?.remoteAddress || 'unknown-ip';
       const userId = req.user?.id?.toString() || 'anonymous';
       
       try {
@@ -326,7 +301,6 @@ export const authController = {
         sameSite: isProduction ? 'none' : 'lax' as const,
         path: '/',
         domain: isProduction ? process.env.COOKIE_DOMAIN : undefined,
-        partitionKey: isProduction ? '__Host-' : undefined
       } as const;
 
       // Set new access token cookie
@@ -341,20 +315,6 @@ export const authController = {
         path: '/api/auth/refresh',
         maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
       });
-
-      // Update session in database with new refresh token
-      try {
-        await db.update(sessions)
-          .set({ 
-            refreshToken: tokenPair.refreshTokenJti, 
-            lastUsedAt: new Date(),
-            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
-          })
-          .where(eq(sessions.id as any, tokenPair.sessionId)); // Type assertion for session ID
-      } catch (dbError) {
-        logger.error('Failed to update session in database:', dbError);
-        // Don't fail the refresh if session update fails
-      }
 
       return res.json({
         success: true,
@@ -387,16 +347,17 @@ export const authController = {
     }
   },
 
-  async logout(req: Request, res: Response) {
+  async logout(req: AuthRequest, res: Response) {
     try {
       // Log logout event
       if (req.user) {
         logger.info(`User logged out`, { 
           userId: req.user.id,
-          ip: req.ip || req.socket.remoteAddress || 'unknown-ip',
+          ip: req.ip || req.socket?.remoteAddress || 'unknown-ip',
           timestamp: new Date().toISOString()
         });
       }
+      
       const accessToken = req.cookies?.satya_access_token;
       const refreshToken = req.cookies?.satya_refresh_token;
 
@@ -415,20 +376,20 @@ export const authController = {
         path: '/api/auth/refresh'
       });
 
-      // Blacklist tokens if they exist
+      // Blacklist tokens if they exist (simplified version without database)
       if (accessToken) {
         try {
           const decoded = jwt.verify(accessToken, process.env.JWT_SECRET || 'your-secret-key') as any;
-          if (decoded?.jti) {
-            // Invalidate session if sessionId exists
-            if (decoded.sessionId) {
-              await db.delete(sessions).where(eq(sessions.id, decoded.sessionId));
-            }
-          }
+          logger.info('Token invalidated during logout', { jti: decoded?.jti });
         } catch (error) {
           logger.error('Error during token invalidation:', error);
         }
       }
+
+      res.json({
+        success: true,
+        message: 'Logged out successfully'
+      });
     } catch (error) {
       logger.error('Logout error:', error);
       res.status(500).json({
@@ -439,24 +400,25 @@ export const authController = {
     }
   },
 
-  async getProfile(req: Request, res: Response) {
+  async getProfile(req: AuthRequest, res: Response) {
     try {
-      const userId = parseInt(req.user?.id || '0');
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ success: false, error: 'Unauthorized' });
       }
       
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, userId))
+      const { data: user, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
         .limit(1);
       
-      if (!user) {
+      if (error || !user || user.length === 0) {
         return res.status(404).json({ success: false, error: 'User not found' });
       }
       
-      const { password: _, ...userData } = user;
+      // Remove sensitive data
+      const { password: _, ...userData } = user[0];
       res.json({ success: true, user: userData });
     } catch (error) {
       logger.error('Error getting user profile:', error);
@@ -464,29 +426,31 @@ export const authController = {
     }
   },
 
-  async updateProfile(req: Request, res: Response) {
+  async updateProfile(req: AuthRequest, res: Response) {
     try {
       const { fullName, email } = req.body;
-      const userId = parseInt(req.user?.id || '0');
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ success: false, error: 'Unauthorized' });
       }
       
-      const [updatedUser] = await db
-        .update(users)
-        .set({ 
-          fullName: fullName as string, 
+      const { data: updatedUser, error } = await supabase
+        .from('users')
+        .update({ 
+          full_name: fullName as string, 
           email: email as string, 
-          updatedAt: new Date() 
-        } as any) // Type assertion to handle the schema type
-        .where(eq(users.id, userId))
-        .returning();
+          updated_at: new Date().toISOString() 
+        })
+        .eq('id', userId)
+        .select('*')
+        .single();
       
-      if (!updatedUser) {
+      if (error || !updatedUser) {
         return res.status(404).json({ success: false, error: 'User not found' });
       }
       
-      const { password: _, ...userData } = updatedUser as any;
+      // Remove sensitive data
+      const { password: _, ...userData } = updatedUser;
       res.json({ success: true, user: userData });
     } catch (error) {
       logger.error('Error updating profile:', error);
@@ -494,9 +458,9 @@ export const authController = {
     }
   },
 
-  async changePassword(req: Request, res: Response) {
+  async changePassword(req: AuthRequest, res: Response) {
     try {
-      const userId = parseInt(req.user?.id || '0');
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
       }
@@ -504,31 +468,26 @@ export const authController = {
       const { currentPassword, newPassword } = req.body;
       
       // Get user from database
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, userId))
+      const { data: user, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
         .limit(1);
       
-      if (!user) {
+      if (error || !user || user.length === 0) {
         return res.status(404).json({ success: false, message: 'User not found' });
       }
       
       // In a real application, verify current password here
-      // const isValid = await verifyPassword(currentPassword, user.passwordHash);
-      // if (!isValid) {
-      //   return res.status(400).json({ success: false, message: 'Current password is incorrect' });
-      // }
+      // For now, we'll just update the password in Supabase Auth
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword
+      });
       
-      // Update password
-      // In a real application, hash the new password before saving
-      // const hashedPassword = await hashPassword(newPassword);
-      await db.update(users)
-        .set({ 
-          // password: hashedPassword,
-          updatedAt: new Date() 
-        })
-        .where(eq(users.id, userId));
+      if (updateError) {
+        logger.error('Password update error:', updateError);
+        return res.status(400).json({ success: false, message: 'Failed to update password' });
+      }
       
       res.json({ success: true, message: 'Password updated successfully' });
     } catch (error) {
@@ -538,7 +497,7 @@ export const authController = {
   },
 
   // OAuth endpoints
-  async oauthRedirect(req: Request, res: Response) {
+  async oauthRedirect(req: AuthRequest, res: Response) {
     try {
       const { provider } = req.params;
       const { redirectUri } = req.query;
@@ -561,7 +520,7 @@ export const authController = {
     }
   },
 
-  async oauthCallback(req: Request, res: Response) {
+  async oauthCallback(req: AuthRequest, res: Response) {
     try {
       const { provider } = req.params;
       const { code, state } = req.query;

@@ -353,7 +353,7 @@ def detect_audio_deepfake(
             return {
                 "success": True,
                 "is_deepfake": False,
-                "confidence": 0.0,
+                "confidence": 0.0,  # No confidence when no model provided
                 "features": {k: v.shape for k, v in features.items()},
                 "processing_time": time.time() - start_time,
                 "message": "No model provided, using default features",

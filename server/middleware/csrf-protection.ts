@@ -3,19 +3,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../config/logger';
 import { getSecurityConfig } from '../config/security';
 
-// Extend the Express Request type to include session
-declare global {
-  namespace Express {
-    interface Request {
-      session?: {
-        csrfToken?: string;
-        [key: string]: any;
-      };
-      csrfToken?: () => string;
-    }
-  }
-}
-
 const securityConfig = getSecurityConfig();
 
 /**
@@ -114,9 +101,9 @@ export const verifyCsrfToken = (req: Request, res: Response, next: NextFunction)
   const csrfToken = req.headers[securityConfig.csrf.headerName.toLowerCase()] || 
                    req.body[securityConfig.csrf.fieldName];
   
-  // Verify the CSRF token
-  const sessionToken = req.session?.csrfToken;
-  const isValidToken = csrfToken && sessionToken && csrfToken === sessionToken;
+  // Verify the CSRF token using cookie-based approach
+  const csrfCookie = req.cookies ? req.cookies[securityConfig.csrf.cookie.name] : null;
+  const isValidToken = csrfToken && csrfCookie && csrfToken === csrfCookie;
   
   if (!isValidToken) {
     logger.warn('CSRF token validation failed', {
@@ -124,7 +111,7 @@ export const verifyCsrfToken = (req: Request, res: Response, next: NextFunction)
       method: req.method,
       path: req.path,
       hasToken: !!csrfToken,
-      sessionToken: req.session?.csrfToken ? 'present' : 'missing'
+      hasCookie: !!csrfCookie
     });
 
     return res.status(403).json({

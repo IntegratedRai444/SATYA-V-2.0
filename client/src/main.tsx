@@ -16,7 +16,7 @@ import { RealtimeProvider } from './contexts/RealtimeContext';
 import { BatchProcessingProvider } from './contexts/BatchProcessingContext';
 import { RouterProvider } from 'react-router-dom';
 import { router } from './utils/router';
-import { PerformanceMonitor, MemoryMonitor } from './utils/performanceOptimizer';
+// import { PerformanceMonitor, MemoryMonitor } from './utils/performanceOptimizer';
 import logger from './lib/logger';
 import { initSentry } from './lib/sentry';
 import './index.css';
@@ -25,7 +25,7 @@ import './index.css';
 initSentry();
 
 // Start performance monitoring
-PerformanceMonitor.mark('app-init-start');
+// PerformanceMonitor.mark('app-init-start');
 
 // Create a client
 const queryClient = new QueryClient({
@@ -99,13 +99,13 @@ root.render(
 );
 
 // End performance monitoring
-PerformanceMonitor.mark('app-init-end');
-PerformanceMonitor.measure('app-initialization', 'app-init-start', 'app-init-end');
+// PerformanceMonitor.mark('app-init-end');
+// PerformanceMonitor.measure('app-initialization', 'app-init-start', 'app-init-end');
 
 // Log memory usage in development
 if (import.meta.env.DEV) {
   setTimeout(() => {
-    MemoryMonitor.logMemoryUsage('Initial Load');
-    logger.debug('Performance Metrics', PerformanceMonitor.getMetrics());
+    // MemoryMonitor.logMemoryUsage('Initial Load');
+    // logger.debug('Performance Metrics', PerformanceMonitor.getMetrics());
   }, 2000);
 }

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 sys.path.insert(0, str(Path(__file__).parent.parent / "database"))
 
 from database.analysis import AnalysisResult
-from database.base import Base, SessionLocal, engine, get_db
+from database.base import get_supabase
 from database.feedback import UserFeedback
 from database.file import FileMetadata
 from database.team import TeamInvitation, TeamMember

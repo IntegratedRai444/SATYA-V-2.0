@@ -1,25 +1,16 @@
-// Import the schema implementation
-import { users, scans, userPreferences, tasks } from './schema';
+// Import all types from the new types file
+export * from './types';
 
-// Re-export all types
+// Re-export commonly used types for convenience
 export type { 
-  InsertUser, 
   User, 
-  InsertScan, 
   Scan, 
-  InsertUserPreferences, 
   UserPreferences, 
-  InsertTask, 
-  Task 
-} from './index.d';
-
-// Export the schema implementation
-export { users, scans, userPreferences, tasks };
-
-// Export insert schemas
-export { 
-  insertUserSchema, 
-  insertScanSchema, 
-  insertUserPreferencesSchema, 
-  insertTaskSchema 
-} from './schema';
+  AnalysisJob,
+  AnalysisResult,
+  AuthUser,
+  ApiResponse,
+  LoginCredentials,
+  RegisterData,
+  AuthResponse
+} from './types';

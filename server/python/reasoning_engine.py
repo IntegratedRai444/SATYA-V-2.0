@@ -298,7 +298,7 @@ class ReasoningEngine:
                 id=self._generate_id("cncl_img_manip"),
                 title="Potential Image Manipulation Detected",
                 description=f"Image analysis indicates potential manipulation with confidence {manipulation_score:.2f}",
-                confidence=min(manipulation_score, 0.95),  # Cap confidence
+                confidence=min(manipulation_score, 0.95),  # Cap confidence at 95% for safety
                 evidence_ids=[latest.id],
                 reasoning_steps=[
                     f"Analyzed image with manipulation score: {manipulation_score:.2f}",

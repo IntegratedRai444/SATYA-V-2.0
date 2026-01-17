@@ -107,10 +107,10 @@ export function ProgressTracker({
   };
 
   const getElapsedTime = () => {
-    if (!progress.progress.startTime) return null;
+    if (!progress?.startTime) return null;
     
-    const startTime = new Date(progress.progress.startTime);
-    const endTime = progress.progress.endTime ? new Date(progress.progress.endTime) : new Date();
+    const startTime = new Date(progress.startTime);
+    const endTime = progress.endTime ? new Date(progress.endTime) : new Date();
     const elapsed = (endTime.getTime() - startTime.getTime()) / 1000;
     
     return elapsed;
@@ -132,9 +132,9 @@ export function ProgressTracker({
         {elapsedTime && (
           <span className="text-sm text-gray-500">
             {formatTime(elapsedTime)}
-            {progress.progress.estimatedTimeRemaining && isProcessing && (
+            {progress.estimatedTimeRemaining && isProcessing && (
               <span className="ml-1">
-                (~{formatTime(progress.progress.estimatedTimeRemaining)} remaining)
+                (~{formatTime(progress.estimatedTimeRemaining)} remaining)
               </span>
             )}
           </span>
@@ -145,20 +145,20 @@ export function ProgressTracker({
       {(isProcessing || isQueued) && (
         <div className="space-y-2">
           <Progress 
-            value={progress.progress.percentage} 
+            value={progress.percentage} 
             className="h-2"
           />
           <div className="flex justify-between text-xs text-gray-500">
-            <span>{progress.progress.stage}</span>
-            <span>{progress.progress.percentage}%</span>
+            <span>{progress.stage}</span>
+            <span>{progress.percentage}%</span>
           </div>
         </div>
       )}
 
       {/* Progress Message */}
-      {progress.progress.message && (
+      {progress.message && (
         <p className="text-sm text-gray-600">
-          {progress.progress.message}
+          {progress.message}
         </p>
       )}
 
@@ -217,7 +217,7 @@ export function ProgressIndicator({
     <div className="flex items-center space-x-2">
       <Loader2 className={`${sizeClasses[size]} animate-spin text-blue-500`} />
       <span className="text-xs text-gray-500">
-        {progress.progress.percentage}%
+        {progress.percentage}%
       </span>
     </div>
   );

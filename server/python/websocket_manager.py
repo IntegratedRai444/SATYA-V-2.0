@@ -226,9 +226,8 @@ class ConnectionManager:
             # If we can't queue, clean up the connection
             await self._cleanup_connection(websocket, 1011, "Connection lost")
             return False
-
-        except Exception as e:
-            logger.error(f"Unexpected error sending message: {e}", exc_info=True)
+        except Exception as send_error:
+            logger.error(f"Failed to send message: {send_error}")
             return False
 
     async def broadcast(

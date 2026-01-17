@@ -9,6 +9,7 @@ import { validateRequest } from '../middleware/validate-request';
 import { authenticate } from '../middleware/auth.middleware';
 import { pythonBridge } from '../services/python-http-bridge';
 import { logger } from '../config/logger';
+import { createAnalysisJob, updateAnalysisJobWithResults } from './history';
 
 const router = Router();
 const writeFile = promisify(fs.writeFile);
@@ -241,51 +242,68 @@ router.post(
         return res.status(400).json({ error: 'No file uploaded' });
       }
 
-      // Process the image using the Python service
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: 'User not authenticated' });
+      }
+
+      // Create analysis job in Supabase
+      const job = await createAnalysisJob(userId, {
+        modality: 'image',
+        filename: req.file.originalname,
+        mime_type: req.file.mimetype,
+        size_bytes: req.file.size,
+        metadata: {
+          originalName: req.file.originalname,
+          uploadedAt: new Date().toISOString()
+        }
+      });
+
+      // Process the image using Python service
       const result = await (pythonBridge as any).request({
         method: 'POST',
-        url: '/analyze/image',
+        url: '/api/v2/analysis/image',  // Fixed: Use the correct Python endpoint
         data: {
           image: req.file.buffer.toString('base64'),
           mimeType: req.file.mimetype,
+          jobId: job.id,
+          filename: req.file.originalname,
         },
       });
 
-      res.json({
-        success: true,
-        data: result.data,
-      });
-    } catch (error) {
-      handleAnalysisError(error, res);
-    }
-  }
-);
+      // Save results to Supabase
+      if (result.data && result.data.status === 'success') {
+        await updateAnalysisJobWithResults(job.id, {
+          status: 'completed',
+          confidence: result.data.confidence || 0,
+          is_deepfake: result.data.is_deepfake || false,
+          model_name: result.data.model_name || 'SatyaAI-Image',
+          model_version: result.data.model_version || '1.0.0',
+          summary: result.data.summary || {},
+          analysis_data: result.data,
+          proof_json: result.data.proof || {}
+        });
 
-// Analyze video
-router.post(
-  '/video',
-  authenticate,
-  upload.single('video'),
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ error: 'No file uploaded' });
+        res.json({
+          success: true,
+          data: {
+            ...result.data,
+            jobId: job.id,
+            reportCode: job.report_code
+          }
+        });
+      } else {
+        // Mark job as failed
+        await updateAnalysisJobWithResults(job.id, {
+          status: 'failed',
+          error_message: result.data?.error || 'Analysis failed'
+        });
+
+        res.status(500).json({
+          success: false,
+          error: result.data?.error || 'Analysis failed'
+        });
       }
-
-      // Process the video using the Python service
-      const result = await (pythonBridge as any).request({
-        method: 'POST',
-        url: '/analyze/video',
-        data: {
-          video: req.file.buffer.toString('base64'),
-          mimeType: req.file.mimetype,
-        },
-      });
-
-      res.json({
-        success: true,
-        data: result.data,
-      });
     } catch (error) {
       handleAnalysisError(error, res);
     }
@@ -297,22 +315,69 @@ router.post(
   '/audio',
   authenticate,
   upload.single('audio'),
-  async (req: Request, res: Response) => {
+  async (req: Request, res: Response, next: NextFunction) => {
     try {
       if (!req.file) {
         return res.status(400).json({ error: 'No file uploaded' });
       }
 
-      // Process the audio using the Python service
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: 'User not authenticated' });
+      }
+
+      // Create analysis job in Supabase
+      const job = await createAnalysisJob(userId, {
+        modality: 'audio',
+        filename: req.file.originalname,
+        mime_type: req.file.mimetype,
+        size_bytes: req.file.size,
+        metadata: {
+          originalName: req.file.originalname,
+          uploadedAt: new Date().toISOString()
+        }
+      });
+
+      // Process the audio using Python service
       const result = await pythonBridge.post('/analyze/audio', {
         audio: req.file.buffer.toString('base64'),
         mimeType: req.file.mimetype,
+        jobId: job.id,
       });
 
-      res.json({
-        success: true,
-        data: result.data,
-      });
+      // Save results to Supabase
+      if (result.data && result.data.status === 'success') {
+        await updateAnalysisJobWithResults(job.id, {
+          status: 'completed',
+          confidence: result.data.confidence || 0,
+          is_deepfake: result.data.is_deepfake || false,
+          model_name: result.data.model_name || 'SatyaAI-Audio',
+          model_version: result.data.model_version || '1.0.0',
+          summary: result.data.summary || {},
+          analysis_data: result.data,
+          proof_json: result.data.proof || {}
+        });
+
+        res.json({
+          success: true,
+          data: {
+            ...result.data,
+            jobId: job.id,
+            reportCode: job.report_code
+          }
+        });
+      } else {
+        // Mark job as failed
+        await updateAnalysisJobWithResults(job.id, {
+          status: 'failed',
+          error_message: result.data?.error || 'Analysis failed'
+        });
+
+        res.status(500).json({
+          success: false,
+          error: result.data?.error || 'Analysis failed'
+        });
+      }
     } catch (error) {
       handleAnalysisError(error, res);
     }

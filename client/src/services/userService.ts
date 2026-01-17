@@ -1,17 +1,5 @@
-import apiClient from '@/lib/api';
+import api from '@/lib/api';
 import logger from '@/lib/logger';
-
-// Extend the Window interface to include the apiClient
-declare global {
-  interface Window {
-    apiClient: typeof apiClient;
-  }
-}
-
-// Make apiClient available globally for debugging
-if (process.env.NODE_ENV === 'development') {
-  window.apiClient = apiClient;
-}
 
 export interface User {
   id: string;
@@ -36,7 +24,7 @@ class UserService {
     if (this.currentUser) return this.currentUser;
 
     try {
-      const response = await apiClient.getProfile();
+      const response = await api.get('/profile');
       if (response.success && response.data) {
         this.currentUser = {
           id: response.data.id.toString(),
@@ -57,7 +45,7 @@ class UserService {
 
   public async getTeamMembers(): Promise<TeamMember[]> {
     try {
-      const response = await apiClient.client.get<TeamMember[]>('/api/team/members');
+      const response = await api.get('/api/team/members');
       this.teamMembers = response.data;
       return this.teamMembers;
     } catch (error) {
@@ -68,7 +56,7 @@ class UserService {
 
   public async inviteUser(email: string, role: User['role']): Promise<void> {
     try {
-      await apiClient.client.post('/api/team/invite', { email, role });
+      await api.post('/api/team/invite', { email, role });
       logger.info('User invited successfully', { email, role });
     } catch (error) {
       logger.error('Failed to invite user', error as Error);
@@ -78,7 +66,7 @@ class UserService {
 
   public async updateUserRole(userId: string, role: User['role']): Promise<void> {
     try {
-      await apiClient.client.put(`/api/team/members/${userId}/role`, { role });
+      await api.put(`/api/team/members/${userId}/role`, { role });
       logger.info('User role updated successfully', { userId, role });
 
       // Update local cache
@@ -92,7 +80,7 @@ class UserService {
 
   public async removeTeamMember(userId: string): Promise<void> {
     try {
-      await apiClient.client.delete(`/api/team/members/${userId}`);
+      await api.delete(`/api/team/members/${userId}`);
       logger.info('Team member removed successfully', { userId });
 
       // Update local cache

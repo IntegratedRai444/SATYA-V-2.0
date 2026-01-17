@@ -1,12 +1,22 @@
-stage: string;
-percentage: number;
-message: string;
-startTime: string;
-endTime ?: string;
-estimatedTimeRemaining ?: number;
-  };
-result ?: any;
-error ?: string;
+import React, { useState, useCallback } from 'react';
+
+interface JobProgress {
+  id: string;
+  status: string;
+  stage: string;
+  percentage: number;
+  message: string;
+  startTime: string;
+  endTime?: string;
+  estimatedTimeRemaining?: number;
+  result?: any;
+  error?: string;
+}
+
+interface WebSocketMessage {
+  type: string;
+  data: any;
+  timestamp: string;
 }
 
 interface UseWebSocketOptions {
@@ -17,18 +27,14 @@ interface UseWebSocketOptions {
 
 export function useWebSocket(options: UseWebSocketOptions = {}) {
   const [jobUpdates, setJobUpdates] = useState<Map<string, JobProgress>>(new Map());
+  const [isConnected, setIsConnected] = useState(false);
 
   // Get WebSocket URL with auth token
   const getWebSocketUrl = useCallback(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    const token = apiClient.getAuthToken();
-
-    if (!token) {
-      throw new Error('No authentication token available');
-    }
-
-    return `${protocol}//${host}/ws?token=${encodeURIComponent(token)}`;
+    
+    return `${protocol}//${host}/ws`;
   }, []);
 
   // Handle job-related messages
@@ -51,28 +57,17 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     }
   }, []);
 
-  // Use base WebSocket with job-specific handling
-  const base = useBaseWebSocket({
-    ...options,
-    url: getWebSocketUrl(),
-    onMessage: handleJobMessage,
-  });
-
   // Subscribe to a specific job
   const subscribeToJob = useCallback((jobId: string) => {
-    base.sendMessage({
-      type: 'subscribe_job',
-      jobId
-    });
-  }, [base]);
+    // Implementation would go here
+    console.log('Subscribing to job:', jobId);
+  }, []);
 
   // Unsubscribe from a specific job
   const unsubscribeFromJob = useCallback((jobId: string) => {
-    base.sendMessage({
-      type: 'unsubscribe_job',
-      jobId
-    });
-  }, [base]);
+    // Implementation would go here
+    console.log('Unsubscribing from job:', jobId);
+  }, []);
 
   // Get progress for a specific job
   const getJobProgress = useCallback((jobId: string) => {
@@ -89,7 +84,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   }, []);
 
   return {
-    ...base,
+    isConnected,
     jobUpdates,
     subscribeToJob,
     unsubscribeFromJob,

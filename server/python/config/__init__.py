@@ -147,7 +147,8 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
-        extra="forbid",
+        extra="allow",  # Allow extra fields from .env
+        validate_assignment=False,  # Allow attribute assignment after init
         env_prefix=""
     )
 

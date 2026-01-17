@@ -20,7 +20,9 @@ export default function History() {
 
     updateHeight();
     window.addEventListener('resize', updateHeight);
-    return () => window.removeEventListener('resize', updateHeight);
+    return () => {
+      window.removeEventListener('resize', updateHeight);
+    };
   }, []);
 
   const formatDate = (dateString: string) => {
@@ -42,80 +44,79 @@ export default function History() {
     }
   };
 
-  // Render individual history item
+  // Map API response to UI format
   const renderHistoryItem = (result: any, index: number) => {
+    // Map API response to UI format
+    const uiItem = {
+      id: result.id || result.jobId,
+      case_id: result.reportCode || result.jobId,
+      analysis_date: result.timestamp || result.created_at,
+      authenticity: result.is_deepfake ? 'MANIPULATED MEDIA' : 'AUTHENTIC MEDIA',
+      confidence: result.confidence || 0,
+      analysis_type: result.modality || result.type || 'Unknown',
+      key_findings: result.key_findings || result.analysis_data?.findings || []
+    };
+
     return (
-      <Card key={result.case_id || index} className="mb-4">
+      <Card key={uiItem.id} className="mb-4">
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg">
               Analysis #{history.length - index}
             </CardTitle>
             <span className="text-sm text-muted-foreground">
-              {formatDate(result.analysis_date)}
+              {formatDate(uiItem.analysis_date)}
             </span>
           </div>
           <CardDescription>
-            Case ID: {result.case_id}
+            Case ID: {uiItem.case_id}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <h4 className="font-medium mb-1">Result</h4>
-              <p className={`font-semibold ${getResultColor(result.authenticity)}`}>
-                {result.authenticity}
+              <p className={`font-semibold ${getResultColor(uiItem.authenticity)}`}>
+                {uiItem.authenticity}
               </p>
             </div>
             <div>
               <h4 className="font-medium mb-1">Confidence</h4>
               <p className="font-semibold">
-                {result.confidence.toFixed(1)}%
+                {(uiItem.confidence * 100).toFixed(1)}%
               </p>
             </div>
             <div>
               <h4 className="font-medium mb-1">Type</h4>
               <p className="font-semibold capitalize">
-                {result.analysis_type || 'Unknown'}
+                {uiItem.analysis_type}
+              </p>
+            </div>
+            <div>
+              <h4 className="font-medium mb-1">Case ID</h4>
+              <p className="font-semibold">
+                {uiItem.case_id}
               </p>
             </div>
           </div>
 
-          {result.key_findings && result.key_findings.length > 0 && (
+          {uiItem.key_findings && uiItem.key_findings.length > 0 && (
             <div className="mt-4">
               <h4 className="font-medium mb-2">Key Findings</h4>
               <div className="bg-muted rounded-lg p-3">
                 <ul className="space-y-1 text-sm">
-                  {result.key_findings.slice(0, 3).map((finding: string, findingIndex: number) => (
+                  {uiItem.key_findings.slice(0, 3).map((finding: string, findingIndex: number) => (
                     <li key={findingIndex} className="flex items-start gap-2">
                       <span className="text-primary">•</span>
                       <span>{finding}</span>
                     </li>
                   ))}
-                  {result.key_findings.length > 3 && (
+                  {uiItem.key_findings.length > 3 && (
                     <li className="text-muted-foreground text-xs">
-                      +{result.key_findings.length - 3} more findings...
+                      +{uiItem.key_findings.length - 3} more findings...
                     </li>
                   )}
                 </ul>
-              </div>
-            </div>
-          )}
-
-          {result.metrics && (
-            <div className="mt-4">
-              <h4 className="font-medium mb-2">Metrics</h4>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-                {Object.entries(result.metrics).map(([key, value]: [string, any]) => (
-                  <div key={key} className="bg-muted rounded p-2">
-                    <p className="text-xs text-muted-foreground capitalize">
-                      {key.replace(/_/g, ' ')}
-                    </p>
-                    <p className="font-medium">
-                      {typeof value === 'number' ? `${(value * 100).toFixed(1)}%` : value}
-                    </p>
-                  </div>
-                ))}
               </div>
             </div>
           )}
@@ -160,36 +161,22 @@ export default function History() {
           {history.map((result: any, index: number) => renderHistoryItem(result, index))}
         </div>
       )}
-
-      {/* Statistics */}
-      {history.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Statistics</CardTitle>
-            <CardDescription>Analysis summary</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="text-center">
-                <p className="text-2xl font-bold text-primary">{history.length}</p>
-                <p className="text-sm text-muted-foreground">Total Analyses</p>
-              </div>
-              <div className="text-center">
-                <p className="text-2xl font-bold text-green-500">
-                  {history.filter((h: any) => h.authenticity === 'AUTHENTIC MEDIA').length}
-                </p>
-                <p className="text-sm text-muted-foreground">Authentic</p>
-              </div>
-              <div className="text-center">
-                <p className="text-2xl font-bold text-red-500">
-                  {history.filter((h: any) => h.authenticity === 'MANIPULATED MEDIA').length}
-                </p>
-                <p className="text-sm text-muted-foreground">Manipulated</p>
-              </div>
+      <Card>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="text-center">
+              <p className="text-2xl font-bold text-primary">{history.length}</p>
+              <p className="text-sm text-muted-foreground">Total Analyses</p>
             </div>
-          </CardContent>
-        </Card>
-      )}
+            <div className="text-center">
+              <p className="text-2xl font-bold text-red-500">
+                {history.filter((h: any) => h.authenticity === 'MANIPULATED MEDIA').length}
+              </p>
+              <p className="text-sm text-muted-foreground">Manipulated</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

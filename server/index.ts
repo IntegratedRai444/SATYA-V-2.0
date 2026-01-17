@@ -1,8 +1,16 @@
 import 'dotenv/config';
-import express, { Express as ExpressApp, Request, Response, NextFunction, Application, ErrorRequestHandler, RequestHandler } from 'express';
+import express from 'express';
 import { createServer, Server, IncomingMessage, ServerResponse } from 'http';
 import { setupVite, serveStatic } from './vite';
-import { initializeDatabase } from './database-init';
+import type { 
+  Express as ExpressApp, 
+  Request, 
+  Response, 
+  NextFunction, 
+  Application, 
+  ErrorRequestHandler, 
+  RequestHandler
+} from 'express';
 
 // Type-safe Python bridge import
 import { pythonBridge } from './services/python-http-bridge';
@@ -39,13 +47,12 @@ import { validateEnvironment } from './config/validate-env';
 
 // Import middleware
 import { 
-  errorHandler, 
   notFoundHandler, 
   requestIdMiddleware,
   setupGracefulShutdown,
-  RequestWithId
+  errorHandler
 } from './middleware/error-handler';
-
+import type { RequestWithId } from './middleware/error-handler';
 
 // Import routes
 import { router as apiRouter } from './routes/index';
@@ -736,16 +743,8 @@ async function startServer() {
       process.exit(1);
     }
 
-    // Initialize database (non-blocking - app will work with Supabase Client API)
-    const dbInitialized = await initializeDatabase();
     logConfigurationSummary();
-
-    if (!dbInitialized) {
-      logger.warn('Database initialization failed - using Supabase Client API fallback');
-      logger.info('App will continue to function normally using REST API');
-    } else {
-      logger.info('✅ Database initialized successfully');
-    }
+    logger.info('✅ Server initialized with Supabase - no database initialization needed');
 
     // ... (rest of the code remains the same)
   } catch (error) {

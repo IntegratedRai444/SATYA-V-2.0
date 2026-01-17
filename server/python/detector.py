@@ -58,7 +58,7 @@ class EnhancedDeepfakeDetector:
             analysis_results = {
                 "success": True,
                 "authenticity": "UNCERTAIN",
-                "confidence": 0.0,
+                "confidence": float('nan'),  # Will be set by actual analysis
                 "analysis_date": start_time.isoformat(),
                 "case_id": f"IMG-{hashlib.md5(image_buffer).hexdigest()[:8].upper()}",
                 "key_findings": [],
@@ -101,7 +101,7 @@ class EnhancedDeepfakeDetector:
             return {
                 "success": False,
                 "authenticity": "UNCERTAIN",
-                "confidence": 0.0,
+                "confidence": float('nan'),  # Will be set by error handling
                 "analysis_date": datetime.now().isoformat(),
                 "case_id": f"ERROR-{int(datetime.now().timestamp())}",
                 "key_findings": ["Analysis failed due to technical error"],
@@ -176,7 +176,7 @@ class EnhancedDeepfakeDetector:
             if len(faces) == 0:
                 return {
                     "authenticity": "UNCERTAIN",
-                    "confidence": 50.0,
+                    "confidence": 50.0,  # Neutral confidence when no faces detected
                     "key_findings": ["No faces detected for AI analysis"],
                     "detailed_analysis": {
                         "ai_model_analysis": {
@@ -342,13 +342,13 @@ class EnhancedDeepfakeDetector:
                 # Determine authenticity
                 if real_prob > 0.7:
                     authenticity = "AUTHENTIC MEDIA"
-                    confidence = real_prob * 100
+                    confidence = real_prob * 100  # Scale probability to percentage
                 elif fake_prob > 0.7:
                     authenticity = "MANIPULATED MEDIA"
-                    confidence = fake_prob * 100
+                    confidence = fake_prob * 100  # Scale probability to percentage
                 else:
                     authenticity = "UNCERTAIN"
-                    confidence = max(real_prob, fake_prob) * 100
+                    confidence = max(real_prob, fake_prob) * 100  # Use higher probability
 
                 # Generate findings
                 findings = [
@@ -427,13 +427,13 @@ class EnhancedDeepfakeDetector:
             # Determine authenticity
             if real_prob > 0.6:
                 authenticity = "AUTHENTIC MEDIA"
-                confidence = real_prob * 100
+                confidence = real_prob * 100  # Scale probability to percentage
             elif fake_prob > 0.6:
                 authenticity = "MANIPULATED MEDIA"
-                confidence = fake_prob * 100
+                confidence = fake_prob * 100  # Scale probability to percentage
             else:
                 authenticity = "UNCERTAIN"
-                confidence = max(real_prob, fake_prob) * 100
+                confidence = max(real_prob, fake_prob) * 100  # Use higher probability
 
             # Generate findings
             findings = [
@@ -511,13 +511,13 @@ class EnhancedDeepfakeDetector:
             # Determine authenticity
             if combined_score >= 0.7:
                 authenticity = "AUTHENTIC MEDIA"
-                confidence = min(95.0, combined_score * 100)
+                confidence = min(95.0, combined_score * 100)  # Cap at 95%
             elif combined_score <= 0.3:
                 authenticity = "MANIPULATED MEDIA"
-                confidence = min(95.0, (1 - combined_score) * 100)
+                confidence = min(95.0, (1 - combined_score) * 100)  # Cap at 95%
             else:
                 authenticity = "UNCERTAIN"
-                confidence = 50.0 + abs(combined_score - 0.5) * 50
+                confidence = 50.0 + abs(combined_score - 0.5) * 50  # Distance from neutral
 
             # Generate findings
             findings = self._generate_findings(
@@ -555,7 +555,7 @@ class EnhancedDeepfakeDetector:
             logger.error(f"Heuristic analysis failed: {e}")
             return {
                 "authenticity": "UNCERTAIN",
-                "confidence": 50.0,
+                "confidence": 50.0,  # Neutral confidence for heuristic analysis
                 "key_findings": ["Heuristic analysis completed with limited data"],
                 "detailed_analysis": {"error": str(e)},
             }
@@ -1013,7 +1013,7 @@ class EnhancedDeepfakeDetector:
                 "block_artifacts_score": 0.8,
                 "compression_consistency": 0.8,
                 "double_compression_detected": False,
-                "double_compression_confidence": 0.1,
+                "double_compression_confidence": 0.1,  # Low confidence for double compression
                 "overall_compression_score": 0.8,
             }
 
@@ -1572,7 +1572,7 @@ class EnhancedDeepfakeDetector:
             ]
 
             detected = len(peaks) > 3  # Arbitrary threshold
-            confidence = min(1.0, len(peaks) / 10.0)
+            confidence = min(1.0, len(peaks) / 10.0)  # Scale by number of peaks
 
             return {"detected": detected, "confidence": confidence}
         except:
@@ -1803,7 +1803,7 @@ class EnhancedDeepfakeDetector:
         return {
             "success": False,
             "authenticity": "ANALYSIS FAILED",
-            "confidence": 0.0,
+            "confidence": float('nan'),  # Analysis failed confidence
             "analysis_date": datetime.now().isoformat(),
             "case_id": f"ERROR-{datetime.now().strftime('%Y%m%d%H%M%S')}",
             "key_findings": [f"Analysis failed: {error_message}"],

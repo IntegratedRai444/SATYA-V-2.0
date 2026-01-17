@@ -174,7 +174,7 @@ export default function Login() {
               <Shield className="w-8 h-8 text-white" />
             </div>
             <h1 className="text-4xl font-bold text-white mb-2">SatyaAI</h1>
-            <p className="text-slate-400 text-sm">Cyber Intelligence Platform</p>
+            <p className="text-slate-400 text-sm">Deepfake detection  Platform</p>
           </div>
         </div>
 
@@ -334,29 +334,49 @@ export default function Login() {
                 )}
               </Button>
 
-              <div className="text-center text-sm text-gray-500">
-                <a
-                  href="/forgot-password"
-                  className="font-medium text-blue-600 hover:text-blue-500"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setFormErrors({
-                      ...formErrors,
-                      general: 'Please contact support to reset your password.'
-                    });
-                  }}
-                >
-                  Forgot your password?
-                </a>
+              <div className="text-center space-y-2">
+                <div className="text-sm text-gray-500">
+                  <a
+                    href="/forgot-password"
+                    className="font-medium text-blue-600 hover:text-blue-500"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setFormErrors({
+                        ...formErrors,
+                        general: 'Please contact support to reset your password.'
+                      });
+                    }}
+                  >
+                    Forgot your password?
+                  </a>
+                </div>
+                <div className="text-sm text-gray-500">
+                  Don't have an account?{' '}
+                  <a
+                    href="/register"
+                    className="font-medium text-blue-600 hover:text-blue-500"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      navigate('/register');
+                    }}
+                  >
+                    Sign up
+                  </a>
+                </div>
               </div>
             </div>
           </form>
         </div>
 
         {/* Footer Note */}
-        <p className="text-center text-slate-500 text-xs mt-6">
-          Protected by enterprise-grade security
-        </p>
+        <div className="mt-6 space-y-2">
+          <p className="text-center text-slate-500 text-xs">
+            By signing in, you agree to our Terms of Service and Privacy Policy
+          </p>
+          <p className="text-center text-slate-500 text-xs">
+            Protected by enterprise-grade security
+          </p>
+        </div>
       </div>
     </ErrorBoundary>
   );

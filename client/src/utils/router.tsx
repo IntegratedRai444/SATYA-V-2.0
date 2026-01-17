@@ -35,8 +35,9 @@ const lazyWithRetry = (componentImport: any) =>
 const Home = lazyWithRetry(() => import('@/pages/Home'));
 const Dashboard = lazyWithRetry(() => import('@/pages/Dashboard'));
 const Login = lazyWithRetry(() => import('@/pages/Login'));
+const Register = lazyWithRetry(() => import('@/pages/auth/Register'));
 const Analytics = lazyWithRetry(() => import('@/pages/Analytics'));
-const SmartAnalysis = lazyWithRetry(() => import('../pages/SmartAnalysis'));
+const MultimodalAnalysis = lazyWithRetry(() => import('../pages/MultimodalAnalysis'));
 const History = lazyWithRetry(() => import('@/pages/History'));
 const Settings = lazyWithRetry(() => import('@/pages/Settings'));
 const Help = lazyWithRetry(() => import('@/pages/Help'));
@@ -160,6 +161,17 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
 // Create and export the router
 export const router = createBrowserRouter([
   // Public routes
+  // Auth routes
+  {
+    path: '/register',
+    element: (
+      <PublicRoute>
+        <Suspense fallback={<LoadingState variant="page" message="Loading registration..." />}>
+          <Register />
+        </Suspense>
+      </PublicRoute>
+    ),
+  },
   {
     path: '/login',
     element: (
@@ -250,8 +262,8 @@ export const router = createBrowserRouter([
         path: 'smart-analysis',
         element: (
           <ErrorBoundary level="page">
-            <Suspense fallback={<LoadingState message="Loading Smart Analysis..." />}>
-              <SmartAnalysis />
+            <Suspense fallback={<LoadingState message="Loading Multimodal Analysis..." />}>
+              <MultimodalAnalysis />
             </Suspense>
           </ErrorBoundary>
         ),

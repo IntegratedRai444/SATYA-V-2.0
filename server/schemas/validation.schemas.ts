@@ -33,7 +33,7 @@ export const analysisCreateSchema = z.object({
   body: z.object({
     type: z.enum(['sentiment', 'topic', 'summary']),
     text: z.string().min(1, 'Text cannot be empty'),
-    options: z.record(z.unknown()).optional(),
+    options: z.record(z.string(), z.unknown()).optional(),
   }),
 });
 
@@ -50,7 +50,7 @@ export const chatMessageSchema = z.object({
   body: z.object({
     message: z.string().min(1, 'Message cannot be empty'),
     conversationId: z.string().uuid('Invalid conversation ID format').optional(),
-    context: z.record(z.unknown()).optional(),
+    context: z.record(z.string(), z.unknown()).optional(),
   }),
 });
 

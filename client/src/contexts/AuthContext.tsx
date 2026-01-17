@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode, FC } from 'react';
-import { apiClient } from '../lib/api';
+import { apiClient } from '../lib/api/apiClient';
 import { logout } from '../services/auth';
 import logger from '../lib/logger';
 
@@ -14,6 +14,11 @@ interface User {
   fullName?: string;
 }
 
+interface AuthResponse {
+  success: boolean;
+  user: User;
+}
+
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
@@ -22,7 +27,7 @@ interface AuthContextType {
   connectionStatus: ConnectionStatus;
   initialAuthCheckComplete: boolean;
   login: (username: string, password: string, overrideRole?: 'user' | 'admin') => Promise<boolean>;
-  register: (username: string, email: string, password: string) => Promise<boolean>;
+  register: (name: string, email: string, password: string) => Promise<boolean>;
   logout: (message?: string) => Promise<void>;
   refreshToken: () => Promise<boolean>;
   checkAuthStatus: () => Promise<boolean>;
@@ -137,15 +142,15 @@ export const AuthProvider: FC<AuthProviderProps> = ({ children }) => {
         }
       );
       
-      if (response.data?.user) {
+      if (response?.user) {
         // Update auth state
-        setUser(response.data.user);
+        setUser(response.user);
         setConnectionStatus('connected');
         
         // Store auth state in session storage for persistence
         try {
           sessionStorage.setItem('authState', JSON.stringify({
-            user: response.data.user,
+            user: response.user,
             timestamp: Date.now()
           }));
         } catch (e) {
@@ -208,7 +213,7 @@ export const AuthProvider: FC<AuthProviderProps> = ({ children }) => {
 
       // Check existing session
       try {
-        const response = await apiClient.get<{ user: User }>('/auth/me', {
+        const response = await apiClient.get<{ data: AuthResponse }>('/auth/me', {
           withCredentials: true,
           headers: {
             'Cache-Control': 'no-cache',
@@ -297,14 +302,13 @@ export const AuthProvider: FC<AuthProviderProps> = ({ children }) => {
         }
       );
 
-      const userData = response?.data?.user;
-      if (userData) {
+      if (response?.user) {
         const userInfo: User = {
-          id: userData.id,
-          username: userData.username,
-          email: userData.email,
-          role: userData.role || 'user',
-          ...(userData.fullName && { fullName: userData.fullName })
+          id: response.user.id,
+          username: response.user.username,
+          email: response.user.email,
+          role: response.user.role || 'user',
+          ...(response.user.fullName && { fullName: response.user.fullName })
         };
 
         // Update state
@@ -341,13 +345,13 @@ export const AuthProvider: FC<AuthProviderProps> = ({ children }) => {
     }
   }, [csrfToken, getCsrfToken]);
 
-  const handleRegister = useCallback(async (username: string, email: string, password: string): Promise<boolean> => {
+  const handleRegister = useCallback(async (name: string, email: string, password: string): Promise<boolean> => {
     try {
       setIsLoading(true);
       setError(null);
       
       // Input validation
-      if (!username?.trim() || !email?.trim() || !password) {
+      if (!name?.trim() || !email?.trim() || !password) {
         throw new Error('Please fill in all required fields');
       }
 
@@ -365,10 +369,10 @@ export const AuthProvider: FC<AuthProviderProps> = ({ children }) => {
         }
       }
 
-      // Register the user
-      const registerResponse = await apiClient.post<{ user: User }>(
-        '/auth/register',
-        { username, email, password },
+      // Register user
+      const registerResponse = await apiClient.post<{ success: boolean; user: User; message: string }>(
+        '/auth/signup',
+        { username: name, email, password },
         { 
           skipAuth: true,
           withCredentials: true,
@@ -379,11 +383,11 @@ export const AuthProvider: FC<AuthProviderProps> = ({ children }) => {
         }
       );
 
-      if (registerResponse?.data?.user) {
+      if (registerResponse?.success && registerResponse?.user) {
         // Auto-login after successful registration
         const loginResponse = await apiClient.post<{ user: User }>(
           '/auth/login',
-          { username, password },
+          { username: name, password },
           { 
             skipAuth: true,
             withCredentials: true,
@@ -394,10 +398,10 @@ export const AuthProvider: FC<AuthProviderProps> = ({ children }) => {
           }
         );
 
-        if (loginResponse?.data?.user) {
-          setUser(loginResponse.data.user);
+        if (loginResponse?.user) {
+          setUser(loginResponse.user);
           setConnectionStatus('connected');
-          logger.info(`User ${username} registered and logged in successfully`);
+          logger.info(`User ${name} registered and logged in successfully`);
           return true;
         }
       }

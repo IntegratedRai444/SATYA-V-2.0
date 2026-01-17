@@ -1,4 +1,4 @@
-import apiClient from '../lib/api';
+import api from '../lib/api';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../lib/logger';
 
@@ -12,18 +12,14 @@ export interface Message {
 }
 
 export interface ChatResponse {
-  success: boolean;
-  message: string;
-  data?: {
-    response: string;
-    sources?: Array<{
-      title: string;
-      url: string;
-      snippet: string;
-    }>;
-    suggestions?: string[];
-  };
-  error?: string;
+  response: string;
+  conversationId: string;
+  sources?: Array<{
+    title: string;
+    url: string;
+    snippet: string;
+  }>;
+  suggestions?: string[];
 }
 
 export interface ChatHistoryItem {
@@ -71,7 +67,7 @@ export const sendMessage = async (
       formData.append('options', JSON.stringify(options));
     }
 
-    const response = await apiClient.client.post<ChatResponse>(
+    const response = await api.post<ChatResponse>(
       '/api/chat/message',
       formData,
       {
@@ -81,16 +77,16 @@ export const sendMessage = async (
       }
     );
 
-    if (!response.data.success) {
-      throw new Error(response.data.error || 'Failed to send message');
+    if (!response.response) {
+      throw new Error('Failed to send message');
     }
 
     return {
-      response: response.data.data?.response || '',
-      conversationId: (response.data.data as any)?.conversationId || conversationId || uuidv4(),
+      response: response.response || '',
+      conversationId: (response as any)?.conversationId || conversationId || uuidv4(),
       messageId: uuidv4(),
-      sources: response.data.data?.sources,
-      suggestions: response.data.data?.suggestions,
+      sources: response.sources,
+      suggestions: response.suggestions,
     };
   } catch (error) {
     logger.error('Error sending message', error as Error);
@@ -103,16 +99,11 @@ export const sendMessage = async (
  */
 export const getChatHistory = async (): Promise<ChatHistoryItem[]> => {
   try {
-    const response = await apiClient.client.get<{
-      success: boolean;
+    const response = await api.get<{
       data: ChatHistoryItem[];
     }>('/api/chat/history');
 
-    if (!response.data.success) {
-      throw new Error('Failed to fetch chat history');
-    }
-
-    return response.data.data;
+    return response.data;
   } catch (error) {
     logger.error('Error fetching chat history', error as Error);
     return [];
@@ -126,16 +117,11 @@ export const getConversation = async (
   conversationId: string
 ): Promise<Message[]> => {
   try {
-    const response = await apiClient.client.get<{
-      success: boolean;
+    const response = await api.get<{
       data: Message[];
     }>(`/api/chat/conversation/${conversationId}`);
 
-    if (!response.data.success) {
-      throw new Error('Failed to fetch conversation');
-    }
-
-    return response.data.data.map((msg) => ({
+    return response.data.map((msg) => ({
       ...msg,
       timestamp: new Date(msg.timestamp),
     }));
@@ -150,17 +136,16 @@ export const getConversation = async (
  */
 export const deleteConversation = async (
   conversationId: string
-): Promise<boolean> => {
+): Promise<{ success: boolean; message: string }> => {
   try {
-    const response = await apiClient.client.delete<{
-      success: boolean;
+    const response = await api.delete<{
       message: string;
     }>(`/api/chat/conversation/${conversationId}`);
 
-    return response.data.success;
-  } catch (error) {
+    return { success: true, message: response.message };
+  } catch (error: unknown) {
     logger.error('Error deleting conversation', error as Error);
-    return false;
+    return { success: false, message: (error as Error).message };
   }
 };
 
@@ -172,19 +157,14 @@ export const getSuggestedResponses = async (
   conversationContext: Message[] = []
 ): Promise<string[]> => {
   try {
-    const response = await apiClient.client.post<{
-      success: boolean;
+    const response = await api.post<{
       data: string[];
     }>('/api/chat/suggestions', {
       message,
       conversationContext,
     });
 
-    if (!response.data.success) {
-      return [];
-    }
-
-    return response.data.data;
+    return response.data;
   } catch (error) {
     logger.error('Error getting suggested responses', error as Error);
     return [];

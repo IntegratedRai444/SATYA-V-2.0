@@ -50,10 +50,20 @@ const total = checks.length;
 
 console.log(chalk.cyan(`\n📊 ${passed}/${total} checks passed\n`));
 
+const criticalIssues = total - passed;
+
 if (passed === total) {
   console.log(chalk.green.bold('✅ System is production ready!\n'));
-  process.exit(0);
 } else {
   console.log(chalk.yellow.bold('⚠️  Some checks failed. Review before deploying.\n'));
-  process.exit(1);
+}
+
+export function runProductionReadinessCheck() {
+  return {
+    ready: passed === total,
+    criticalIssues,
+    totalChecks: total,
+    passedChecks: passed,
+    checks
+  };
 }

@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { healthRouter } from './health.routes';
 import { authRouter } from './auth.routes';
 import { analysisRouter } from './analysis.routes';
+import historyRouter from './history';
 import chatRouter from './chat';
 import { createApiError } from '../middleware/api-version';
 
@@ -15,6 +16,9 @@ const v2Router = Router();
 
 // Authentication routes
 v2Router.use('/auth', authRouter);
+
+// History routes
+v2Router.use('/history', historyRouter);
 
 // Analysis routes
 v2Router.use('/analyze', analysisRouter);

@@ -51,6 +51,18 @@ export interface AnalysisResult {
   updatedAt: string;
 }
 
+export interface AnalysisApiResponse {
+  status: string;
+  analysis: {
+    is_deepfake: boolean;
+    confidence: number;
+    model_info: Record<string, any>;
+    timestamp: string;
+    evidence_id: string;
+    proof: AnalysisProof;
+  };
+}
+
 export interface AnalysisProof {
   model_name: string;
   model_version: string;
@@ -82,57 +94,19 @@ export class AnalysisService extends BaseService {
       throw new Error(response.error.message || 'Analysis failed');
     }
 
-    // Check for proof in the response
-    if (!response.proof) {
-      throw new Error('Response is missing proof of analysis');
-    }
-
-    // Basic validation of the proof structure
-    const requiredProofFields = [
-      'model_name', 'model_version', 'modality', 'timestamp', 
-      'inference_duration', 'signature', 'metadata'
-    ];
-    
-    for (const field of requiredProofFields) {
-      if (response.proof[field] === undefined || response.proof[field] === null) {
-        throw new Error(`Invalid proof: missing required field '${field}'`);
+    // Validate proof if present
+    if (response.proof) {
+      const requiredFields = ['model_name', 'model_version', 'signature', 'timestamp'];
+      for (const field of requiredFields) {
+        if (response.proof[field] === undefined || response.proof[field] === null) {
+          throw new Error(`Invalid proof: missing required field '${field}'`);
+        }
       }
     }
 
     return response as T;
   }
 
-  // Type for the image analysis response
-  private imageAnalysisResponse = {
-    status: '',
-    analysis: {
-      is_deepfake: false,
-      confidence: 0,
-      model_info: {},
-      timestamp: '',
-      evidence_id: '',
-      proof: {
-        model_name: '',
-        model_version: '',
-        modality: '',
-        timestamp: '',
-        inference_duration: 0,
-        frames_analyzed: 0,
-        signature: '',
-        metadata: {
-          request_id: '',
-          user_id: '',
-          analysis_type: '',
-          content_size: 0
-        }
-      }
-    },
-    metadata: {
-      filename: '',
-      content_type: '',
-      size: 0
-    }
-  };
 
   async analyzeImage(
     file: File,
@@ -147,22 +121,7 @@ export class AnalysisService extends BaseService {
     }
 
     try {
-      const response = await this.post<{
-        status: string;
-        analysis: {
-          is_deepfake: boolean;
-          confidence: number;
-          model_info: Record<string, any>;
-          timestamp: string;
-          evidence_id: string;
-          proof: AnalysisProof;
-        };
-        metadata: {
-          filename: string;
-          content_type: string;
-          size: number;
-        };
-      }>('/api/analysis/image', formData, {
+      const response = await this.post<AnalysisApiResponse>('/api/analysis/image', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -170,7 +129,7 @@ export class AnalysisService extends BaseService {
       });
 
       // Validate the response including proof
-      const validated = this.validateResponse(response);
+      const validated = this.validateResponse<AnalysisApiResponse>(response);
 
       if (validated.status !== 'success' || !validated.analysis) {
         throw new Error('Invalid analysis response from server');
@@ -199,12 +158,12 @@ export class AnalysisService extends BaseService {
             modelInfo: validated.analysis.model_info || {},
           },
           metrics: {
-            processingTime: 0, // Will be updated from technical_details
-            modelVersion: response.analysis.model_info?.version || 'unknown',
+            processingTime: validated.analysis.proof.inference_duration || 0,
+            modelVersion: validated.analysis.proof.model_version || 'unknown',
           },
         },
-        createdAt: response.analysis.timestamp || new Date().toISOString(),
-        updatedAt: response.analysis.timestamp || new Date().toISOString(),
+        createdAt: validated.analysis.timestamp || new Date().toISOString(),
+        updatedAt: validated.analysis.timestamp || new Date().toISOString(),
       };
     } catch (error) {
       console.error('Image analysis failed:', error);
@@ -222,12 +181,7 @@ export class AnalysisService extends BaseService {
     return this.upload<AnalysisResult>(
       '/video',
       formData,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-        ...options,
-      }
+      options
     );
   }
 
@@ -241,12 +195,7 @@ export class AnalysisService extends BaseService {
     return this.upload<AnalysisResult>(
       '/audio',
       formData,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-        ...options,
-      }
+      options
     );
   }
 
@@ -302,24 +251,24 @@ export class AnalysisService extends BaseService {
   private async upload<T>(
     endpoint: string,
     data: FormData,
-    options: any = {}
+    options: AnalysisOptions = {}
   ): Promise<T> {
     const controller = new AbortController();
     
     // Set up progress tracking if needed
-    if (options.onUploadProgress) {
-      options.onUploadProgress = (progressEvent: ProgressEvent) => {
+    if (options.metadata?.onUploadProgress) {
+      options.metadata.onUploadProgress = (progressEvent: ProgressEvent) => {
         const percentCompleted = Math.round(
           (progressEvent.loaded * 100) / (progressEvent.total || 1)
         );
-        options.onUploadProgress(percentCompleted);
+        (options.metadata as any).onUploadProgress(percentCompleted);
       };
     }
 
     // Set up timeout if specified
     if (options.timeout) {
       setTimeout(() => {
-        controller.abort('Request timeout');
+        controller.abort();
       }, options.timeout);
     }
 
@@ -329,8 +278,10 @@ export class AnalysisService extends BaseService {
         endpoint,
         data,
         {
-          ...options,
-          signal: controller.signal,
+          signal: options.signal || controller.signal,
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
         }
       );
 

@@ -30,7 +30,7 @@ async function validate(name: string, fn: () => Promise<boolean>): Promise<void>
   }
 }
 
-async function runValidation() {
+export async function runValidation() {
   console.log(chalk.cyan.bold('\n🔍 Running System Validation...\n'));
 
   // Node.js Server Health
@@ -57,13 +57,19 @@ async function runValidation() {
   
   console.log(chalk.cyan(`\n📊 Results: ${passed}/${total} checks passed\n`));
   
-  if (passed === total) {
-    console.log(chalk.green.bold('✅ All validations passed!\n'));
-    process.exit(0);
-  } else {
-    console.log(chalk.red.bold('❌ Some validations failed\n'));
-    process.exit(1);
-  }
+  return {
+    success: passed === total,
+    totalTests: total,
+    passedTests: passed,
+    failedTests: total - passed,
+    results
+  };
 }
 
-runValidation();
+// Only run validation if this file is executed directly
+if (import.meta.url === `file://${process.argv[1]}`) {
+  runValidation().catch(error => {
+    console.error('Validation failed:', error);
+    process.exit(1);
+  });
+}

@@ -106,6 +106,50 @@ authRouter.post(
   ]
 );
 
+// Alias for /signup to maintain consistency
+authRouter.post(
+  '/register',
+  [
+    body('email').isEmail().normalizeEmail(),
+    body('password').isLength({ min: 8 })
+      .withMessage('Password must be at least 8 characters long'),
+    body('username').notEmpty().withMessage('Username is required'),
+    body('fullName').optional(),
+    validateRequest,
+    authLimiter as any, // Type assertion for express-rate-limit
+    csrfProtection,
+    async (req: ExpressRequest, res: Response) => {
+      try {
+        const { email, password, username, fullName } = req.body;
+        
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: `${process.env.CLIENT_URL}/auth/callback`
+          },
+        });
+
+        if (error) {
+          throw error;
+        }
+        
+        res.status(201).json({
+          success: true,
+          message: 'Signup successful. Please check your email for verification.',
+          user: data.user,
+        });
+      } catch (error: unknown) {
+        logger.error('Signup error:', error);
+        res.status(400).json({
+          success: false,
+          error: error instanceof Error ? error.message : 'Signup failed',
+        });
+      }
+    }
+  ]
+);
+
 
 // Login with email/password
 authRouter.post(

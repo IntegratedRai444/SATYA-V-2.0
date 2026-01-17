@@ -7,6 +7,8 @@ import { useRealtime } from '@/contexts/RealtimeContext';
 export interface BatchFile {
   id: string;
   file: File;
+  name: string;
+  size: number;
   status: 'pending' | 'uploading' | 'processing' | 'completed' | 'error';
   progress: number;
   result?: any;
@@ -26,6 +28,8 @@ export const useBatchProcessing = () => {
       ...newFiles.map(file => ({
         id: `${Date.now()}-${file.name}`,
         file,
+        name: file.name,
+        size: file.size,
         status: 'pending' as const,
         progress: 0,
       })),
@@ -57,7 +61,7 @@ export const useBatchProcessing = () => {
           const formData = new FormData();
           formData.append('file', file.file);
 
-          const response = await apiClient.client.post<{ success: boolean; data?: { scanId: string }; error?: string }>(
+          const response = await apiClient.post<{ success: boolean; data?: { scanId: string }; error?: string }>(
             '/v2/batch/process',
             formData,
             {
