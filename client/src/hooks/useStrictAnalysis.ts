@@ -1,5 +1,4 @@
 import { useState, useCallback, useRef } from 'react';
-import { useMutation } from '@tanstack/react-query';
 import { toast } from '@/components/ui/use-toast';
 import { validateProof } from '@/lib/utils/proofValidation';
 

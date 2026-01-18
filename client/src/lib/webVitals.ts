@@ -41,10 +41,10 @@ function reportWebVitals(metric: WebVitalsMetric) {
 export async function initWebVitals() {
   if (import.meta.env.PROD) {
     try {
-      const { onCLS, onFID, onFCP, onLCP, onTTFB, onINP } = await import('web-vitals');
+      const { onCLS, onTTFB, onFCP, onLCP, onINP } = await import('web-vitals');
       
       onCLS(reportWebVitals);
-      onFID(reportWebVitals);
+      onTTFB(reportWebVitals);
       onFCP(reportWebVitals);
       onLCP(reportWebVitals);
       onTTFB(reportWebVitals);

@@ -23,7 +23,8 @@ export function useUser() {
   const updateUser = useCallback(async (updates: Partial<User>) => {
     try {
       setIsLoading(true);
-      // Replace with your actual API call to update the user
+      // Replace with your actual API call to update user
+      console.log('Updating user with:', updates);
       // const response = await fetch('/api/auth/update', {
       //   method: 'PATCH',
       //   body: JSON.stringify(updates),

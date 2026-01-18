@@ -45,6 +45,24 @@ except:
         TEMPORAL_MODELS_AVAILABLE = False
         logger.warning("Temporal models not available for advanced video analysis")
 
+# Import video optimization utilities
+try:
+    from ..models.video_optimized import FrameProcessor
+    VIDEO_OPTIMIZATION_AVAILABLE = True
+    logger.info("Video optimization utilities available")
+except ImportError:
+    VIDEO_OPTIMIZATION_AVAILABLE = False
+    logger.warning("Video optimization not available")
+
+# Import enhanced video model
+try:
+    from ..models.video_model_enhanced import VideoProcessor as EnhancedVideoProcessor
+    ENHANCED_VIDEO_MODEL_AVAILABLE = True
+    logger.info("Enhanced video model available")
+except ImportError:
+    ENHANCED_VIDEO_MODEL_AVAILABLE = False
+    logger.warning("Enhanced video model not available")
+
 
 class VideoDetector:
     """
@@ -60,14 +78,16 @@ class VideoDetector:
     9. Advanced 3D CNN temporal analysis (if available)
     """
 
-    def __init__(self, config: Optional[Dict] = None):
+    def __init__(self, config: Optional[Dict] = None, use_optimization: bool = False, use_enhanced_model: bool = False):
         """Initialize comprehensive video detector"""
         self.config = config or self._default_config()
+        self.use_optimization = use_optimization
+        self.use_enhanced_model = use_enhanced_model
         logger.info("🎥 Initializing Enhanced Video Detector")
 
         # Initialize image detector for frame analysis
         if IMAGE_DETECTOR_AVAILABLE:
-            self.image_detector = ImageDetector()
+            self.image_detector = ImageDetector(use_advanced_model=self.config.get("use_advanced_image_model", False))
             logger.info("✅ Image detector loaded for frame analysis")
         else:
             self.image_detector = None
@@ -84,6 +104,37 @@ class VideoDetector:
                 logger.info("✅ Temporal 3D CNN model loaded for advanced analysis")
             except Exception as e:
                 logger.warning(f"⚠️ Could not load temporal model: {e}")
+
+        # Initialize video optimization if requested
+        self.frame_processor = None
+        if use_optimization and VIDEO_OPTIMIZATION_AVAILABLE and self.image_detector:
+            try:
+                # Use the image detector's model for frame processing
+                model = getattr(self.image_detector, 'advanced_model', None) or getattr(self.image_detector, 'model', None)
+                if model:
+                    self.frame_processor = FrameProcessor(
+                        model=model,
+                        device=self.config.get("device", 'cuda' if torch.cuda.is_available() else 'cpu'),
+                        batch_size=self.config.get("batch_size", 16),
+                        num_workers=self.config.get("num_workers", 4)
+                    )
+                    logger.info("✅ Video optimization enabled with GPU batching")
+                else:
+                    logger.warning("⚠️ No model available for frame processor")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not initialize video optimization: {e}")
+
+        # Initialize enhanced video model if requested
+        self.enhanced_video_processor = None
+        if use_enhanced_model and ENHANCED_VIDEO_MODEL_AVAILABLE:
+            try:
+                self.enhanced_video_processor = EnhancedVideoProcessor(
+                    model_path=self.config.get("enhanced_model_path"),
+                    device=self.config.get("device", 'cuda' if torch.cuda.is_available() else 'cpu')
+                )
+                logger.info("✅ Enhanced video model initialized")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not initialize enhanced video model: {e}")
 
         # Initialize optical flow calculator
         self.flow_calculator = None

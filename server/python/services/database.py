@@ -9,37 +9,30 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from sqlalchemy.orm import Session
 
 # Add database directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "database"))
 
-from database.analysis import AnalysisResult
 from database.base import get_supabase
-from database.feedback import UserFeedback
-from database.file import FileMetadata
-from database.team import TeamInvitation, TeamMember
-from database.user import User
 
 logger = logging.getLogger(__name__)
 
 
 class DatabaseManager:
     """
-    Database manager for handling all database operations
+    Supabase Database manager for handling all database operations
     """
 
     def __init__(self):
         """Initialize database manager"""
-        self.engine = engine
-        self.SessionLocal = SessionLocal
-        logger.info("Database manager initialized")
+        self.supabase = get_supabase()
+        logger.info("✅ Supabase database manager initialized")
 
     def create_tables(self):
         """Create all database tables"""
         try:
-            Base.metadata.create_all(bind=self.engine)
-            logger.info("✅ Database tables created successfully")
+            # Supabase tables are created via SQL scripts or UI
+            logger.info("✅ Supabase tables managed via dashboard")
             return True
         except Exception as e:
             logger.error(f"❌ Failed to create tables: {e}")
@@ -48,16 +41,12 @@ class DatabaseManager:
     def drop_tables(self):
         """Drop all database tables (use with caution!)"""
         try:
-            Base.metadata.drop_all(bind=self.engine)
-            logger.warning("⚠️ All database tables dropped")
+            # Supabase tables are dropped via dashboard
+            logger.warning("⚠️ Supabase tables managed via dashboard")
             return True
         except Exception as e:
             logger.error(f"❌ Failed to drop tables: {e}")
             return False
-
-    def get_session(self) -> Session:
-        """Get a new database session"""
-        return self.SessionLocal()
 
     # ========================================================================
     # USER OPERATIONS
@@ -67,54 +56,53 @@ class DatabaseManager:
         self,
         username: str,
         email: str,
-        hashed_password: str,
+        password: str,
         full_name: Optional[str] = None,
-    ) -> Optional[User]:
-        """Create a new user"""
-        db = self.get_session()
+    ) -> Optional[dict]:
+        """Create a new user using Supabase"""
         try:
-            user = User(
-                username=username,
-                email=email,
-                hashed_password=hashed_password,
-                full_name=full_name,
-                created_at=datetime.utcnow(),
-            )
-            db.add(user)
-            db.commit()
-            db.refresh(user)
+            user_data = {
+                "username": username,
+                "email": email,
+                "password": password,  # Match actual schema
+                "full_name": full_name,
+                "role": "user",
+                "created_at": datetime.utcnow().isoformat()
+            }
+            
+            result = self.supabase.table("users").insert(user_data).execute()
             logger.info(f"User created: {username}")
-            return user
+            return result.data[0] if result.data else None
         except Exception as e:
-            db.rollback()
             logger.error(f"Failed to create user: {e}")
             return None
-        finally:
-            db.close()
 
-    def get_user_by_username(self, username: str) -> Optional[User]:
-        """Get user by username"""
-        db = self.get_session()
+    def get_user_by_username(self, username: str) -> Optional[dict]:
+        """Get user by username using Supabase"""
         try:
-            return db.query(User).filter(User.username == username).first()
-        finally:
-            db.close()
+            result = self.supabase.table("users").select("*").eq("username", username).execute()
+            return result.data[0] if result.data else None
+        except Exception as e:
+            logger.error(f"Failed to get user by username: {e}")
+            return None
 
-    def get_user_by_email(self, email: str) -> Optional[User]:
-        """Get user by email"""
-        db = self.get_session()
+    def get_user_by_email(self, email: str) -> Optional[dict]:
+        """Get user by email using Supabase"""
         try:
-            return db.query(User).filter(User.email == email).first()
-        finally:
-            db.close()
+            result = self.supabase.table("users").select("*").eq("email", email).execute()
+            return result.data[0] if result.data else None
+        except Exception as e:
+            logger.error(f"Failed to get user by email: {e}")
+            return None
 
-    def get_user_by_id(self, user_id: int) -> Optional[User]:
-        """Get user by ID"""
-        db = self.get_session()
+    def get_user_by_id(self, user_id: int) -> Optional[dict]:
+        """Get user by ID using Supabase"""
         try:
-            return db.query(User).filter(User.id == user_id).first()
-        finally:
-            db.close()
+            result = self.supabase.table("users").select("*").eq("id", user_id).execute()
+            return result.data[0] if result.data else None
+        except Exception as e:
+            logger.error(f"Failed to get user by ID: {e}")
+            return None
 
     # ========================================================================
     # ANALYSIS OPERATIONS
@@ -122,84 +110,102 @@ class DatabaseManager:
 
     def save_analysis_result(
         self,
-        file_id: str,
-        file_name: str,
-        file_type: str,
-        authenticity_score: float,
-        label: str,
-        confidence: float,
-        details: dict,
-        user_id: Optional[int] = None,
+        job_id: str,
+        model_name: str = "SatyaAI",
+        confidence: float = 0.0,
+        is_deepfake: bool = False,
+        analysis_data: dict = None,
         **kwargs,
-    ) -> Optional[AnalysisResult]:
-        """Save analysis result to database"""
-        db = self.get_session()
+    ) -> Optional[dict]:
+        """Save analysis result to database using Supabase"""
         try:
-            analysis = AnalysisResult(
-                user_id=user_id,
-                file_id=file_id,
-                file_name=file_name,
-                file_type=file_type,
-                authenticity_score=authenticity_score,
-                label=label,
-                confidence=confidence,
-                details=details,
-                created_at=datetime.utcnow(),
+            result_data = {
+                "job_id": job_id,
+                "model_name": model_name,
+                "confidence": confidence,
+                "is_deepfake": is_deepfake,
+                "analysis_data": analysis_data or {},
+                "created_at": datetime.utcnow().isoformat(),
                 **kwargs,
-            )
-            db.add(analysis)
-            db.commit()
-            db.refresh(analysis)
-            logger.info(f"Analysis result saved: {file_id}")
-            return analysis
+            }
+            
+            result = self.supabase.table("analysis_results").insert(result_data).execute()
+            logger.info(f"Analysis result saved: {job_id}")
+            return result.data[0] if result.data else None
         except Exception as e:
-            db.rollback()
             logger.error(f"Failed to save analysis: {e}")
             return None
-        finally:
-            db.close()
 
-    def get_analysis_by_file_id(self, file_id: str) -> Optional[AnalysisResult]:
-        """Get analysis result by file ID"""
-        db = self.get_session()
+    def get_analysis_by_file_id(self, file_id: str) -> Optional[dict]:
+        """Get analysis result by file ID using Supabase"""
         try:
-            return (
-                db.query(AnalysisResult)
-                .filter(AnalysisResult.file_id == file_id)
-                .first()
-            )
-        finally:
-            db.close()
+            result = self.supabase.table("analysis_results").select("*").eq("file_id", file_id).execute()
+            return result.data[0] if result.data else None
+        except Exception as e:
+            logger.error(f"Failed to get analysis by file ID: {e}")
+            return None
 
     def get_user_analyses(
         self, user_id: int, limit: int = 10, offset: int = 0
-    ) -> List[AnalysisResult]:
-        """Get all analyses for a user"""
-        db = self.get_session()
+    ) -> List[dict]:
+        """Get all analyses for a user using Supabase"""
         try:
-            return (
-                db.query(AnalysisResult)
-                .filter(AnalysisResult.user_id == user_id)
-                .order_by(AnalysisResult.created_at.desc())
-                .limit(limit)
-                .offset(offset)
-                .all()
-            )
-        finally:
-            db.close()
+            result = self.supabase.table("analysis_results").select("*").eq("user_id", user_id).order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+            return result.data if result.data else []
+        except Exception as e:
+            logger.error(f"Failed to get user analyses: {e}")
+            return []
 
-    def get_recent_analyses(self, limit: int = 10) -> List[AnalysisResult]:
-        """Get recent analyses"""
-        db = self.get_session()
+    def get_recent_analyses(self, limit: int = 10) -> List[dict]:
+        """Get recent analyses using Supabase"""
         try:
-            return (
-                db.query(AnalysisResult)
-                .order_by(AnalysisResult.created_at.desc())
-                .limit(limit)
-                .all()
-            )
-        finally:
-            db.close()
+            result = self.supabase.table("analysis_results").select("*").order("created_at", desc=True).limit(limit).execute()
+            return result.data if result.data else []
+        except Exception as e:
+            logger.error(f"Failed to get recent analyses: {e}")
+            return []
+
+    def save_scan_result(
+        self,
+        user_id: int,
+        filename: str,
+        type: str,
+        result: str,
+        confidence_score: float,
+        detection_details: dict = None,
+        metadata: dict = None,
+        **kwargs,
+    ) -> Optional[dict]:
+        """Save scan result to database using Supabase"""
+        try:
+            scan_data = {
+                "user_id": user_id,
+                "filename": filename,
+                "type": type,
+                "result": result,
+                "confidence_score": confidence_score,
+                "detection_details": detection_details or {},
+                "metadata": metadata or {},
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat(),
+                **kwargs,
+            }
+            
+            result = self.supabase.table("scans").insert(scan_data).execute()
+            logger.info(f"Scan result saved: {filename}")
+            return result.data[0] if result.data else None
+        except Exception as e:
+            logger.error(f"Failed to save scan: {e}")
+            return None
+
+    def get_user_scans(self, user_id: int, limit: int = 10) -> List[dict]:
+        """Get scans for a user using Supabase"""
+        try:
+            result = self.supabase.table("scans").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(limit).execute()
+            return result.data if result.data else []
+        except Exception as e:
+            logger.error(f"Failed to get user scans: {e}")
+            return []
 
     def get_analysis_stats(self) -> dict:
         """Get analysis statistics"""
@@ -330,32 +336,27 @@ class DatabaseManager:
         file_size: int,
         user_id: Optional[int] = None,
         **kwargs,
-    ) -> Optional[FileMetadata]:
-        """Save file metadata"""
-        db = self.get_session()
+    ) -> Optional[dict]:
+        """Save file metadata using Supabase"""
         try:
-            file_meta = FileMetadata(
-                user_id=user_id,
-                file_id=file_id,
-                original_filename=original_filename,
-                stored_filename=stored_filename,
-                file_path=file_path,
-                file_type=file_type,
-                file_size=file_size,
-                created_at=datetime.utcnow(),
+            file_data = {
+                "file_id": file_id,
+                "original_filename": original_filename,
+                "stored_filename": stored_filename,
+                "file_path": file_path,
+                "file_type": file_type,
+                "file_size": file_size,
+                "user_id": user_id,
+                "created_at": datetime.utcnow().isoformat(),
                 **kwargs,
-            )
-            db.add(file_meta)
-            db.commit()
-            db.refresh(file_meta)
+            }
+            
+            result = self.supabase.table("file_metadata").insert(file_data).execute()
             logger.info(f"File metadata saved: {file_id}")
-            return file_meta
+            return result.data[0] if result.data else None
         except Exception as e:
-            db.rollback()
             logger.error(f"Failed to save file metadata: {e}")
             return None
-        finally:
-            db.close()
 
     def get_active_users_count(self, days: int = 30) -> int:
         """Get count of active users (who analyzed files) in last N days"""

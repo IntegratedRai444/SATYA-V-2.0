@@ -5,6 +5,11 @@ import type { Detection } from '../types/dashboard';
 import type { ApiResponse } from '../lib/api';
 import { toast } from '../components/ui/use-toast';
 
+// Define the interface for API DashboardStats to include uncertainScans
+interface ExtendedApiDashboardStats extends ApiDashboardStats {
+  uncertainScans: number;
+}
+
 // Zod schemas for runtime validation
 const StatItemSchema = z.object({
   title: z.string(),
@@ -50,7 +55,7 @@ class DashboardServiceError extends Error {
 }
 
 // Transform API stats to dashboard stats
-const transformStats = (apiStats: ApiDashboardStats): StatItem[] => {
+const transformStats = (apiStats: ExtendedApiDashboardStats): StatItem[] => {
   return [
     {
       title: 'Total Analyses',
@@ -101,23 +106,15 @@ export const fetchDashboardData = async (_params: {
 }): Promise<DashboardData> => {
 
   try {
-    // Define expected API response types for clarity and type safety
-    type StatsApiResponse = ApiResponse<ApiDashboardStats>;
-    type AnalyticsApiResponse = ApiResponse<{
-      monthly: AnalysisData[];
-      metrics: AnalysisData[];
-    }>;
-    type ActivityApiResponse = ApiResponse<{ history: Detection[] }>;
-
     // Fetch all dashboard data in parallel using apiClient methods
     const [statsRes, analyticsRes, activityRes] = await Promise.all([
-      api.getDashboardStats() as Promise<ApiResponse<ApiDashboardStats>>,
-      api.getUserAnalytics() as Promise<ApiResponse<any>>,
-      api.getAnalysisHistory({ limit: 5 }) as Promise<ApiResponse<any>>
+      api.get('/dashboard/stats') as Promise<ApiResponse<ApiDashboardStats>>,
+      api.get('/user/analytics') as Promise<ApiResponse<any>>,
+      api.get('/analysis/history', { params: { limit: 5 } }) as Promise<ApiResponse<any>>
     ]);
 
     // Validate and transform responses
-    const stats = statsRes.success && statsRes.data ? transformStats(statsRes.data) : [];
+    const stats = statsRes.success && statsRes.data ? transformStats(statsRes.data as ExtendedApiDashboardStats) : [];
     const monthlyAnalysis = analyticsRes.success ? (analyticsRes.data as any)?.monthly || [] : [];
     const performanceMetrics = analyticsRes.success ? (analyticsRes.data as any)?.metrics || [] : [];
     const recentActivity = activityRes.success ? transformActivity((activityRes.data as any)?.history || []) : [];
@@ -133,7 +130,7 @@ export const fetchDashboardData = async (_params: {
     return validatedData;
   } catch (error) {
     if (error instanceof z.ZodError) {
-      logger.error('Validation error in dashboard service', new Error(JSON.stringify(error.errors)));
+      logger.error('Validation error in dashboard service', new Error(JSON.stringify(error.issues)));
       throw new DashboardServiceError(
         'Data validation failed',
         422,

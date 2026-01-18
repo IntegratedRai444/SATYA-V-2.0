@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import api from '@/lib/api';
+import dashboardService from '@/lib/api/services/dashboardService';
 import { useFetch } from './useFetch';
 
 export interface AnalyticsData {
@@ -19,38 +19,32 @@ export interface AnalyticsData {
   // Add more analytics metrics as needed
 }
 
-export function useAnalytics(timeRange: '7d' | '30d' | '90d' | 'all' = '30d') {
+export function useAnalytics(_timeRange: '7d' | '30d' | '90d' | 'all' = '30d') {
   // Use the new useFetch hook to eliminate duplication
   const { data, isLoading, error, refetch } = useFetch<AnalyticsData>(
     async () => {
-      const response = await api.getDashboardStats();
-
-      if (!response.success) {
-        throw new Error(response.error || 'Failed to fetch analytics');
-      }
-
-      const apiData = response.data;
-
-      if (!apiData) {
+      console.log('Fetching analytics data...');
+      const response = await dashboardService.getUserAnalytics();
+      
+      if (!response) {
         throw new Error('No data received from API');
       }
 
       // Transform API response to AnalyticsData format
       const analyticsData: AnalyticsData = {
-        totalScans: apiData.totalScans || 0,
-        scansByType: apiData.scansByType || { image: 0, video: 0, audio: 0 },
-        scansByDate: apiData.recentActivity ? [
-          { date: 'Last 7 Days', count: apiData.recentActivity.last7Days || 0 },
-          { date: 'Last 30 Days', count: apiData.recentActivity.last30Days || 0 },
-          { date: 'This Month', count: apiData.recentActivity.thisMonth || 0 }
+        totalScans: response.totalAnalyses || 0,
+        scansByType: { image: 0, video: 0, audio: 0 }, // Default values
+        scansByDate: response.recentActivity ? [
+          { date: 'Last 7 Days', count: response.recentActivity.filter((_: any, i: number) => i < 7).length },
+          { date: 'Last 30 Days', count: response.recentActivity.length }
         ] : [],
-        detectionRate: apiData.manipulatedScans && apiData.totalScans
-          ? (apiData.manipulatedScans / apiData.totalScans)
+        detectionRate: response.manipulatedMedia && response.totalAnalyses
+          ? (response.manipulatedMedia / response.totalAnalyses)
           : 0,
         falsePositiveRate: 0.05, // Default value
         avgProcessingTime: 2.5, // Default value
       };
-
+      
       return analyticsData;
     },
     {

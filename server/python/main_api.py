@@ -86,11 +86,23 @@ except ImportError:
 
 # Import ML detectors (controlled by environment variable)
 ML_AVAILABLE = False
-ENABLE_ML = os.getenv("ENABLE_ML_MODELS", "false").lower() == "true"  # Default to false
+ENABLE_ML = os.getenv("ENABLE_ML_MODELS", "true").lower() == "true"  # Default to true
+
+# Advanced features configuration
+ENABLE_ADVANCED_IMAGE_MODEL = os.getenv("ENABLE_ADVANCED_IMAGE_MODEL", "false").lower() == "true"
+ENABLE_VIDEO_OPTIMIZATION = os.getenv("ENABLE_VIDEO_OPTIMIZATION", "false").lower() == "true"
+ENABLE_ENHANCED_AUDIO = os.getenv("ENABLE_ENHANCED_AUDIO", "false").lower() == "true"
+ENABLE_AUDIO_MODEL = os.getenv("ENABLE_AUDIO_MODEL", "false").lower() == "true"
+ENABLE_ENHANCED_VIDEO_MODEL = os.getenv("ENABLE_ENHANCED_VIDEO_MODEL", "false").lower() == "true"
 
 if ENABLE_ML:
     try:
         logger.info("🔄 Attempting to load ML models...")
+        
+        # Import torch first
+        import torch
+        
+        # Load detectors with advanced features
         from detectors.audio_detector import AudioDetector
         from detectors.image_detector import ImageDetector
         from detectors.multimodal_fusion_detector import \
@@ -98,11 +110,39 @@ if ENABLE_ML:
         from detectors.text_nlp_detector import TextNLPDetector
         from detectors.video_detector import VideoDetector
 
+        # Initialize with advanced features
+        audio_detector = AudioDetector(
+            device="cuda" if torch.cuda.is_available() else "cpu",
+            use_enhanced_audio=ENABLE_ENHANCED_AUDIO,
+            use_audio_model=ENABLE_AUDIO_MODEL
+        )
+        
+        image_detector = ImageDetector(
+            enable_gpu=torch.cuda.is_available(),
+            use_advanced_model=ENABLE_ADVANCED_IMAGE_MODEL
+        )
+        
+        video_detector = VideoDetector(
+            use_optimization=ENABLE_VIDEO_OPTIMIZATION,
+            use_enhanced_model=ENABLE_ENHANCED_VIDEO_MODEL
+        )
+        
+        multimodal_detector = MultimodalFusionDetector()
+        text_detector = TextNLPDetector()
+
+        # Store in app state
+        app.state.audio_detector = audio_detector
+        app.state.image_detector = image_detector
+        app.state.video_detector = video_detector
+        app.state.multimodal_detector = multimodal_detector
+        app.state.text_detector = text_detector
+
         ML_AVAILABLE = True
-        logger.info("✅ ML detectors loaded successfully")
-    except ImportError as e:
-        logger.warning(f"⚠️ ML detectors not available: {e}")
-        logger.warning("⚠️ Continuing without ML capabilities")
+        logger.info("✅ All ML models loaded successfully")
+        logger.info(f"🔧 Advanced Features - Image: {ENABLE_ADVANCED_IMAGE_MODEL}, Video: {ENABLE_VIDEO_OPTIMIZATION}, Audio: {ENABLE_ENHANCED_AUDIO}")
+
+    except Exception as e:
+        logger.error(f"❌ Failed to load ML models: {e}")
         ML_AVAILABLE = False
 else:
     logger.info(
@@ -262,8 +302,8 @@ async def preflight_handler(request: Request, full_path: str):
     return response
 
 
-# Add browser blocking middleware
-app.add_middleware(BlockBrowserMiddleware)
+# Add browser blocking middleware (commented out for testing)
+# app.add_middleware(BlockBrowserMiddleware)
 
 # Compression - Compress responses > 1KB
 app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=6)

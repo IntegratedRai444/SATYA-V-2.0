@@ -16,7 +16,13 @@ import numpy as np
 import sounddevice as sd
 import torch
 import torchaudio
-import webrtcvad
+# Try to import webrtcvad with fallback
+try:
+    import webrtcvad
+    WEBRTC_VAD_AVAILABLE = True
+except ImportError:
+    WEBRTC_VAD_AVAILABLE = False
+    logger.warning("webrtcvad not available, using alternative VAD")
 from scipy import signal
 
 # Configure logging

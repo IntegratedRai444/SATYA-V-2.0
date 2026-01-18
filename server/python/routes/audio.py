@@ -61,7 +61,7 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 # Security constants
 MAX_AUDIO_SIZE = 50 * 1024 * 1024  # 50 MB
-ALLOWED_AUDIO_TYPES = {"audio/mp3", "audio/wav", "audio/mpeg", "audio/ogg"}
+ALLOWED_AUDIO_TYPES = {"audio/mp3", "audio/wav", "audio/mpeg", "audio/ogg", "audio/m4a", "audio/mp4", "audio/webm"}
 MAX_FILENAME_LENGTH = 255
 
 
@@ -131,7 +131,7 @@ def validate_filename(filename: str) -> str:
     - **Authentication**: Bearer token required
     - **Rate Limited**: 10 requests per minute
     - **Max File Size**: 50MB
-    - **Allowed Formats**: MP3, WAV, MPEG, OGG
+    - **Allowed Formats**: MP3, WAV, MPEG, OGG, M4A, MP4, WebM
     """,
     responses={
         202: {"description": "Analysis started successfully"},

@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import apiClient from '../lib/api';
+import analysisService from '@/lib/api/services/analysisService';
 import logger from '../lib/logger';
 
 type MediaType = 'image' | 'video' | 'audio';
@@ -19,31 +19,31 @@ export function useMediaAnalysis(type: MediaType) {
             logger.info(`Starting ${type} analysis`, {
                 filename: file.name,
                 size: file.size,
-                authenticated: apiClient.isAuthenticated()
+                authenticated: true // Assuming user is authenticated if they can access this hook
             });
 
             let result;
             switch (type) {
                 case 'image':
-                    result = await apiClient.analyzeImage(file);
+                    result = await analysisService.analyzeImage(file);
                     break;
                 case 'video':
-                    result = await apiClient.analyzeVideo(file);
+                    result = await analysisService.analyzeVideo(file);
                     break;
                 case 'audio':
-                    result = await apiClient.analyzeAudio(file);
+                    result = await analysisService.analyzeAudio(file);
                     break;
             }
 
-            logger.info('Analysis completed', { success: result.success });
+            logger.info('Analysis completed', { success: true, resultId: result.id });
 
-            // Handle different response formats
-            if (result.result) {
-                setAnalysisResult(result.result);
-            } else if (result.success !== false) {
+            // Handle the response format from analysisService
+            if (result.status === 'completed' && result.result) {
                 setAnalysisResult(result);
-            } else {
+            } else if (result.status === 'failed') {
                 throw new Error(result.error || 'Analysis failed');
+            } else {
+                setAnalysisResult(result);
             }
         } catch (error: any) {
             logger.error('Analysis failed', error, {

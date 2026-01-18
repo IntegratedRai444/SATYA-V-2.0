@@ -13,49 +13,15 @@ interface JobProgress {
   error?: string;
 }
 
-interface WebSocketMessage {
-  type: string;
-  data: any;
-  timestamp: string;
-}
-
 interface UseWebSocketOptions {
   autoConnect?: boolean;
   reconnectAttempts?: number;
   reconnectInterval?: number;
 }
 
-export function useWebSocket(options: UseWebSocketOptions = {}) {
+export function useWebSocket(_options: UseWebSocketOptions = {}) {
   const [jobUpdates, setJobUpdates] = useState<Map<string, JobProgress>>(new Map());
-  const [isConnected, setIsConnected] = useState(false);
-
-  // Get WebSocket URL with auth token
-  const getWebSocketUrl = useCallback(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    
-    return `${protocol}//${host}/ws`;
-  }, []);
-
-  // Handle job-related messages
-  const handleJobMessage = useCallback((message: WebSocketMessage) => {
-    const jobMessageTypes = [
-      'job_started',
-      'job_progress',
-      'job_completed',
-      'job_failed',
-      'job_cancelled',
-      'job_status'
-    ];
-
-    if (jobMessageTypes.includes(message.type) && message.data) {
-      setJobUpdates(prev => {
-        const newMap = new Map(prev);
-        newMap.set(message.data.jobId, message.data);
-        return newMap;
-      });
-    }
-  }, []);
+  const [isConnected, _setIsConnected] = useState(false);
 
   // Subscribe to a specific job
   const subscribeToJob = useCallback((jobId: string) => {
@@ -90,6 +56,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     unsubscribeFromJob,
     getJobProgress,
     clearJobProgress,
+    sendMessage: (message: any) => {
+      // Implementation would go here - send message to WebSocket
+      console.log('Sending message:', message);
+    },
   };
 }
 

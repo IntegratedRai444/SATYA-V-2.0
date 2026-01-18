@@ -17,7 +17,6 @@ import { BatchProcessingProvider } from './contexts/BatchProcessingContext';
 import { RouterProvider } from 'react-router-dom';
 import { router } from './utils/router';
 // import { PerformanceMonitor, MemoryMonitor } from './utils/performanceOptimizer';
-import logger from './lib/logger';
 import { initSentry } from './lib/sentry';
 import './index.css';
 

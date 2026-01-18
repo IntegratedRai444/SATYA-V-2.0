@@ -249,23 +249,6 @@ class EnhancedApiClient {
   private isRefreshing = false;
   private cache: Map<string, { data: any; timestamp: number; ttl: number }> = new Map();
   private maxCacheSize: number = 100;
-  // Retry configuration for failed requests
-  private getRetryConfig(): Required<RetryConfig> {
-    return {
-      retries: 3,
-      retryDelay: 1000,
-      retryOn: (error: AxiosError) => {
-        // Retry on network errors or 5xx server errors
-        if (!error.response) return true; // Network error
-        const status = error.response.status;
-        return status >= 500 || status === 408 || status === 429;
-      },
-    };
-  }
-  
-  // Mark as used to prevent tree-shaking
-  private _useRetryConfig = this.getRetryConfig();
-  
   
   private defaultCacheConfig: Required<CacheConfig> = {
     enabled: true,
@@ -351,27 +334,6 @@ class EnhancedApiClient {
     return keyParts.join('|');
   }
 
-  /**
-   * Get from cache if available and not expired
-   */
-  private getFromCache<T = any>(key: string): { data: T; timestamp: number } | null {
-    const entry = this.cache.get(key);
-    if (!entry) {
-      this.metrics.cacheMisses++;
-      return null;
-    }
-    
-    // Check if cache entry is expired
-    const now = Date.now();
-    if (now - entry.timestamp > entry.ttl) {
-      this.cache.delete(key);
-      return null;
-    }
-    
-    this.metrics.cacheHits++;
-    return { data: entry.data, timestamp: entry.timestamp };
-  }
-
   
 
   /**
@@ -397,45 +359,6 @@ class EnhancedApiClient {
   
 
   /**
-   * Add a request to the pending requests map
-   */
-  // Mark as used to prevent tree-shaking
-  private _useAddPendingRequest = this.addPendingRequest;
-  
-  private addPendingRequest(
-    config: EnhancedRequestConfig,
-    controller: AbortController
-  ): Promise<AxiosResponse> {
-    // Get the pending request if it exists
-    const cacheKey = this.generateCacheKey(config) || '';
-    const existingRequest = this.pendingRequests.get(cacheKey);
-    
-    // If a duplicate request is in progress, return its promise
-    if (existingRequest && config.dedupe !== false) {
-      return existingRequest.promise;
-    }
-    
-    // Create a new promise for this request
-    let resolveFn: (value: AxiosResponse | PromiseLike<AxiosResponse>) => void = () => {};
-    let rejectFn: (reason?: any) => void = () => {};
-    
-    const promise = new Promise<AxiosResponse>((resolve, reject) => {
-      resolveFn = resolve;
-      rejectFn = reject;
-    });
-    
-    const pendingRequest: PendingRequest = {
-      id: config.id || uuidv4(),
-      url: config.url || '',
-      method: config.method?.toUpperCase() || 'GET',
-      params: config.params,
-      data: config.data,
-      controller,
-      timestamp: Date.now(),
-      cacheKey,
-      promise,
-      resolve: resolveFn,
-      reject: rejectFn
     };
     
     this.pendingRequests.set(cacheKey, pendingRequest);
@@ -490,6 +413,41 @@ class EnhancedApiClient {
    */
   getMetrics() {
     return { ...this.metrics };
+  }
+
+  /**
+   * Update user profile
+   */
+  public updateProfile<T = any, D = any>(
+    data?: D,
+    config?: EnhancedRequestConfig
+  ): AxiosPromise<T> {
+    return this.request<T>({ ...config, method: 'PUT', url: '/user/profile', data });
+  }
+
+  /**
+   * Change user password
+   */
+  public changePassword<T = any>(
+    currentPassword: string,
+    newPassword: string,
+    config?: EnhancedRequestConfig
+  ): AxiosPromise<T> {
+    return this.request<T>({ 
+      ...config, 
+      method: 'POST', 
+      url: '/auth/change-password',
+      data: { currentPassword, newPassword }
+    });
+  }
+
+  /**
+   * Delete user account
+   */
+  public deleteAccount<T = any>(
+    config?: EnhancedRequestConfig
+  ): AxiosPromise<T> {
+    return this.request<T>({ ...config, method: 'DELETE', url: '/user/account' });
   }
   
   /**

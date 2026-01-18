@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { notificationService, Notification, NotificationType } from '../services/notificationService';
+import { notificationService, Notification } from '../services/notificationService';
 import { useToast } from '@/components/ui/use-toast';
 
 interface NotificationContextType {

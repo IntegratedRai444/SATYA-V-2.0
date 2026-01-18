@@ -1,5 +1,5 @@
 import { supabase } from '../config/supabase';
-import type { User } from '@shared/schema';
+import type { User } from '@shared/types';
 import type { Database } from '@shared/supabase.types';
 import { JwtAuthService } from './auth/jwtAuthService';
 import { logger } from '../config/logger';

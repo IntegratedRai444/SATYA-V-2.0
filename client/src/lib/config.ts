@@ -115,8 +115,8 @@ class ConfigManager {
       const result = envSchema.safeParse(import.meta.env);
       
       if (!result.success) {
-        this.validationErrors = result.error.errors.map(
-          err => `${err.path.join('.')}: ${err.message}`
+        this.validationErrors = result.error.issues.map(
+          (err: any) => `${err.path?.join('.') || 'unknown'}: ${err.message}`
         );
         logger.warn('Configuration validation failed', { errors: this.validationErrors });
         

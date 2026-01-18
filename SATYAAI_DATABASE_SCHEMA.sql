@@ -1,5 +1,5 @@
 -- ============================================================
--- SatyaAI Schema v2.0 (All-in-One)
+-- SatyaAI Schema v2.0 (Current Database Structure)
 -- For: Supabase PostgreSQL
 -- Author: Rishabh Kapoor (Founder)
 -- Project: SatyaAI / HyperSatya X
@@ -30,24 +30,174 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
-DO $$ BEGIN
-  CREATE TYPE public.notification_type AS ENUM ('info','success','warning','error','scan_complete');
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
 -- ============================================================
--- CORE TABLES
+-- CORE TABLES (Updated to match current database)
 -- ============================================================
 
--- Users (extends auth.users)
+-- Users table (current structure with password field)
 CREATE TABLE IF NOT EXISTS public.users (
-  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  username TEXT UNIQUE NOT NULL,
-  email TEXT UNIQUE,
-  full_name TEXT,
-  avatar_url TEXT,
-  role public.user_role NOT NULL DEFAULT 'user',
-  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  id SERIAL PRIMARY KEY,
+  username VARCHAR(255) UNIQUE NOT NULL,
+  password TEXT NOT NULL,
+  email VARCHAR(255),
+  full_name VARCHAR(255),
+  api_key TEXT,
+  role VARCHAR(50) NOT NULL DEFAULT 'user',
+  failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+  last_failed_login TIMESTAMP,
+  is_locked BOOLEAN NOT NULL DEFAULT FALSE,
+  lockout_until TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Analysis jobs queue (NEW TABLE - add this)
+CREATE TABLE IF NOT EXISTS public.analysis_jobs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id INTEGER NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  status public.analysis_status NOT NULL DEFAULT 'pending',
+  media_type public.media_type NOT NULL,
+  file_name TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  file_size BIGINT,
+  file_hash TEXT,
+  progress INT NOT NULL DEFAULT 0,
+  metadata JSONB,
+  error_message TEXT,
+  priority INT NOT NULL DEFAULT 5,
+  retry_count INT NOT NULL DEFAULT 0,
+  report_code TEXT UNIQUE,
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT progress_check CHECK (progress BETWEEN 0 AND 100),
+  CONSTRAINT priority_check CHECK (priority BETWEEN 1 AND 10)
+);
+
+-- Analysis results (NEW TABLE - add this)
+CREATE TABLE IF NOT EXISTS public.analysis_results (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id UUID NOT NULL REFERENCES public.analysis_jobs(id) ON DELETE CASCADE,
+  model_name TEXT NOT NULL DEFAULT 'SatyaAI',
+  confidence FLOAT,
+  is_deepfake BOOLEAN,
+  analysis_data JSONB,
+  proof_json JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ============================================================
+-- INDEXES FOR PERFORMANCE
+-- ============================================================
+
+-- Users table indexes
+CREATE INDEX IF NOT EXISTS idx_users_email ON public.users(email);
+CREATE INDEX IF NOT EXISTS idx_users_username ON public.users(username);
+CREATE INDEX IF NOT EXISTS idx_users_role ON public.users(role);
+
+-- Analysis jobs indexes
+CREATE INDEX IF NOT EXISTS idx_analysis_jobs_user_id ON public.analysis_jobs(user_id);
+CREATE INDEX IF NOT EXISTS idx_analysis_jobs_status ON public.analysis_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_analysis_jobs_created_at ON public.analysis_jobs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_analysis_jobs_report_code ON public.analysis_jobs(report_code);
+
+-- Analysis results indexes
+CREATE INDEX IF NOT EXISTS idx_analysis_results_job_id ON public.analysis_results(job_id);
+CREATE INDEX IF NOT EXISTS idx_analysis_results_model_name ON public.analysis_results(model_name);
+
+-- ============================================================
+-- ROW LEVEL SECURITY (RLS)
+-- ============================================================
+
+-- Enable RLS on all tables
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.analysis_jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.analysis_results ENABLE ROW LEVEL SECURITY;
+
+-- Users RLS policies
+DROP POLICY IF EXISTS "Users can view their own profile" ON public.users;
+CREATE POLICY "Users can view their own profile"
+ON public.users FOR SELECT
+USING (id = auth.uid());
+
+DROP POLICY IF EXISTS "Users can update their own profile" ON public.users;
+CREATE POLICY "Users can update their own profile"
+ON public.users FOR UPDATE
+USING (id = auth.uid())
+WITH CHECK (id = auth.uid());
+
+-- Analysis jobs RLS policies
+DROP POLICY IF EXISTS "Users can manage their analysis jobs" ON public.analysis_jobs;
+CREATE POLICY "Users can manage their analysis jobs"
+ON public.analysis_jobs FOR ALL
+USING (user_id = auth.uid())
+WITH CHECK (user_id = auth.uid());
+
+-- Analysis results RLS policies
+DROP POLICY IF EXISTS "Users can view their analysis results" ON public.analysis_results;
+CREATE POLICY "Users can view their analysis results"
+ON public.analysis_results FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1
+    FROM public.analysis_jobs j
+    WHERE j.id = analysis_results.job_id
+      AND j.user_id = auth.uid()
+  )
+);
+
+-- ============================================================
+-- TRIGGERS FOR AUTOMATIC UPDATES
+-- ============================================================
+
+-- Update updated_at timestamp
+CREATE OR REPLACE FUNCTION public.handle_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER handle_users_updated_at
+BEFORE UPDATE ON public.users
+FOR EACH ROW
+EXECUTE FUNCTION public.handle_updated_at();
+
+CREATE TRIGGER handle_analysis_jobs_updated_at
+BEFORE UPDATE ON public.analysis_jobs
+FOR EACH ROW
+EXECUTE FUNCTION public.handle_updated_at();
+
+CREATE TRIGGER handle_analysis_results_updated_at
+BEFORE UPDATE ON public.analysis_results
+FOR EACH ROW
+EXECUTE FUNCTION public.handle_updated_at();
+
+-- ============================================================
+-- MIGRATION NOTES
+-- ============================================================
+
+/*
+This schema matches your current database structure:
+- Users table with SERIAL id and password field
+- Added analysis_jobs and analysis_results tables for history functionality
+- Proper RLS policies for user isolation
+- Performance indexes for fast queries
+
+To apply this schema:
+1. Go to your Supabase project
+2. Open SQL Editor
+3. Copy-paste this entire file
+4. Click "Run"
+
+After running this schema:
+- Your history functionality will work correctly
+- Analysis results will be saved to database
+- Each user will see only their own history
+*/
   last_login TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

@@ -25,6 +25,15 @@ except ImportError as e:
     logger.error(f"Failed to import ML classifier: {e}")
     # Don't raise - just continue without ML
 
+# Import advanced image model for enhanced detection
+try:
+    from models.image_model import DeepfakeDetector as AdvancedImageDetector
+    ADVANCED_IMAGE_MODEL_AVAILABLE = True
+    logger.info("Advanced image model (Swin Transformer) available")
+except ImportError as e:
+    ADVANCED_IMAGE_MODEL_AVAILABLE = False
+    logger.warning(f"Advanced image model not available: {e}")
+
 # Import forensic analysis (non-ML analysis)
 try:
     from .forensic_analysis import analyze_ela, analyze_prnu
@@ -39,26 +48,42 @@ class ImageDetector:
     Image Deepfake Detector with advanced multi-modal capabilities
     """
     
-    def __init__(self, model_path: str = None, enable_gpu: bool = False):
+    def __init__(self, model_path: str = None, enable_gpu: bool = False, use_advanced_model: bool = False):
         """
-        Initialize the image detector with advanced multi-modal capabilities.
+        Initialize image detector with advanced multi-modal capabilities.
         
         Args:
             model_path: Path to model files (kept for backward compatibility)
             enable_gpu: Whether to use GPU acceleration
+            use_advanced_model: Whether to use advanced Swin Transformer model
             
         Note:
             All ML model loading and inference is now handled by deepfake_classifier.py
+            Advanced model provides Swin Transformer with multi-scale attention
         """
         self.model_path = model_path  # Kept for backward compatibility
         self.enable_gpu = enable_gpu
+        self.use_advanced_model = use_advanced_model
         
         # Check if ML classifier is available
         if not ML_CLASSIFIER_AVAILABLE:
             raise RuntimeError("Deepfake classifier is not available. Check your installation.")
+        
+        # Initialize advanced model if requested and available
+        self.advanced_model = None
+        if use_advanced_model and ADVANCED_IMAGE_MODEL_AVAILABLE:
+            try:
+                self.advanced_model = AdvancedImageDetector(
+                    model_path=model_path,
+                    device='cuda' if enable_gpu else 'cpu'
+                )
+                logger.info("Advanced Swin Transformer model initialized")
+            except Exception as e:
+                logger.error(f"Failed to initialize advanced model: {e}")
+                self.advanced_model = None
             
         try:
-            # Verify the classifier is working
+            # Verify classifier is working
             model_info = get_model_info()
             logger.info(f"Using centralized ML classifier: {model_info}")
         except Exception as e:
@@ -251,7 +276,7 @@ class ImageDetector:
     
     def classify_authenticity(self, face_image: np.ndarray) -> Tuple[float, str]:
         """
-        Classify face authenticity using the centralized deepfake classifier.
+        Classify face authenticity using both standard and advanced ML models.
         
         Args:
             face_image: Face image as numpy array (160x160x3 or 224x224x3)
@@ -260,12 +285,17 @@ class ImageDetector:
             Tuple of (confidence_score, authenticity_label)
         """
         try:
-            # Use the centralized classifier
-            result = predict_image(face_image)
-            
-            # Extract results
-            confidence = result['confidence']
-            label = result['prediction']
+            # Use advanced model if available and enabled
+            if self.advanced_model and self.use_advanced_model:
+                logger.info("Using advanced Swin Transformer model for analysis")
+                result = self.advanced_model.predict_deepfake(face_image)
+                confidence = result.get('confidence', 0.5)
+                label = result.get('prediction', 'unknown')
+            else:
+                # Use centralized classifier
+                result = predict_image(face_image)
+                confidence = result['confidence']
+                label = result['prediction']
             
             # Ensure confidence is in [0, 1]
             confidence = max(0.0, min(1.0, confidence))

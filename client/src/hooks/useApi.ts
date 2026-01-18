@@ -122,7 +122,6 @@ export function useEnhancedMutation<TData = any, TVariables = any, TError = Erro
   options?: Omit<UseMutationOptions<TData, TError, TVariables>, 'mutationFn'>
 ) {
   const { state, dispatch } = useAppContext();
-  const queryClient = useQueryClient();
   
   return useMutation<TData, TError, TVariables>({
     mutationFn: async (variables) => {
@@ -156,16 +155,16 @@ export function useEnhancedMutation<TData = any, TVariables = any, TError = Erro
       return mutationFn(variables);
     },
     ...options,
-    onSuccess: (data, variables, context, unknown) => {
+    onSuccess: (data, variables, context, onMutateResult) => {
       // Invalidate and refetch any queries that might be affected by this mutation
       if (options?.onSuccess) {
-        options.onSuccess(data, variables, context);
+        options.onSuccess(data, variables, context, onMutateResult);
       }
     },
-    onError: (error, variables, context, unknown) => {
+    onError: (error, variables, context, onMutateResult) => {
       console.error('Mutation Error:', error);
       if (options?.onError) {
-        options.onError(error, variables, context);
+        options.onError(error, variables, context, onMutateResult);
       }
     },
   });
@@ -173,6 +172,7 @@ export function useEnhancedMutation<TData = any, TVariables = any, TError = Erro
 
 export function useAuth() {
   const { state, dispatch } = useAppContext();
+  const queryClient = useQueryClient();
   
   // Check if user is authenticated
   const checkAuth = async (): Promise<Session> => {
@@ -202,7 +202,12 @@ export function useAuth() {
           });
         }
       }
-      return { valid: isAuthenticated, user };
+      return { valid: isAuthenticated, user: user ? {
+        id: (user as any).id || '',
+        username: (user as any).username || (user as any).email || 'unknown',
+        email: (user as any).email,
+        role: (user as any).role || 'user'
+      } : undefined };
     } catch (error) {
       return { valid: false, error: 'Not authenticated' };
     }
@@ -234,7 +239,7 @@ export function useAuth() {
           timeFormat: data.user.timeFormat || '24h' as const
         } 
       });
-      useQueryClient.invalidateQueries();
+      queryClient.invalidateQueries();
     },
   });
   
@@ -252,7 +257,7 @@ export function useAuth() {
           timeFormat: '24h' as const
         } 
       });
-      useQueryClient.clear();
+      queryClient.clear();
     },
   });
   
@@ -282,7 +287,7 @@ export function useAuth() {
           timeFormat: data.user.timeFormat || '24h' as const
         } 
       });
-      useQueryClient.invalidateQueries();
+      queryClient.invalidateQueries();
     },
   });
   
@@ -347,15 +352,11 @@ export function useAuth() {
   };
 }
 
-interface ModelInfo {
-  id: string;
-  name: string;
-
 export function useDarkwebCheck() {
-  
   const checkDarkweb = useMutation({
     mutationFn: async ({ contentId }: { contentId: string }) => {
       // Implement darkweb check logic here or call appropriate service method
+      console.log('Checking darkweb for content:', contentId);
       return { found: false, sources: [] };
     },
     onSuccess: (data) => {
@@ -378,6 +379,7 @@ export function useDarkwebCheck() {
 }
 
 export function useVideoAnalysis() {
+  const queryClient = useQueryClient();
   
   const analyzeVideo = useMutation({
     mutationFn: (file: File) => {
@@ -385,7 +387,7 @@ export function useVideoAnalysis() {
     },
     onSuccess: () => {
       // Update cache with the new analysis result
-      useQueryClient.invalidateQueries();
+      queryClient.invalidateQueries();
       
       // Show success notification
       toast({
@@ -446,13 +448,14 @@ export function useStatus() {
 }
 
 export function useImageAnalysis() {
+  const queryClient = useQueryClient();
   
   const analyzeImage = useMutation({
     mutationFn: async (file: File) => {
       // Call the analysis service to analyze the image
       return analysisService.analyzeImage(file);
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       // Update cache
       queryClient.invalidateQueries();
       
@@ -469,20 +472,16 @@ export function useImageAnalysis() {
 }
 
 export function useBlockchainVerification() {
+  const queryClient = useQueryClient();
   
   const verifyOnBlockchain = useMutation({
     mutationFn: async (data: { hash: string; metadata: any }) => {
       // Call the analysis service to verify on blockchain
+      console.log('Verifying on blockchain:', data.hash);
       const result = await analysisService.analyzeImage(
         new File([], 'blockchain-verification'),
         { includeDetails: true }
       );
-      
-      // Add metadata to the result
-      const resultWithMetadata = {
-        ...result,
-        metadata: data.metadata
-      };
       
       return {
         verified: result.result?.isAuthentic || false,
@@ -491,7 +490,7 @@ export function useBlockchainVerification() {
     },
     onSuccess: (result) => {
       // Update cache
-      useQueryClient.invalidateQueries({ queryKey: ['blockchain'] });
+      queryClient.invalidateQueries({ queryKey: ['blockchain'] });
       
       // Show success notification
       toast({
@@ -506,6 +505,7 @@ export function useBlockchainVerification() {
 }
 
 export function useEmotionConflictAnalysis() {
+  const queryClient = useQueryClient();
   
   const analyzeEmotionConflict = useMutation({
     mutationFn: async (data: { text: string; audioFile?: File; videoFile?: File }) => {
@@ -541,7 +541,7 @@ export function useEmotionConflictAnalysis() {
     },
     onSuccess: (result) => {
       // Update cache
-      useQueryClient.invalidateQueries({ queryKey: ['analysis', 'emotion-conflict'] });
+      queryClient.invalidateQueries({ queryKey: ['analysis', 'emotion-conflict'] });
       
       // Show result notification
       toast({
@@ -586,7 +586,7 @@ export function useModelsInfo() {
 
 // Custom hook for analysis history (API-based)
 export function useAnalysisHistory() {
-  const { state } = useAppContext();
+  const queryClient = useQueryClient();
   
   // Define AnalysisHistoryItem type for API response
   type AnalysisHistoryItem = {
@@ -618,6 +618,7 @@ export function useAnalysisHistory() {
   const saveToHistory = async (item: Omit<AnalysisHistoryItem, 'id' | 'timestamp' | 'jobId' | 'reportCode'>) => {
     // This is now handled automatically by the backend after analysis
     // No need to manually save to history anymore
+    console.log('History item would be saved:', item.type);
     console.log('History is now saved automatically by the backend');
   };
 
@@ -631,7 +632,7 @@ export function useAnalysisHistory() {
       }
       const data = await response.json();
       if (data.success) {
-        useQueryClient.invalidateQueries({ queryKey: ['analysis-history'] });
+        queryClient.invalidateQueries({ queryKey: ['analysis-history'] });
       }
     } catch (error) {
       console.error('Failed to clear history:', error);
@@ -648,7 +649,7 @@ export function useAnalysisHistory() {
       }
       const data = await response.json();
       if (data.success) {
-        useQueryClient.invalidateQueries({ queryKey: ['analysis-history'] });
+        queryClient.invalidateQueries({ queryKey: ['analysis-history'] });
       }
       return true;
     } catch (error) {

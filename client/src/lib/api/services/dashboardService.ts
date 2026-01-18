@@ -27,6 +27,10 @@ export interface ApiDashboardStats {
 }
 
 class DashboardService extends BaseService {
+  constructor() {
+    super(''); // Use empty base path since we're using direct routes
+  }
+
   async getDashboardStats(): Promise<ApiDashboardStats> {
     return this.get<ApiDashboardStats>('/dashboard/stats');
   }

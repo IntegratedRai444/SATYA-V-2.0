@@ -41,7 +41,6 @@ export class AuthService extends BaseService {
     reject: (error: Error) => void;
   }> = [];
   private isRefreshing = false;
-  private readonly TOKEN_REFRESH_THRESHOLD = 5 * 60 * 1000; // 5 minutes before expiry
   private refreshLock: Promise<AuthResponse> | null = null;
 
   public constructor() {

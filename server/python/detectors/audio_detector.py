@@ -25,6 +25,24 @@ except ImportError:
     AUDIO_FORENSICS_AVAILABLE = False
     logger.warning("Audio forensics not available")
 
+# Import enhanced audio processing
+try:
+    from ..models.audio_enhanced import AudioPreprocessor
+    ENHANCED_AUDIO_AVAILABLE = True
+    logger.info("Enhanced audio processing available")
+except ImportError:
+    ENHANCED_AUDIO_AVAILABLE = False
+    logger.warning("Enhanced audio processing not available")
+
+# Import audio model for fallback
+try:
+    from ..models.audio_model import AudioFeatureExtractor
+    AUDIO_MODEL_AVAILABLE = True
+    logger.info("Audio model available")
+except ImportError:
+    AUDIO_MODEL_AVAILABLE = False
+    logger.warning("Audio model not available")
+
 # Try to import required libraries
 try:
     import torch
@@ -68,19 +86,23 @@ class AudioDetector:
     7. Frequency domain analysis
     """
 
-    def __init__(self, device=None, config: Optional[Dict] = None):
+    def __init__(self, device=None, config: Optional[Dict] = None, use_enhanced_audio: bool = False, use_audio_model: bool = False):
         """
-        Initialize comprehensive audio detector with enhanced model loading.
+        Initialize comprehensive audio detector with enhanced processing.
         
         Args:
             device: Device to run models on ('cuda', 'cpu', or None for auto-detect)
             config: Optional configuration dictionary
+            use_enhanced_audio: Whether to use enhanced audio processing
+            use_audio_model: Whether to use dedicated audio model
         """
         # Auto-detect device if not specified
         self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
         self.config = self._validate_config(config or self._default_config())
         self.sample_rate = 16000
         self.model_version = "1.0.0"
+        self.use_enhanced_audio = use_enhanced_audio
+        self.use_audio_model = use_audio_model
         
         # Initialize logging
         self.logger = logging.getLogger(__name__)
@@ -90,6 +112,37 @@ class AudioDetector:
         self.models = {}
         self.processors = {}
         self.model_metadata = {}
+        
+        # Initialize enhanced audio processor if requested
+        self.enhanced_processor = None
+        if use_enhanced_audio and ENHANCED_AUDIO_AVAILABLE:
+            try:
+                self.enhanced_processor = AudioPreprocessor(
+                    sample_rate=self.sample_rate,
+                    n_fft=self.config.get('n_fft', 512),
+                    hop_length=self.config.get('hop_length', 128),
+                    n_mels=self.config.get('n_mels', 64)
+                )
+                logger.info("Enhanced audio processor initialized")
+            except Exception as e:
+                logger.error(f"Failed to initialize enhanced audio processor: {e}")
+                self.enhanced_processor = None
+
+        # Initialize audio model if requested
+        self.audio_model = None
+        if use_audio_model and AUDIO_MODEL_AVAILABLE:
+            try:
+                self.audio_model = AudioFeatureExtractor(
+                    sample_rate=self.sample_rate,
+                    n_mfcc=self.config.get('n_mfcc', 64),
+                    n_fft=self.config.get('n_fft', 2048),
+                    hop_length=self.config.get('hop_length', 512),
+                    n_mels=self.config.get('n_mels', 128)
+                )
+                logger.info("Audio model initialized")
+            except Exception as e:
+                logger.error(f"Failed to initialize audio model: {e}")
+                self.audio_model = None
         
         # Analysis configuration
         self.analysis_weights = self.config.get('analysis_weights', {
@@ -240,7 +293,7 @@ class AudioDetector:
             raise ValueError(f"File too large: {file_size/1024/1024:.2f}MB (max 100MB)")
             
         # Check file extension
-        valid_extensions = {'.wav', '.mp3', '.ogg', '.flac'}
+        valid_extensions = {'.wav', '.mp3', '.ogg', '.flac', '.m4a', '.mp4', '.webm'}
         if not any(audio_path.lower().endswith(ext) for ext in valid_extensions):
             raise ValueError(f"Invalid file format. Supported formats: {', '.join(valid_extensions)}")
 

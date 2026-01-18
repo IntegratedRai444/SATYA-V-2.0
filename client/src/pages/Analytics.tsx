@@ -55,8 +55,8 @@ export default function Analytics() {
             <CardDescription>All time</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{stats?.analyzedMedia?.count || 0}</div>
-            <p className="text-sm text-green-500">{stats?.analyzedMedia?.growth || '+0%'}</p>
+            <div className="text-3xl font-bold">{stats?.totalAnalyses || 0}</div>
+            <p className="text-sm text-green-500">+0%</p>
           </CardContent>
         </Card>
         
@@ -66,30 +66,30 @@ export default function Analytics() {
             <CardDescription>This month</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{stats?.detectedDeepfakes?.count || 0}</div>
-            <p className="text-sm text-red-500">{stats?.detectedDeepfakes?.growth || '+0%'}</p>
+            <div className="text-3xl font-bold">{stats?.manipulatedMedia || 0}</div>
+            <p className="text-sm text-red-500">+0%</p>
           </CardContent>
         </Card>
         
         <Card>
           <CardHeader>
-            <CardTitle>Avg Detection Time</CardTitle>
-            <CardDescription>Per scan</CardDescription>
+            <CardTitle>Authentic Media</CardTitle>
+            <CardDescription>This month</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{stats?.avgDetectionTime?.time || '0s'}</div>
-            <p className="text-sm text-green-500">{stats?.avgDetectionTime?.improvement || '0%'}</p>
+            <div className="text-3xl font-bold">{stats?.authenticMedia || 0}</div>
+            <p className="text-sm text-green-500">+0%</p>
           </CardContent>
         </Card>
         
         <Card>
           <CardHeader>
-            <CardTitle>Accuracy</CardTitle>
-            <CardDescription>Overall</CardDescription>
+            <CardTitle>Uncertain Scans</CardTitle>
+            <CardDescription>This month</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{stats?.detectionAccuracy?.percentage || 0}%</div>
-            <p className="text-sm text-green-500">{stats?.detectionAccuracy?.improvement || '+0%'}</p>
+            <div className="text-3xl font-bold">{stats?.uncertainScans || 0}</div>
+            <p className="text-sm text-yellow-500">+0%</p>
           </CardContent>
         </Card>
       </div>
@@ -97,18 +97,26 @@ export default function Analytics() {
       {/* Activity Chart */}
       <Card>
         <CardHeader>
-          <CardTitle>Detection Activity</CardTitle>
-          <CardDescription>Daily analysis trends</CardDescription>
+          <CardTitle>Recent Activity</CardTitle>
+          <CardDescription>Latest analysis results</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="h-64 flex items-end justify-between gap-2">
-            {stats?.dailyActivity?.slice(0, 20).map((item, i) => (
+          <div className="space-y-2">
+            {stats?.recentActivity?.slice(0, 10).map((item: any, i: number) => (
               <div 
-                key={i}
-                className="flex-1 bg-blue-500 rounded-t hover:bg-blue-600 transition-colors"
-                style={{ height: `${(item.analyses / 70) * 100}%` }}
-                title={`${item.date}: ${item.analyses} analyses`}
-              />
+                key={item.id || i}
+                className="flex items-center justify-between p-2 border rounded"
+              >
+                <span className="text-sm">{item.type}</span>
+                <span className="text-xs text-gray-500">{item.date}</span>
+                <span className={`text-xs px-2 py-1 rounded ${
+                  item.status === 'completed' ? 'bg-green-100 text-green-800' :
+                  item.status === 'failed' ? 'bg-red-100 text-red-800' :
+                  'bg-yellow-100 text-yellow-800'
+                }`}>
+                  {item.status}
+                </span>
+              </div>
             ))}
           </div>
         </CardContent>

@@ -38,7 +38,7 @@ export default function Settings() {
   const handleSaveProfile = async () => {
     setIsLoading(true);
     try {
-      const response = await apiClient.updateProfile({
+      const response = await apiClient.put('/user/profile', {
         fullName: profileData.fullName,
         email: profileData.email,
       });
@@ -89,10 +89,10 @@ export default function Settings() {
 
     setIsLoading(true);
     try {
-      const response = await apiClient.changePassword(
-        passwordData.currentPassword,
-        passwordData.newPassword
-      );
+      const response = await apiClient.post('/auth/change-password', {
+        currentPassword: passwordData.currentPassword,
+        newPassword: passwordData.newPassword
+      });
 
       if (response.success) {
         toast({
@@ -127,7 +127,7 @@ export default function Settings() {
 
     setIsLoading(true);
     try {
-      const response = await apiClient.deleteAccount();
+      const response = await apiClient.delete('/user/account');
 
       if (response.success) {
         toast({

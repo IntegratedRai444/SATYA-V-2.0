@@ -51,7 +51,7 @@ const Dashboard = () => {
     result?: any;
   }>>([]);
   
-  const [analysisResults, setAnalysisResults] = useState<Array<{
+  const [analysisResults] = useState<Array<{
     id: string;
     filename: string;
     fileType: 'image' | 'video' | 'audio';
