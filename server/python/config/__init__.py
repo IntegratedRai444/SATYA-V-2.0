@@ -35,12 +35,9 @@ class Settings(BaseSettings):
     NODE_ENV: str = Field(default="development", env="NODE_ENV")
 
     # API Configuration
-    VITE_API_URL: str = "http://localhost:5001/api/v2"  # Match Node.js backend port
     API_BASE_URL: str = "http://localhost:5001"
-    VITE_WS_URL: str = "ws://localhost:5001/ws"
     WS_PATH: str = "/ws"
     WS_PORT: int = 5001  # Match Node.js backend port
-    CLIENT_PORT: int = 5173  # Vite default port
 
     # File Uploads
     UPLOAD_DIR: str = "./uploads"
@@ -116,9 +113,9 @@ class Settings(BaseSettings):
     USE_SUPABASE_CLIENT: bool = False
 
     # Python Server
-    PYTHON_SERVER_URL: str = "http://localhost:8000"
-    PYTHON_SERVER_PORT: int = 8000
-    PYTHON_SERVER_TIMEOUT: int = 300000  # 5 minutes
+    PYTHON_URL: str = "http://localhost:8000"
+    PYTHON_PORT: int = 8000
+    PYTHON_TIMEOUT: int = 300000  # 5 minutes
     PYTHON_HEALTH_CHECK_URL: str = "http://localhost:8000/health"
     
     # Node.js Server (for reference)

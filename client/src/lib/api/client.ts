@@ -490,7 +490,7 @@ apiClient.interceptors.response.use(
       }
       
       const response = await axios.post(
-        `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api'}/auth/refresh-token`,
+        `${import.meta.env.VITE_API_URL || 'http://localhost:5001/api/v2'}/auth/refresh-token`,
         { refreshToken },
         { withCredentials: true }
       );

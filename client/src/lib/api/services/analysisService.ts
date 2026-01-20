@@ -121,7 +121,7 @@ export class AnalysisService extends BaseService {
     }
 
     try {
-      const response = await this.post<AnalysisApiResponse>('/api/analysis/image', formData, {
+      const response = await this.post<AnalysisApiResponse>('/analysis/image', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -179,7 +179,7 @@ export class AnalysisService extends BaseService {
     formData.append('file', file);
 
     return this.upload<AnalysisResult>(
-      '/video',
+      '/analysis/video',
       formData,
       options
     );
@@ -193,7 +193,7 @@ export class AnalysisService extends BaseService {
     formData.append('file', file);
 
     return this.upload<AnalysisResult>(
-      '/audio',
+      '/analysis/audio',
       formData,
       options
     );

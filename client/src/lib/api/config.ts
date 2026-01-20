@@ -2,8 +2,8 @@
 const API_CONFIG = {
   // Base URLs
   API_VERSION: 'v2',
-  BASE_URL: import.meta.env.VITE_API_URL || 'http://localhost:3000/api',
-  AUTH_URL: import.meta.env.VITE_AUTH_API_URL || 'http://localhost:3000/api/auth',
+  BASE_URL: import.meta.env.VITE_API_URL || 'http://localhost:5001/api/v2',
+  AUTH_URL: import.meta.env.VITE_AUTH_API_URL || 'http://localhost:5001/api/v2',
   
   // Timeouts (in milliseconds)
   TIMEOUT: 30000, // 30 seconds

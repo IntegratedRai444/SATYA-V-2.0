@@ -68,7 +68,7 @@ export const sendMessage = async (
     }
 
     const response = await api.post<ChatResponse>(
-      '/api/chat/message',
+      '/chat/message',
       formData,
       {
         headers: {
@@ -101,7 +101,7 @@ export const getChatHistory = async (): Promise<ChatHistoryItem[]> => {
   try {
     const response = await api.get<{
       data: ChatHistoryItem[];
-    }>('/api/chat/history');
+    }>('/chat/history');
 
     return response.data;
   } catch (error) {
@@ -119,7 +119,7 @@ export const getConversation = async (
   try {
     const response = await api.get<{
       data: Message[];
-    }>(`/api/chat/conversation/${conversationId}`);
+    }>(`/chat/conversation/${conversationId}`);
 
     return response.data.map((msg) => ({
       ...msg,
@@ -140,7 +140,7 @@ export const deleteConversation = async (
   try {
     const response = await api.delete<{
       message: string;
-    }>(`/api/chat/conversation/${conversationId}`);
+    }>(`/chat/conversation/${conversationId}`);
 
     return { success: true, message: response.message };
   } catch (error: unknown) {
@@ -159,7 +159,7 @@ export const getSuggestedResponses = async (
   try {
     const response = await api.post<{
       data: string[];
-    }>('/api/chat/suggestions', {
+    }>('/chat/suggestions', {
       message,
       conversationContext,
     });

@@ -63,7 +63,6 @@ try:
     from routes.image import router as image_router
     from routes.multimodal import router as multimodal_router
     from routes.system import router as system_router
-    from routes.team import router as team_router
     from routes.upload import router as upload_router
     from routes.video import router as video_router
     from routes.webcam import router as webcam_router
@@ -447,7 +446,6 @@ if ROUTES_AVAILABLE:
         (system_router, "/api/v2/system", ["System"], "System"),
         (webcam_router, "/api/v2/analysis/webcam", ["Webcam"], "Webcam"),
         (feedback_router, "/api/v2/feedback", ["Feedback"], "Feedback"),
-        (team_router, "/api/v2/team", ["Team"], "Team"),
         (
             multimodal_router,
             "/api/v2/analysis/multimodal",

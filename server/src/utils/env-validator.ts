@@ -12,7 +12,6 @@ type EnvConfig = {
   PORT: string;
   
   // API Configuration
-  VITE_API_URL: string;
   API_BASE_URL: string;
   
   // Security
@@ -30,14 +29,14 @@ type EnvConfig = {
   SUPABASE_SERVICE_ROLE_KEY: string;
   
   // WebSocket
-  VITE_WS_URL: string;
+  WS_URL: string;
   
   // CORS
   CORS_ORIGIN: string;
   
   // Python AI Engine
-  PYTHON_SERVER_URL: string;
-  PYTHON_SERVER_PORT: string;
+  PYTHON_URL: string;
+  PYTHON_PORT: string;
   PYTHON_HEALTH_CHECK_URL: string;
   
   // Optional Features
@@ -52,11 +51,6 @@ const envSchema = z.object({
   PORT: z.string().default('3000'),
   
   // API Configuration
-  VITE_API_URL: z.string()
-    .url('VITE_API_URL must be a valid URL')
-    .refine(url => new URL(url).pathname.endsWith('/api/v2'), {
-      message: 'VITE_API_URL must end with /api/v2'
-    }),
   API_BASE_URL: z.string()
     .url('API_BASE_URL must be a valid URL')
     .refine(url => !url.endsWith('/'), {
@@ -101,10 +95,10 @@ const envSchema = z.object({
     .min(32, 'SUPABASE_SERVICE_ROLE_KEY must be at least 32 characters long'),
   
   // WebSocket
-  VITE_WS_URL: z.string()
-    .url('VITE_WS_URL must be a valid WebSocket URL')
+  WS_URL: z.string()
+    .url('WS_URL must be a valid WebSocket URL')
     .refine(url => url.startsWith('ws://') || url.startsWith('wss://'), {
-      message: 'VITE_WS_URL must start with ws:// or wss://'
+      message: 'WS_URL must start with ws:// or wss://'
     }),
   
   // CORS
@@ -121,15 +115,15 @@ const envSchema = z.object({
     }, 'CORS_ORIGIN should not include localhost in production'),
   
   // Python AI Engine
-  PYTHON_SERVER_URL: z.string()
-    .url('PYTHON_SERVER_URL must be a valid URL')
-    .default('http://localhost:5001'),
-  PYTHON_SERVER_PORT: z.string()
-    .regex(/^\d+$/, 'PYTHON_SERVER_PORT must be a number')
-    .default('5001'),
+  PYTHON_URL: z.string()
+    .url('PYTHON_URL must be a valid URL')
+    .default('http://localhost:8000'),
+  PYTHON_PORT: z.string()
+    .regex(/^\d+$/, 'PYTHON_PORT must be a number')
+    .default('8000'),
   PYTHON_HEALTH_CHECK_URL: z.string()
     .url('PYTHON_HEALTH_CHECK_URL must be a valid URL')
-    .default('http://localhost:5001/health'),
+    .default('http://localhost:8000/health'),
   
   // Optional Features
   ENABLE_METRICS: z.string()
@@ -214,7 +208,7 @@ export const config = (() => {
     
     // WebSocket
     ws: {
-      url: env.VITE_WS_URL
+      url: env.WS_URL
     },
     
     // CORS
@@ -226,8 +220,8 @@ export const config = (() => {
     
     // Python AI Engine
     python: {
-      serverUrl: env.PYTHON_SERVER_URL,
-      serverPort: parseInt(env.PYTHON_SERVER_PORT, 10),
+      serverUrl: env.PYTHON_URL,
+      serverPort: parseInt(env.PYTHON_PORT, 10),
       healthCheckUrl: env.PYTHON_HEALTH_CHECK_URL
     },
     

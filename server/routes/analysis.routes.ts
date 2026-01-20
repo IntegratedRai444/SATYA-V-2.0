@@ -262,7 +262,7 @@ router.post(
       // Process the image using Python service
       const result = await (pythonBridge as any).request({
         method: 'POST',
-        url: '/api/v2/analysis/image',  // Fixed: Use the correct Python endpoint
+        url: '/analysis/image',  // Fixed: Remove /api/v2 prefix
         data: {
           image: req.file.buffer.toString('base64'),
           mimeType: req.file.mimetype,
@@ -339,10 +339,15 @@ router.post(
       });
 
       // Process the audio using Python service
-      const result = await pythonBridge.post('/analyze/audio', {
-        audio: req.file.buffer.toString('base64'),
-        mimeType: req.file.mimetype,
-        jobId: job.id,
+      const result = await (pythonBridge as any).request({
+        method: 'POST',
+        url: '/analysis/audio',
+        data: {
+          audio: req.file.buffer.toString('base64'),
+          mimeType: req.file.mimetype,
+          jobId: job.id,
+          filename: req.file.originalname,
+        },
       });
 
       // Save results to Supabase
@@ -444,5 +449,260 @@ router.get('/status/:id', authenticate, async (req: Request, res: Response) => {
     handleAnalysisError(error, res);
   }
 });
+
+// Analyze video
+router.post(
+  '/video',
+  authenticate,
+  upload.single('video'),
+  validateRequest,
+  async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          error: 'Video file is required'
+        });
+      }
+
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          error: 'Authentication required'
+        });
+      }
+
+      // Create analysis job
+      const job = await createAnalysisJob(userId, {
+        modality: 'video',
+        filename: req.file.originalname,
+        mime_type: req.file.mimetype,
+        size_bytes: req.file.size,
+        status: 'pending'
+      });
+
+      // Process the video using Python service
+      const result = await (pythonBridge as any).request({
+        method: 'POST',
+        url: '/analysis/video',
+        data: {
+          video: req.file.buffer.toString('base64'),
+          mimeType: req.file.mimetype,
+          jobId: job.id,
+          filename: req.file.originalname,
+        },
+      });
+
+      // Save results to Supabase
+      if (result.data && result.data.status === 'success') {
+        await updateAnalysisJobWithResults(job.id, {
+          status: 'completed',
+          confidence: result.data.confidence || 0,
+          is_deepfake: result.data.is_deepfake || false,
+          model_name: result.data.model_name || 'SatyaAI-Video',
+          model_version: result.data.model_version || '1.0.0',
+          summary: result.data.summary || {},
+          analysis_data: result.data,
+          proof_json: result.data.proof || {}
+        });
+
+        res.json({
+          success: true,
+          data: {
+            ...result.data,
+            jobId: job.id,
+            reportCode: job.report_code
+          }
+        });
+      } else {
+        // Mark job as failed
+        await updateAnalysisJobWithResults(job.id, {
+          status: 'failed',
+          error_message: result.data?.error || 'Analysis failed'
+        });
+
+        res.status(500).json({
+          success: false,
+          error: result.data?.error || 'Analysis failed'
+        });
+      }
+    } catch (error) {
+      handleAnalysisError(error, res);
+    }
+  }
+);
+
+// Analyze multimodal
+router.post(
+  '/multimodal',
+  authenticate,
+  upload.array('files', 5), // Max 5 files for multimodal
+  validateRequest,
+  async (req: Request, res: Response) => {
+    try {
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'At least one file is required for multimodal analysis'
+        });
+      }
+
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          error: 'Authentication required'
+        });
+      }
+
+      // Create analysis job
+      const job = await createAnalysisJob(userId, {
+        modality: 'multimodal',
+        filename: `${req.files.length} files`,
+        mime_type: 'multimodal',
+        size_bytes: (req.files as Express.Multer.File[]).reduce((total: number, file: Express.Multer.File) => total + file.size, 0),
+        status: 'pending'
+      });
+
+      // Convert files to base64
+      const files = (req.files as Express.Multer.File[]).map(file => ({
+        data: file.buffer.toString('base64'),
+        mimeType: file.mimetype,
+        filename: file.originalname,
+        size: file.size
+      }));
+
+      // Process using Python service
+      const result = await (pythonBridge as any).request({
+        method: 'POST',
+        url: '/analysis/multimodal',
+        data: {
+          files,
+          jobId: job.id,
+        },
+      });
+
+      // Save results to Supabase
+      if (result.data && result.data.status === 'success') {
+        await updateAnalysisJobWithResults(job.id, {
+          status: 'completed',
+          confidence: result.data.confidence || 0,
+          is_deepfake: result.data.is_deepfake || false,
+          model_name: result.data.model_name || 'SatyaAI-Multimodal',
+          model_version: result.data.model_version || '1.0.0',
+          summary: result.data.summary || {},
+          analysis_data: result.data,
+          proof_json: result.data.proof || {}
+        });
+
+        res.json({
+          success: true,
+          data: {
+            ...result.data,
+            jobId: job.id,
+            reportCode: job.report_code
+          }
+        });
+      } else {
+        // Mark job as failed
+        await updateAnalysisJobWithResults(job.id, {
+          status: 'failed',
+          error_message: result.data?.error || 'Analysis failed'
+        });
+
+        res.status(500).json({
+          success: false,
+          error: result.data?.error || 'Analysis failed'
+        });
+      }
+    } catch (error) {
+      handleAnalysisError(error, res);
+    }
+  }
+);
+
+// Analyze webcam capture
+router.post(
+  '/webcam',
+  authenticate,
+  upload.single('image'),
+  validateRequest,
+  async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          error: 'Webcam image is required'
+        });
+      }
+
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          error: 'Authentication required'
+        });
+      }
+
+      // Create analysis job
+      const job = await createAnalysisJob(userId, {
+        modality: 'webcam',
+        filename: `webcam-${Date.now()}.jpg`,
+        mime_type: req.file.mimetype,
+        size_bytes: req.file.size,
+        status: 'pending'
+      });
+
+      // Process the webcam image using Python service
+      const result = await (pythonBridge as any).request({
+        method: 'POST',
+        url: '/analysis/webcam',
+        data: {
+          image: req.file.buffer.toString('base64'),
+          mimeType: req.file.mimetype,
+          jobId: job.id,
+          filename: req.file.originalname,
+        },
+      });
+
+      // Save results to Supabase
+      if (result.data && result.data.status === 'success') {
+        await updateAnalysisJobWithResults(job.id, {
+          status: 'completed',
+          confidence: result.data.confidence || 0,
+          is_deepfake: result.data.is_deepfake || false,
+          model_name: result.data.model_name || 'SatyaAI-Webcam',
+          model_version: result.data.model_version || '1.0.0',
+          summary: result.data.summary || {},
+          analysis_data: result.data,
+          proof_json: result.data.proof || {}
+        });
+
+        res.json({
+          success: true,
+          data: {
+            ...result.data,
+            jobId: job.id,
+            reportCode: job.report_code
+          }
+        });
+      } else {
+        // Mark job as failed
+        await updateAnalysisJobWithResults(job.id, {
+          status: 'failed',
+          error_message: result.data?.error || 'Analysis failed'
+        });
+
+        res.status(500).json({
+          success: false,
+          error: result.data?.error || 'Analysis failed'
+        });
+      }
+    } catch (error) {
+      handleAnalysisError(error, res);
+    }
+  }
+);
 
 export { router as analysisRouter };

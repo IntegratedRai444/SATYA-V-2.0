@@ -4,7 +4,7 @@ import { getCsrfToken } from './csrfService';
 
 // Create axios instances
 const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5001/api/v2',
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',

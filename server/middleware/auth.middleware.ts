@@ -417,8 +417,8 @@ export const requireRole = (roles: UserRole | UserRole[]) => {
 // CSRF token generation and validation
 import crypto from 'crypto';
 
-const CSRF_TOKEN_SECRET = process.env.CSRF_TOKEN_SECRET;
-if (!CSRF_TOKEN_SECRET || CSRF_TOKEN_SECRET.length < 32) {
+const CSRF_TOKEN_SECRET = process.env.CSRF_TOKEN_SECRET || 'dev_csrf_secret_for_development_only';
+if (process.env.NODE_ENV !== 'development' && CSRF_TOKEN_SECRET.length < 32) {
   throw new Error('CSRF_TOKEN_SECRET must be at least 32 characters long');
 }
 

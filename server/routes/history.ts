@@ -267,12 +267,13 @@ router.delete('/:jobId',
 export const createAnalysisJob = async (
   userId: string,
   jobData: {
-    modality: 'image' | 'audio' | 'video' | 'multimodal';
+    modality: 'image' | 'audio' | 'video' | 'multimodal' | 'webcam';
     filename: string;
     mime_type: string;
     size_bytes: number;
     file_hash?: string;
     metadata?: Record<string, any>;
+    status?: 'pending' | 'processing' | 'completed' | 'failed';
   }
 ) => {
   const { data, error } = await supabase

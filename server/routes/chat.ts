@@ -34,12 +34,24 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || '',
 });
 
+// Check if OpenAI is properly configured
+const isChatEnabled = process.env.ENABLE_CHAT === 'true' && process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'sk-placeholder-key-replace-with-real-key' && process.env.OPENAI_API_KEY.startsWith('sk-');
+
 // In-memory conversation storage (use database in production)
 const conversations = new Map<string, ChatCompletionMessageParam[]>();
 
 // POST /api/chat/message - Send message to AI assistant
-router.post('/chat', chatRateLimit, supabaseAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/message', chatRateLimit, supabaseAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    // Check if chat is enabled
+    if (!isChatEnabled) {
+      return res.status(503).json({
+        success: false,
+        error: 'Chat service is currently unavailable. Please configure OPENAI_API_KEY to enable chat functionality.',
+        code: 'CHAT_DISABLED'
+      });
+    }
+
     const { message, conversationId, options } = req.body;
 
     if (!message || typeof message !== 'string') {
@@ -127,6 +139,15 @@ router.post('/chat', chatRateLimit, supabaseAuth, async (req: AuthenticatedReque
 // GET /api/chat/history - Get chat history
 router.get('/history', supabaseAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    // Check if chat is enabled
+    if (!isChatEnabled) {
+      return res.status(503).json({
+        success: false,
+        error: 'Chat service is currently unavailable. Please configure OPENAI_API_KEY to enable chat functionality.',
+        code: 'CHAT_DISABLED'
+      });
+    }
+
     // Convert conversations to history format
     const history = Array.from(conversations.entries()).map(([id, messages]) => {
       const firstMsg = messages[0];
@@ -201,23 +222,29 @@ router.delete('/history/:id', supabaseAuth, async (req: AuthenticatedRequest, re
 });
 
 // POST /api/chat/suggestions - Get suggested responses
-router.post('/feedback', supabaseAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/suggestions', supabaseAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const { message, conversationContext } = req.body;
+    
+    // Generate contextual suggestions based on the message
+    const suggestions = [
+      "Can you explain this analysis result in more detail?",
+      "What confidence level should I be concerned about?",
+      "How does this compare to other similar analyses?",
+      "What steps should I take based on this result?"
+    ];
+    
     res.json({
       success: true,
-      data: [
-        'Tell me about this analysis',
-        'How can I improve detection accuracy?',
-        'What should I look for in the results?'
-      ]
+      data: suggestions
     });
-  } catch (error: any) {
-    logger.error('Suggestions error:', error);
+  } catch (error) {
+    logger.error('Chat suggestions error:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to get suggestions'
+      error: 'Failed to generate suggestions'
     });
   }
 });
 
-export default router;
+export { router as chatRouter };

@@ -3,8 +3,8 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 export const pythonConfig = {
-  // Base URL of the Python service
-  apiUrl: process.env.PYTHON_SERVICE_URL || 'http://localhost:8000',
+  // Base URL of Python service
+  apiUrl: process.env.PYTHON_URL || 'http://localhost:8000',
   
   // API Key for authenticating with the Python service
   apiKey: process.env.PYTHON_SERVICE_API_KEY || 'your-secret-api-key',

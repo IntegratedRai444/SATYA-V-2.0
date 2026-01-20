@@ -202,7 +202,7 @@ app.set('trust proxy', 1);
 
 // Configure proxy for Python backend
 const pythonProxy = createProxyMiddleware({
-  target: process.env.PYTHON_API_URL || 'http://localhost:5000',
+  target: process.env.PYTHON_API_URL || 'http://localhost:8000',
   changeOrigin: true,
   pathRewrite: {
     '^/api/python': '/',
@@ -335,6 +335,68 @@ app.use(express.urlencoded({
 // Cookie parsing middleware for httpOnly cookies
 import cookieParser from 'cookie-parser';
 app.use(cookieParser());
+
+// Health endpoints (before authentication middleware)
+app.get('/health', async (_req, res) => {
+  const startTime = Date.now();
+  
+  try {
+    // Check database connection
+    const dbStatus = await checkDatabaseConnection();
+    
+    // Check Python server status
+    const pythonStatus = await checkPythonServer();
+    
+    // Check file system status
+    const fsStatus = await checkFileSystem();
+    
+    // Check memory usage
+    const memoryStatus = checkMemoryUsage();
+    
+    // Determine overall status
+    const allStatuses = [dbStatus, pythonStatus, fsStatus, memoryStatus];
+    const isHealthy = allStatuses.every(s => s.status === 'healthy');
+    const isDegraded = allStatuses.some(s => s.status === 'degraded');
+    
+    const status = isHealthy ? 'healthy' : (isDegraded ? 'degraded' : 'unhealthy');
+    
+    const response = {
+      status,
+      timestamp: new Date().toISOString(),
+      version: '2.0.0',
+      uptime: process.uptime(),
+      responseTime: Date.now() - startTime,
+      components: {
+        database: dbStatus,
+        pythonServer: pythonStatus,
+        fileSystem: fsStatus,
+        memory: memoryStatus
+      },
+      metrics: {
+        memoryUsage: process.memoryUsage(),
+        cpuUsage: process.cpuUsage(),
+        uptime: process.uptime()
+      }
+    };
+    
+    // Update health metrics
+    if (features.enableMetrics) {
+      metrics.setGauge('health_check_status', status === 'healthy' ? 1 : 0);
+      metrics.setGauge('database_status', dbStatus.status === 'healthy' ? 1 : 0);
+      metrics.setGauge('python_server_status', pythonStatus.status === 'healthy' ? 1 : 0);
+    }
+    
+    res.status(200).json(response);
+  } catch (error) {
+    logger.error('Health check failed', { error });
+    res.status(500).json({
+      status: 'unhealthy',
+      message: 'Health check failed',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
 
 // Authentication middleware
 import { authenticate } from './middleware/auth.middleware';
@@ -504,66 +566,7 @@ import { healthMonitor } from './services/health-monitor';
  *                   type: string
  *                   format: date-time
  */
-app.get('/health', async (_req, res) => {
-  const startTime = Date.now();
-  
-  try {
-    // Check database connection
-    const dbStatus = await checkDatabaseConnection();
-    
-    // Check Python server status
-    const pythonStatus = await checkPythonServer();
-    
-    // Check file system status
-    const fsStatus = await checkFileSystem();
-    
-    // Check memory usage
-    const memoryStatus = checkMemoryUsage();
-    
-    // Determine overall status
-    const allStatuses = [dbStatus, pythonStatus, fsStatus, memoryStatus];
-    const isHealthy = allStatuses.every(s => s.status === 'healthy');
-    const isDegraded = allStatuses.some(s => s.status === 'degraded');
-    
-    const status = isHealthy ? 'healthy' : (isDegraded ? 'degraded' : 'unhealthy');
-    
-    const response = {
-      status,
-      timestamp: new Date().toISOString(),
-      version: '2.0.0',
-      uptime: process.uptime(),
-      responseTime: Date.now() - startTime,
-      components: {
-        database: dbStatus,
-        pythonServer: pythonStatus,
-        fileSystem: fsStatus,
-        memory: memoryStatus
-      },
-      metrics: {
-        memoryUsage: process.memoryUsage(),
-        cpuUsage: process.cpuUsage(),
-        uptime: process.uptime()
-      }
-    };
-    
-    // Update health metrics
-    if (features.enableMetrics) {
-      metrics.setGauge('health_check_status', status === 'healthy' ? 1 : 0);
-      metrics.setGauge('database_status', dbStatus.status === 'healthy' ? 1 : 0);
-      metrics.setGauge('python_server_status', pythonStatus.status === 'healthy' ? 1 : 0);
-    }
-    
-    res.status(200).json(response);
-  } catch (error) {
-    logger.error('Health check failed', { error });
-    res.status(500).json({
-      status: 'unhealthy',
-      message: 'Health check failed',
-      error: error instanceof Error ? error.message : 'Unknown error',
-      timestamp: new Date().toISOString()
-    });
-  }
-});
+// Health endpoints will be moved before authentication middleware
 
 // Helper functions for health checks
 async function checkDatabaseConnection() {
@@ -722,8 +725,6 @@ app.get('/api-docs.json', (req: Request, res: Response) => {
 // Main server startup
 async function startServer() {
   try {
-    // ... (rest of the code remains the same)
-
     // Validate environment variables first
     try {
       validateEnvironment();
@@ -746,7 +747,19 @@ async function startServer() {
     logConfigurationSummary();
     logger.info('✅ Server initialized with Supabase - no database initialization needed');
 
-    // ... (rest of the code remains the same)
+    // Start the server
+    const server = app.listen(config.PORT, config.HOST || '0.0.0.0', () => {
+      console.log(`🚀 Server running on http://${config.HOST || '0.0.0.0'}:${config.PORT}`);
+      console.log(`📊 Health check: http://${config.HOST || '0.0.0.0'}:${config.PORT}/health`);
+      console.log(`📚 API docs: http://${config.HOST || '0.0.0.0'}:${config.PORT}/api-docs`);
+    });
+
+    // Handle graceful shutdown
+    server.on('close', () => {
+      logger.info('Server closed');
+    });
+
+    return server;
   } catch (error) {
     logError(error as Error, { context: 'server_startup' });
     process.exit(1);
@@ -770,7 +783,27 @@ function logConfigurationSummary() {
 
 // Start the server
 startServer()
-  .then(() => {
+  .then((server) => {
     logConfigurationSummary();
+    
+    // Handle graceful shutdown
+    process.on('SIGTERM', () => {
+      logger.info('SIGTERM received, shutting down gracefully');
+      server.close(() => {
+        logger.info('Server closed');
+        process.exit(0);
+      });
+    });
+
+    process.on('SIGINT', () => {
+      logger.info('SIGINT received, shutting down gracefully');
+      server.close(() => {
+        logger.info('Server closed');
+        process.exit(0);
+      });
+    });
   })
-  .catch(console.error);
+  .catch((error) => {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  });

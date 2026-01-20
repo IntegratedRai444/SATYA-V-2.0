@@ -60,25 +60,25 @@ const transformStats = (apiStats: ExtendedApiDashboardStats): StatItem[] => {
     {
       title: 'Total Analyses',
       value: apiStats.totalScans,
-      change: '+0%', // Placeholder as API doesn't provide growth yet
+      change: '+0%', // TODO: Calculate real growth from historical data
       trend: 'neutral',
     },
     {
       title: 'Detected Deepfakes',
       value: apiStats.manipulatedScans,
-      change: '+0%',
+      change: '+0%', // TODO: Calculate real growth from historical data
       trend: 'neutral',
     },
     {
       title: 'Avg. Confidence',
       value: `${Math.round(apiStats.averageConfidence * 100)}%`,
-      change: '+0%',
+      change: '+0%', // TODO: Calculate real growth from historical data
       trend: 'neutral',
     },
     {
       title: 'Uncertain Scans',
       value: apiStats.uncertainScans,
-      change: '+0%',
+      change: '+0%', // TODO: Calculate real growth from historical data
       trend: 'neutral',
     },
   ];

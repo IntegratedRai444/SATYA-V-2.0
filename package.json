@@ -4,8 +4,9 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "concurrently \"npm run dev:python\" \"npm run dev:client\"",
+    "dev": "concurrently \"npm run dev:node\" \"npm run dev:python\" \"npm run dev:client\"",
     "dev:client": "cd client && npm run dev",
+    "dev:node": "tsx server/index.ts",
     "dev:python": "cd server/python && python main_api.py",
     "dev:all": "npm run dev",
     "start:all": "npm run dev",

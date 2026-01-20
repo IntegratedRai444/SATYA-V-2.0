@@ -33,7 +33,7 @@ export function useAnalytics(_timeRange: '7d' | '30d' | '90d' | 'all' = '30d') {
       // Transform API response to AnalyticsData format
       const analyticsData: AnalyticsData = {
         totalScans: response.totalAnalyses || 0,
-        scansByType: { image: 0, video: 0, audio: 0 }, // Default values
+        scansByType: { image: 0, video: 0, audio: 0 }, // TODO: Calculate real distribution from API
         scansByDate: response.recentActivity ? [
           { date: 'Last 7 Days', count: response.recentActivity.filter((_: any, i: number) => i < 7).length },
           { date: 'Last 30 Days', count: response.recentActivity.length }
@@ -41,8 +41,8 @@ export function useAnalytics(_timeRange: '7d' | '30d' | '90d' | 'all' = '30d') {
         detectionRate: response.manipulatedMedia && response.totalAnalyses
           ? (response.manipulatedMedia / response.totalAnalyses)
           : 0,
-        falsePositiveRate: 0.05, // Default value
-        avgProcessingTime: 2.5, // Default value
+        falsePositiveRate: 0.05, // TODO: Calculate real false positive rate from API
+        avgProcessingTime: 2.5, // TODO: Calculate real processing time from API
       };
       
       return analyticsData;

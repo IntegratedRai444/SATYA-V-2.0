@@ -16,6 +16,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import models, transforms
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 
