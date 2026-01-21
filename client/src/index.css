@@ -4,49 +4,49 @@
 @tailwind utilities;
 
 :root {
-  /* SatyaAI Dark Theme - Base Colors */
-  --background: 0 0% 4%;  /* #0a0a0a */
+  /* Satya Deepfake Detection System - Dark Theme */
+  --background: 10 10% 15%;  /* Dark blue/purple background */
   --foreground: 0 0% 100%;  /* #ffffff */
   
   /* Card */
-  --card: 0 0% 12%;  /* #1e1e1e */
+  --card: 15 15% 25%;  /* Dark blue/purple card */
   --card-foreground: 0 0% 100%;
   
   /* Popover */
-  --popover: 0 0% 12%;
+  --popover: 15 15% 25%;
   --popover-foreground: 0 0% 100%;
   
-  /* Primary (Cyan) */
-  --primary: 199 100% 50%;  /* #00a8ff */
+  /* Primary (Blue) */
+  --primary: 59 130% 246%;  /* Blue accent */
   --primary-foreground: 0 0% 100%;
   
   /* Secondary (Dark Gray) */
-  --secondary: 0 0% 10%;  /* #1a1a1a */
+  --secondary: 15 15% 25%;
   --secondary-foreground: 0 0% 100%;
   
-  /* Accent (Cyan) */
-  --accent: 199 100% 50%;  /* #00a8ff */
+  /* Accent (Blue) */
+  --accent: 59 130% 246%;
   --accent-foreground: 0 0% 100%;
   
   /* Destructive (Red) */
-  --destructive: 0 100% 63%;  /* #ff4444 */
+  --destructive: 0 84% 60%;  /* Red accent */
   --destructive-foreground: 0 0% 100%;
   
   /* Muted */
-  --muted: 0 0% 17%;  /* #2a2a2a */
-  --muted-foreground: 0 0% 70%;  /* #b3b3b3 */
+  --muted: 15 15% 25%;
+  --muted-foreground: 0 0% 70%;
   
   /* Border & Input */
-  --border: 0 0% 20%;  /* #333333 */
-  --input: 0 0% 12%;
-  --ring: 199 100% 50%;  /* #00a8ff */
+  --border: 15 15% 25%;
+  --input: 15 15% 25%;
+  --ring: 59 130% 246%;
   
   /* Sidebar */
-  --sidebar-background: 0 0% 8%;  /* #141414 */
+  --sidebar-background: 15 15% 20%;
   --sidebar-foreground: 0 0% 100%;
-  --sidebar-primary: 199 100% 50%;  /* #00a8ff */
+  --sidebar-primary: 59 130% 246%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 199 100% 50%;
+  --sidebar-accent: 59 130% 246%;
   --sidebar-accent-foreground: 0 0% 100%;
   --sidebar-border: 0 0% 20%;  /* #333333 */
   --sidebar-ring: 199 100% 50%;

@@ -4,7 +4,7 @@
  * message queuing, and automatic reconnection
  */
 
-import { getAuthToken } from './auth';
+import { getAuthToken } from './supabaseAuth';
 import logger from '../lib/logger';
 import type {
   WebSocketMessage,

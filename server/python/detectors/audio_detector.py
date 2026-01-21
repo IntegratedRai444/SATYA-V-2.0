@@ -27,7 +27,7 @@ except ImportError:
 
 # Import enhanced audio processing
 try:
-    from ..models.audio_enhanced import AudioPreprocessor
+    from models.audio_enhanced import AudioPreprocessor
     ENHANCED_AUDIO_AVAILABLE = True
     logger.info("Enhanced audio processing available")
 except ImportError:
@@ -36,7 +36,7 @@ except ImportError:
 
 # Import audio model for fallback
 try:
-    from ..models.audio_model import AudioFeatureExtractor
+    from models.audio_model import AudioFeatureExtractor
     AUDIO_MODEL_AVAILABLE = True
     logger.info("Audio model available")
 except ImportError:

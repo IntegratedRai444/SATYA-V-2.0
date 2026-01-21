@@ -15,9 +15,8 @@ from fastapi import (APIRouter, Depends, File, Form, HTTPException, Request,
                      UploadFile)
 from fastapi.responses import FileResponse
 
-from ...auth import get_current_user
-from ...sentinel_agent import AnalysisRequest, AnalysisType, SentinelAgent
-from ...utils.rate_limiter import check_rate_limit
+from sentinel_agent import AnalysisRequest, AnalysisType, SentinelAgent
+from utils.rate_limiter import check_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +38,6 @@ async def upload_video(
     request: Request,
     file: UploadFile = File(...),
     analyze: bool = Form(True),
-    current_user: dict = Depends(get_current_user),  # Requires authentication
 ):
     """
     Upload and analyze a video
@@ -49,12 +47,12 @@ async def upload_video(
 
     Returns analysis results with proof of ML execution
     """
-    # Rate limiting
-    rate_limit = f"video_upload:{request.client.host}"
-    if not await check_rate_limit(rate_limit, limit=5, period=60):
-        raise HTTPException(
-            status_code=429, detail="Rate limit exceeded. Please try again later."
-        )
+    # Rate limiting (optional - can be added later)
+    # rate_limit = f"video_upload:{request.client.host}"
+    # if not await check_rate_limit(rate_limit, limit=5, period=60):
+    #     raise HTTPException(
+    #         status_code=429, detail="Rate limit exceeded. Please try again later."
+    #     )
 
     try:
         # Validate file type

@@ -49,8 +49,8 @@ const initialState: AppState = {
   userPreferences: {
     language: localStorage.getItem('language') || 'en-US',
     timezone: localStorage.getItem('timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone,
-    dateFormat: localStorage.getItem('dateFormat') || 'MM/dd/yyyy',
-    timeFormat: (localStorage.getItem('timeFormat') as '12h' | '24h') || '12h',
+    dateFormat: localStorage.getItem('dateFormat') || 'yyyy-MM-dd',
+    timeFormat: (localStorage.getItem('timeFormat') as '12h' | '24h') || '24h',
   },
 };
 

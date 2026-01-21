@@ -1,5 +1,5 @@
 import { createBrowserRouter, Navigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/SupabaseAuthProvider';
 import { Suspense, lazy, useEffect } from 'react';
 import LoadingState from '@/components/ui/LoadingState';
 import ErrorBoundary from '@/components/ui/ErrorBoundary';
@@ -43,7 +43,7 @@ const Settings = lazyWithRetry(() => import('@/pages/Settings'));
 const Help = lazyWithRetry(() => import('@/pages/Help'));
 
 const AIAssistant = lazyWithRetry(() => import('@/pages/AIAssistant'));
-const BatchAnalysis = lazyWithRetry(() => import('@/pages/BatchAnalysis'));
+// const BatchAnalysis = lazyWithRetry(() => import('@/pages/BatchAnalysis')); // DISABLED
 const ImageAnalysis = lazyWithRetry(() => import('@/pages/ImageAnalysis'));
 const VideoAnalysis = lazyWithRetry(() => import('@/pages/VideoAnalysis'));
 const AudioAnalysis = lazyWithRetry(() => import('@/pages/AudioAnalysis'));
@@ -108,11 +108,11 @@ const ProtectedRoute = ({
   redirectPath?: string;
   level?: 'app' | 'page' | 'component';
 }) => {
-  const { isAuthenticated, isLoading, connectionStatus, initialAuthCheckComplete } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
   const location = useLocation();
 
   // Show loading state while checking authentication
-  if (isLoading || !initialAuthCheckComplete || connectionStatus === 'checking') {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <LoadingState variant="page" message="Checking authentication..." />
@@ -326,16 +326,16 @@ export const router = createBrowserRouter([
           </ErrorBoundary>
         ),
       },
-      {
-        path: 'batch-analysis',
-        element: (
-          <ErrorBoundary level="page">
-            <Suspense fallback={<LoadingState message="Loading batch analysis..." />}>
-              <BatchAnalysis />
-            </Suspense>
-          </ErrorBoundary>
-        ),
-      },
+      // {
+      //   path: 'batch-analysis',
+      //   element: (
+      //     <ErrorBoundary level="page">
+      //       <Suspense fallback={<LoadingState message="Loading batch analysis..." />}>
+      //         <BatchAnalysis />
+      //       </Suspense>
+      //     </ErrorBoundary>
+      //   ),
+      // }, // DISABLED
       {
         path: 'image-analysis',
         element: (

@@ -10,10 +10,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from 'next-themes';
 import { HelmetProvider } from 'react-helmet-async';
 import * as Sentry from '@sentry/react';
-import { AuthProvider } from './contexts/AuthContext';
-import { AppProvider } from './contexts/AppContext';
-import { RealtimeProvider } from './contexts/RealtimeContext';
-import { BatchProcessingProvider } from './contexts/BatchProcessingContext';
+import { Toaster } from '@/components/ui/toaster';
+import { SupabaseAuthProvider } from '@/contexts/SupabaseAuthProvider';
+import { AppProvider } from '@/contexts/AppContext';
+import { RealtimeProvider } from '@/contexts/RealtimeContext';
+import { BatchProcessingProvider } from '@/contexts/BatchProcessingContext';
 import { RouterProvider } from 'react-router-dom';
 import { router } from './utils/router';
 // import { PerformanceMonitor, MemoryMonitor } from './utils/performanceOptimizer';
@@ -78,7 +79,7 @@ root.render(
       <HelmetProvider>
       <QueryClientProvider client={queryClient}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-          <AuthProvider>
+          <SupabaseAuthProvider>
             <AppProvider>
               {/* 6. RealtimeProvider - Real-time updates and WebSocket management */}
               <RealtimeProvider>
@@ -89,7 +90,7 @@ root.render(
                 </BatchProcessingProvider>
               </RealtimeProvider>
             </AppProvider>
-          </AuthProvider>
+          </SupabaseAuthProvider>
         </ThemeProvider>
       </QueryClientProvider>
       </HelmetProvider>

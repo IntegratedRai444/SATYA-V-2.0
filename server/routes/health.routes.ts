@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { healthCheck } from '../controllers/health.controller';
+import { healthController } from '../controllers/health.controller';
 
 export const healthRouter = Router();
 
@@ -38,7 +38,7 @@ export const healthRouter = Router();
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-healthRouter.get('/', healthCheck);
+healthRouter.get('/', healthController.healthCheck);
 
 /**
  * @swagger
@@ -49,25 +49,10 @@ healthRouter.get('/', healthCheck);
  *     responses:
  *       200:
  *         description: Service is ready
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: 'ready'
  *       503:
- *         description: Service Unavailable
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
+ *         description: Service is not ready
  */
-healthRouter.get('/ready', (req, res) => {
-  // Add readiness checks here (database connection, external services, etc.)
-  res.status(200).json({ status: 'ready' });
-});
+healthRouter.get('/ready', healthController.readinessCheck);
 
 /**
  * @swagger
@@ -87,8 +72,6 @@ healthRouter.get('/ready', (req, res) => {
  *                   type: string
  *                   example: 'live'
  */
-healthRouter.get('/live', (req, res) => {
-  res.status(200).json({ status: 'live' });
-});
+healthRouter.get('/live', healthController.livenessCheck);
 
 export default healthRouter;

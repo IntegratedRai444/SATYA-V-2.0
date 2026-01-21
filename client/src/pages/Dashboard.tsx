@@ -28,7 +28,7 @@ import AnalysisProgress from '@/components/analysis/AnalysisProgress';
 import AnalysisResults from '@/components/analysis/AnalysisResults';
 import ErrorBoundary from '@/components/ui/ErrorBoundary';
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/SupabaseAuthProvider';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
 import { useDashboardStats } from '@/hooks/useDashboardStats';

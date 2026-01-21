@@ -5,7 +5,7 @@ Implements advanced audio processing and feature extraction.
 import logging
 import os
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import librosa
 import numpy as np

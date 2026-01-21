@@ -24,7 +24,7 @@ const envSchema = z.object({
   VITE_ENABLE_ANALYTICS: z.coerce.boolean().default(true),
   VITE_ENABLE_NOTIFICATIONS: z.coerce.boolean().default(true),
   VITE_ENABLE_WEBCAM: z.coerce.boolean().default(true),
-  VITE_ENABLE_BATCH_UPLOAD: z.coerce.boolean().default(true),
+  VITE_ENABLE_BATCH_UPLOAD: z.coerce.boolean().default(false), // DISABLED
   
   // Logging Configuration
   VITE_LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
@@ -71,7 +71,7 @@ export interface AppConfig {
     enableAnalytics: boolean;
     enableNotifications: boolean;
     enableWebcam: boolean;
-    enableBatchUpload: boolean;
+    enableBatchUpload: boolean; // DISABLED
   };
   logging: {
     level: 'debug' | 'info' | 'warn' | 'error';
@@ -163,7 +163,7 @@ class ConfigManager {
         enableAnalytics: envConfig.VITE_ENABLE_ANALYTICS,
         enableNotifications: envConfig.VITE_ENABLE_NOTIFICATIONS,
         enableWebcam: envConfig.VITE_ENABLE_WEBCAM,
-        enableBatchUpload: envConfig.VITE_ENABLE_BATCH_UPLOAD,
+        enableBatchUpload: envConfig.VITE_ENABLE_BATCH_UPLOAD, // DISABLED
       },
       logging: {
         level: envConfig.VITE_LOG_LEVEL,

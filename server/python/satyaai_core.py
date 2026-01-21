@@ -18,6 +18,9 @@ from enum import Enum, auto
 from typing import (Any, ClassVar, Dict, List, Optional, Tuple, Type, TypeVar,
                     Union)
 
+# Configure logging early
+logger = logging.getLogger(__name__)
+
 # Import type hints for better IDE support
 if True:  # For better code folding
     from pathlib import Path
@@ -98,17 +101,14 @@ except ImportError as e:
 
 # Import Sentinel components
 try:
-    from .reasoning_engine import (Conclusion, ConfidenceLevel, EvidenceType,
+    from reasoning_engine import (Conclusion, ConfidenceLevel, EvidenceType,
                                    ReasoningEngine)
-    from .sentinel_agent import AnalysisRequest, AnalysisType, SentinelAgent
+    from sentinel_agent import AnalysisRequest, AnalysisType, SentinelAgent
 
     SENTINEL_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Sentinel components not available: {e}")
     SENTINEL_AVAILABLE = False
-
-# Configure logging
-logger = logging.getLogger(__name__)
 
 # Type aliases
 MediaBuffer = Union[bytes, str, os.PathLike]

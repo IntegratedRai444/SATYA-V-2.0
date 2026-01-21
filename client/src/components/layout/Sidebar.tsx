@@ -1,19 +1,22 @@
 import { useLocation, Link, useNavigate } from 'react-router-dom';
-import {
-  FiGrid,
-  FiImage,
-  FiVideo,
-  FiMic,
-  FiCamera,
-  FiClock,
-  FiSettings,
-  FiHelpCircle,
-  FiZap,
-  FiUpload,
-  FiTrendingUp,
+import { 
+  // FiHome, // Not used
+  FiImage, 
+  FiVideo, 
+  FiMic, 
+  FiLayers, 
+  // FiUpload, // DISABLED - batch processing
+  // FiBarChart2, // Not used
+  FiSettings, 
+  FiHelpCircle, 
+  // FiChevronDown, // Not used
   FiChevronLeft,
   FiChevronRight,
-  FiLayers,
+  FiGrid,
+  FiCamera,
+  FiTrendingUp,
+  FiClock,
+  FiZap
 } from 'react-icons/fi';
 import clsx from 'clsx';
 import { useMediaQuery } from '@/hooks/use-media-query';
@@ -174,8 +177,8 @@ const Sidebar = ({ isOpen, onToggle }: SidebarProps) => {
                 <span className="text-[15px] font-medium">Multimodal</span>
               </Link>
 
-              {/* Batch Analysis */}
-              <Link
+              {/* Batch Analysis - DISABLED */}
+              {/* <Link
                 to="/batch-analysis"
                 className={clsx(
                   "w-full flex items-center gap-4 px-4 py-3.5 rounded-lg transition-all duration-150",
@@ -188,7 +191,7 @@ const Sidebar = ({ isOpen, onToggle }: SidebarProps) => {
               >
                 <FiUpload className="w-6 h-6 flex-shrink-0" strokeWidth={2} />
                 <span className="text-[15px] font-medium">Batch Analysis</span>
-              </Link>
+              </Link> */}
               
             </div>
           </div>

@@ -1,18 +1,11 @@
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Upload, Download, History, Settings, BarChart3, AlertTriangle } from 'lucide-react';
-import { toast } from 'react-hot-toast';
+import { Upload, History, AlertTriangle } from 'lucide-react';
 
 const BatchAnalysis = () => {
   // Feature disabled - show message instead of hardcoded data
   const [isFeatureEnabled] = useState(false);
-
-  const exportBatchResults = (batchId: string) => {
-    toast.success(`Exporting results for ${batchId}`);
-  };
 
   return (
     <div className="container mx-auto px-4 py-8">

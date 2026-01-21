@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/SupabaseAuthProvider';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,12 +8,17 @@ import { Eye, EyeOff, Shield, AlertTriangle, Loader2, UserPlus } from 'lucide-re
 
 export default function Register() {
   const navigate = useNavigate();
-  const { register, error, isLoading, clearError } = useAuth();
+  const { register, error, isLoading, clearError, isAuthenticated } = useAuth();
 
   useEffect(() => {
     console.log('Register component mounted');
     console.log('Auth state:', { error, isLoading });
-  }, []);
+
+    // Redirect if already authenticated
+    if (isAuthenticated) {
+      navigate('/dashboard');
+    }
+  }, [isAuthenticated, navigate]);
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -90,19 +95,38 @@ export default function Register() {
       setNetworkError(null);
       setFormErrors({});
 
+      console.log('Attempting registration with:', {
+        username: formData.name,
+        email: formData.email,
+        passwordLength: formData.password.length
+      });
+
       if (register) {
-        const success = await register(formData.name, formData.email, formData.password);
-        if (success) {
+        const result = await register({
+          username: formData.name,
+          email: formData.email,
+          password: formData.password,
+          fullName: formData.name
+        });
+
+        console.log('Registration result:', result);
+
+        if (result.user) {
           navigate('/dashboard');
         } else {
-          setFormErrors({ general: 'Registration failed. Please try again.' });
+          throw new Error('Registration failed - no user returned');
         }
       }
     } catch (err: any) {
-      console.error('Registration error:', err);
+      console.error('Registration error details:', {
+        message: err.message,
+        response: err.response,
+        status: err.response?.status,
+        stack: err.stack
+      });
 
       if (err.message === 'Network Error') {
-        setNetworkError('Unable to connect to the server. Please check your internet connection.');
+        setNetworkError('Unable to connect to server. Please check your internet connection and ensure server is running on port 5001.');
       } else if (err.response) {
         switch (err.response.status) {
           case 409:
@@ -115,12 +139,12 @@ export default function Register() {
             setFormErrors({ general: 'Server error. Please try again later.' });
             break;
           default:
-            setFormErrors({ general: 'An error occurred during registration' });
+            setFormErrors({ general: `Registration error (${err.response.status}). Please try again.` });
         }
       } else if (err.message) {
         setFormErrors({ general: err.message });
       } else {
-        setFormErrors({ general: 'An unexpected error occurred' });
+        setFormErrors({ general: 'An unexpected error occurred during registration' });
       }
     }
   };
@@ -177,25 +201,25 @@ export default function Register() {
 
   return (
     <ErrorBoundary>
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#0a0e1a] p-4">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#0f0f23] p-4">
         <div className="w-full max-w-md mb-8">
           {/* Logo and Header */}
           <div className="text-center">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl mb-4 shadow-lg shadow-blue-500/50">
               <Shield className="w-8 h-8 text-white" />
             </div>
-            <h1 className="text-4xl font-bold text-white mb-2">SatyaAI</h1>
-            <p className="text-slate-400 text-sm">Deepfake Detection Platform</p>
+            <h1 className="text-4xl font-bold text-white mb-2">Satya</h1>
+            <p className="text-slate-400 text-sm">Deepfake Detection System</p>
           </div>
         </div>
 
         {/* Subtitle */}
         <p className="text-center text-slate-300 text-sm mb-8">
-          Create your account to access advanced cybersecurity intelligence and analysis tools
+          Create your account to access advanced deepfake detection and analysis tools
         </p>
 
         {/* Registration Card */}
-        <div className="bg-[#0f1420] border border-slate-800 rounded-2xl p-8 shadow-2xl w-full max-w-md">
+        <div className="bg-[#1a1f2e] border border-slate-800 rounded-2xl p-8 shadow-2xl w-full max-w-md">
           {/* Secure Registration Header */}
           <div className="flex items-center justify-center gap-2 mb-8">
             <UserPlus className="w-5 h-5 text-slate-400" />
@@ -222,9 +246,8 @@ export default function Register() {
                   required
                   value={formData.name}
                   onChange={handleInputChange}
-                  className={`appearance-none block w-full px-3 py-2 border ${
-                    formErrors.name ? 'border-red-300' : 'border-gray-300'
-                  } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm`}
+                  className={`appearance-none block w-full px-3 py-2 border ${formErrors.name ? 'border-red-300' : 'border-gray-300'
+                    } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm`}
                   aria-invalid={!!formErrors.name}
                   aria-describedby={formErrors.name ? 'name-error' : undefined}
                 />
@@ -248,9 +271,8 @@ export default function Register() {
                   required
                   value={formData.email}
                   onChange={handleInputChange}
-                  className={`appearance-none block w-full px-3 py-2 border ${
-                    formErrors.email ? 'border-red-300' : 'border-gray-300'
-                  } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm`}
+                  className={`appearance-none block w-full px-3 py-2 border ${formErrors.email ? 'border-red-300' : 'border-gray-300'
+                    } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm`}
                   aria-invalid={!!formErrors.email}
                   aria-describedby={formErrors.email ? 'email-error' : undefined}
                 />
@@ -274,9 +296,8 @@ export default function Register() {
                   required
                   value={formData.password}
                   onChange={handleInputChange}
-                  className={`appearance-none block w-full px-3 py-2 border ${
-                    formErrors.password ? 'border-red-300' : 'border-gray-300'
-                  } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm`}
+                  className={`appearance-none block w-full px-3 py-2 border ${formErrors.password ? 'border-red-300' : 'border-gray-300'
+                    } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm`}
                   aria-invalid={!!formErrors.password}
                   aria-describedby={formErrors.password ? 'password-error' : undefined}
                 />
@@ -310,9 +331,8 @@ export default function Register() {
                   required
                   value={formData.confirmPassword}
                   onChange={handleInputChange}
-                  className={`appearance-none block w-full px-3 py-2 border ${
-                    formErrors.confirmPassword ? 'border-red-300' : 'border-gray-300'
-                  } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm`}
+                  className={`appearance-none block w-full px-3 py-2 border ${formErrors.confirmPassword ? 'border-red-300' : 'border-gray-300'
+                    } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm`}
                   aria-invalid={!!formErrors.confirmPassword}
                   aria-describedby={formErrors.confirmPassword ? 'confirmPassword-error' : undefined}
                 />

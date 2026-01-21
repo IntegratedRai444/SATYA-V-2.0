@@ -3,7 +3,7 @@ import { healthRouter } from './health.routes';
 import { authRouter } from './auth.routes';
 import { analysisRouter } from './analysis.routes';
 import historyRouter from './history';
-import chatRouter from './chat';
+import { chatRouter } from './chat';
 import { createApiError } from '../middleware/api-version';
 
 const router = Router();

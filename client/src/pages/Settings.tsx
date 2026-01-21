@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/SupabaseAuthProvider';
 import { useToast } from '@/components/ui/use-toast';
 import { FiUser, FiCamera, FiLock, FiTrash2, FiSave } from 'react-icons/fi';
 import { Card } from '@/components/ui/card';
@@ -13,7 +13,7 @@ export default function Settings() {
   const [isLoading, setIsLoading] = useState(false);
 
   const [profileData, setProfileData] = useState({
-    fullName: user?.fullName || '',
+    fullName: user?.username || '',
     email: user?.email || '',
     username: user?.username || '',
   });
@@ -28,9 +28,9 @@ export default function Settings() {
   useEffect(() => {
     if (user) {
       setProfileData({
-        fullName: user.fullName || '',
-        email: user.email || '',
-        username: user.username || '',
+        fullName: user?.username || '',
+        email: user?.email || '',
+        username: user?.username || '',
       });
     }
   }, [user]);
@@ -155,7 +155,7 @@ export default function Settings() {
 
   const getUserInitial = () => {
     if (!user) return 'U';
-    const name = user.fullName || user.username || 'User';
+    const name = user?.username || 'User';
     return name.charAt(0).toUpperCase();
   };
 

@@ -65,5 +65,70 @@ export const healthCheck = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * Readiness check endpoint
+ */
+export const readinessCheck = async (req: Request, res: Response) => {
+  try {
+    // Check if all critical services are ready
+    const checks = await Promise.allSettled([
+      checkDatabaseConnection(),
+      checkPythonService(),
+    ]);
+
+    const allReady = checks.every(check => 
+      check.status === 'fulfilled' && check.value === true
+    );
+
+    if (allReady) {
+      res.status(200).json({
+        status: 'ready',
+        timestamp: new Date().toISOString(),
+      });
+    } else {
+      res.status(503).json({
+        status: 'not ready',
+        timestamp: new Date().toISOString(),
+        checks: checks.map(check => ({
+          status: check.status,
+          value: check.status === 'fulfilled' ? check.value : 'failed'
+        }))
+      });
+    }
+  } catch (error) {
+    logger.error('Readiness check failed:', error);
+    res.status(503).json({
+      status: 'not ready',
+      timestamp: new Date().toISOString(),
+      error: 'Readiness check failed',
+    });
+  }
+};
+
+/**
+ * Liveness check endpoint
+ */
+export const livenessCheck = async (req: Request, res: Response) => {
+  try {
+    // Simple liveness check - just respond quickly
+    res.status(200).json({
+      status: 'alive',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+    });
+  } catch (error) {
+    logger.error('Liveness check failed:', error);
+    res.status(503).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      error: 'Liveness check failed',
+    });
+  }
+};
+
 // Export for testing
-export const healthController = { healthCheck };
+export const healthController = { 
+  healthCheck,
+  readinessCheck,
+  livenessCheck 
+};

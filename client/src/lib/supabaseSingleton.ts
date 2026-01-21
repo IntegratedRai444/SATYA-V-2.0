@@ -1,3 +1,8 @@
+/**
+ * Supabase Singleton Module
+ * Ensures only one instance of Supabase client exists across the entire application
+ */
+
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/supabase.types';
 
@@ -14,8 +19,25 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const isDev = import.meta.env.DEV;
 
+// More graceful error handling
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables');
+  console.error('Missing Supabase environment variables:', {
+    url: !!supabaseUrl,
+    key: !!supabaseAnonKey
+  });
+  throw new Error('Supabase configuration missing. Please check your environment variables.');
+}
+
+// Validate Supabase URL format
+if (!supabaseUrl.includes('supabase.co')) {
+  console.error('Invalid Supabase URL format:', supabaseUrl);
+  throw new Error('Invalid Supabase URL. Please check your VITE_SUPABASE_URL environment variable.');
+}
+
+// Validate Supabase key format
+if (supabaseAnonKey.startsWith('sb_publishable_') && supabaseAnonKey.length < 100) {
+  console.error('Supabase anon key appears to be a placeholder:', supabaseAnonKey.substring(0, 20) + '...');
+  throw new Error('Invalid Supabase anon key. Please get your real credentials from Supabase dashboard.');
 }
 
 // Token refresh settings
@@ -74,27 +96,33 @@ function setupSessionManagement(client: ReturnType<typeof createClient<Database>
   });
 }
 
-// Create the Supabase client
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: true
-  }
-});
+// Create and export singleton Supabase client
+const supabaseClient = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      debug: isDev,
+    },
+    global: {
+      headers: {
+        'x-application-name': 'satyaai-client',
+        'x-client-version': '1.0.0',
+      },
+    },
+    // Disable Go-based auth client to prevent conflicts
+    db: {
+      schema: 'public',
+    },
+  });
 
-// Set up session management
-setupSessionManagement(supabase);
+// Set up session management only for first instance
+setupSessionManagement(supabaseClient);
 
-// Development logging
-if (isDev && typeof window !== 'undefined') {
-  // Only log once per development session
-  if (!window.supabaseLogged) {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log('Supabase connection test', session ? 'successful' : 'no active session');
-    }).catch(console.error);
-    window.supabaseLogged = true;
-  }
+// Store in global scope
+if (typeof window !== 'undefined') {
+  window._supabaseClientInstance = supabaseClient;
 }
 
-export default supabase;
+// Export singleton
+export const supabase = supabaseClient;

@@ -1,18 +1,17 @@
+import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useState, useRef, useEffect } from 'react';
 import {
+  FiChevronDown,
+  FiUser,
+  FiLogOut,
+  FiSettings,
   FiHome,
   FiZap,
   FiClock,
-  FiSettings,
-  FiHelpCircle,
-  FiUser,
-  FiLogOut,
-  FiChevronDown,
+  FiHelpCircle
 } from 'react-icons/fi';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
-import { useAuth } from '@/contexts/AuthContext';
-
+import { useAuth } from '@/contexts/SupabaseAuthProvider';
 
 const Navbar = () => {
   const location = useLocation();
@@ -38,18 +37,18 @@ const Navbar = () => {
     window.location.href = '/login';
   };
 
-  // Get first letter of user's name (from full_name or username)
+  // Get first letter of user's name (from username)
   const getUserInitial = () => {
     if (!user) return 'U';
-    // Try to get first letter from full name if available, otherwise from username
-    const name = user.fullName || user.username || 'User';
+    // Use username since fullName is not available
+    const name = user.username || 'User';
     return name.charAt(0).toUpperCase();
   };
 
-  // Get display name (full name or username)
+  // Get display name (username)
   const getDisplayName = () => {
     if (!user) return 'User';
-    return user.fullName || user.username || 'User';
+    return user.username || 'User';
   };
 
   const navItems = [

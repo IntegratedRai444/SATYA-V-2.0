@@ -50,6 +50,25 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Import services
+try:
+    from services.cache import CacheManager
+    from services.database import DatabaseManager
+    from services.websocket import WebSocketManager
+
+    DB_AVAILABLE = True
+except ImportError:
+    logger.warning("Database services not available")
+    DB_AVAILABLE = False
+
+# Import ML services
+try:
+    from satyaai_core import get_satyaai_instance
+    ML_AVAILABLE = True
+except ImportError:
+    logger.warning("ML services not available")
+    ML_AVAILABLE = False
+
 # Import routers
 try:
     from routes.analysis import router as analysis_router
@@ -69,84 +88,7 @@ try:
 
     ROUTES_AVAILABLE = True
 except ImportError as e:
-    logger.warning(f"Some routes not available: {e}")
     ROUTES_AVAILABLE = False
-
-# Import services
-try:
-    from services.cache import CacheManager
-    from services.database import DatabaseManager
-    from services.websocket import WebSocketManager
-
-    DB_AVAILABLE = True
-except ImportError:
-    logger.warning("Database services not available")
-    DB_AVAILABLE = False
-
-# Import ML detectors (controlled by environment variable)
-ML_AVAILABLE = False
-ENABLE_ML = os.getenv("ENABLE_ML_MODELS", "true").lower() == "true"  # Default to true
-
-# Advanced features configuration
-ENABLE_ADVANCED_IMAGE_MODEL = os.getenv("ENABLE_ADVANCED_IMAGE_MODEL", "false").lower() == "true"
-ENABLE_VIDEO_OPTIMIZATION = os.getenv("ENABLE_VIDEO_OPTIMIZATION", "false").lower() == "true"
-ENABLE_ENHANCED_AUDIO = os.getenv("ENABLE_ENHANCED_AUDIO", "false").lower() == "true"
-ENABLE_AUDIO_MODEL = os.getenv("ENABLE_AUDIO_MODEL", "false").lower() == "true"
-ENABLE_ENHANCED_VIDEO_MODEL = os.getenv("ENABLE_ENHANCED_VIDEO_MODEL", "false").lower() == "true"
-
-if ENABLE_ML:
-    try:
-        logger.info("🔄 Attempting to load ML models...")
-        
-        # Import torch first
-        import torch
-        
-        # Load detectors with advanced features
-        from detectors.audio_detector import AudioDetector
-        from detectors.image_detector import ImageDetector
-        from detectors.multimodal_fusion_detector import \
-            MultimodalFusionDetector
-        from detectors.text_nlp_detector import TextNLPDetector
-        from detectors.video_detector import VideoDetector
-
-        # Initialize with advanced features
-        audio_detector = AudioDetector(
-            device="cuda" if torch.cuda.is_available() else "cpu",
-            use_enhanced_audio=ENABLE_ENHANCED_AUDIO,
-            use_audio_model=ENABLE_AUDIO_MODEL
-        )
-        
-        image_detector = ImageDetector(
-            enable_gpu=torch.cuda.is_available(),
-            use_advanced_model=ENABLE_ADVANCED_IMAGE_MODEL
-        )
-        
-        video_detector = VideoDetector(
-            use_optimization=ENABLE_VIDEO_OPTIMIZATION,
-            use_enhanced_model=ENABLE_ENHANCED_VIDEO_MODEL
-        )
-        
-        multimodal_detector = MultimodalFusionDetector()
-        text_detector = TextNLPDetector()
-
-        # Store in app state
-        app.state.audio_detector = audio_detector
-        app.state.image_detector = image_detector
-        app.state.video_detector = video_detector
-        app.state.multimodal_detector = multimodal_detector
-        app.state.text_detector = text_detector
-
-        ML_AVAILABLE = True
-        logger.info("✅ All ML models loaded successfully")
-        logger.info(f"🔧 Advanced Features - Image: {ENABLE_ADVANCED_IMAGE_MODEL}, Video: {ENABLE_VIDEO_OPTIMIZATION}, Audio: {ENABLE_ENHANCED_AUDIO}")
-
-    except Exception as e:
-        logger.error(f"❌ Failed to load ML models: {e}")
-        ML_AVAILABLE = False
-else:
-    logger.info(
-        "ℹ️ ML models disabled by default (set ENABLE_ML_MODELS=true to enable)"
-    )
 
 # Import monitoring
 try:
@@ -228,7 +170,7 @@ async def lifespan(app: FastAPI):
         # Cleanup resources
         if DB_AVAILABLE:
             logger.info("Closing database connections...")
-            # await db_manager.disconnect()
+            await db_manager.disconnect()
 
         logger.info("✅ Server shutdown complete")
 
@@ -236,18 +178,7 @@ async def lifespan(app: FastAPI):
         logger.error(f"Error during shutdown: {e}", exc_info=True)
 
 
-# Initialize FastAPI app with lifespan
-class BlockBrowserMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        user_agent = request.headers.get("user-agent", "").lower()
-        if "mozilla" in user_agent or "chrome" in user_agent or "safari" in user_agent:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Direct browser access to the API is not allowed. Please use the Node.js gateway.",
-            )
-        return await call_next(request)
-
-
+# Initialize FastAPI app with lifespan (single instance)
 app = FastAPI(
     title="SatyaAI Internal API",
     docs_url="/api/docs",  # Enable Swagger UI at /api/docs
@@ -594,15 +525,7 @@ async def websocket_endpoint(websocket: WebSocket):
             pass
 
 
-# ============================================================================
-# STARTUP MESSAGE (handled in lifespan context manager above)
-# ============================================================================
-# Note: @app.on_event("startup") is deprecated in FastAPI 0.109+
-# Startup logic is now in the lifespan context manager
 
-# ============================================================================
-# RUN SERVER
-# ============================================================================
 
 if __name__ == "__main__":
     import uvicorn

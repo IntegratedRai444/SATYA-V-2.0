@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/SupabaseAuthProvider';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Form, FormField, FormItem, FormLabel, FormMessage } from '../../components/ui/form';
@@ -137,8 +137,12 @@ export function RegisterForm() {
       // Generate a username from email (or use a better method if needed)
       const username = values.email.split('@')[0];
       
-      // Call the register function from AuthContext
-      const success = await register(username, values.email, values.password);
+      // Call register function from AuthContext with RegisterData object
+      const success = await register({
+        username,
+        email: values.email,
+        password: values.password
+      });
       
       if (success) {
         // On successful registration and auto-login, redirect to dashboard

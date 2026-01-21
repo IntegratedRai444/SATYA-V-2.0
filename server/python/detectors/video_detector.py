@@ -47,7 +47,7 @@ except:
 
 # Import video optimization utilities
 try:
-    from ..models.video_optimized import FrameProcessor
+    from models.video_optimized import FrameProcessor
     VIDEO_OPTIMIZATION_AVAILABLE = True
     logger.info("Video optimization utilities available")
 except ImportError:
@@ -56,7 +56,7 @@ except ImportError:
 
 # Import enhanced video model
 try:
-    from ..models.video_model_enhanced import VideoProcessor as EnhancedVideoProcessor
+    from models.video_model_enhanced import VideoProcessor as EnhancedVideoProcessor
     ENHANCED_VIDEO_MODEL_AVAILABLE = True
     logger.info("Enhanced video model available")
 except ImportError:

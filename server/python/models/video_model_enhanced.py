@@ -1,4 +1,4 @@
-""
+"""
 Enhanced Video Model for Deepfake Detection
 Implements temporal analysis and frame processing for video deepfake detection.
 """

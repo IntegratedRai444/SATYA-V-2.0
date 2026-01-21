@@ -3,7 +3,7 @@
  * Eliminates notification duplication across:
  * - AppContext.tsx
  * - RealtimeContext.tsx
- * - AuthContext.tsx
+ * - SupabaseAuthProvider.tsx
  * - useNotifications.ts hook
  */
 

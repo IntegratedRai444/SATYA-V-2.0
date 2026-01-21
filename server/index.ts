@@ -748,10 +748,10 @@ async function startServer() {
     logger.info('✅ Server initialized with Supabase - no database initialization needed');
 
     // Start the server
-    const server = app.listen(config.PORT, config.HOST || '0.0.0.0', () => {
-      console.log(`🚀 Server running on http://${config.HOST || '0.0.0.0'}:${config.PORT}`);
-      console.log(`📊 Health check: http://${config.HOST || '0.0.0.0'}:${config.PORT}/health`);
-      console.log(`📚 API docs: http://${config.HOST || '0.0.0.0'}:${config.PORT}/api-docs`);
+    const server = app.listen(config.PORT, '0.0.0.0', () => {
+      console.log(`🚀 Server running on http://0.0.0.0:${config.PORT}`);
+      console.log(`📊 Health check: http://0.0.0.0:${config.PORT}/health`);
+      console.log(`📚 API docs: http://0.0.0.0:${config.PORT}/api-docs`);
     });
 
     // Handle graceful shutdown
@@ -785,6 +785,12 @@ function logConfigurationSummary() {
 startServer()
   .then((server) => {
     logConfigurationSummary();
+    
+    // Initialize WebSocket manager if enabled
+    if (webSocketManager && process.env.ENABLE_WEBSOCKETS === 'true') {
+      webSocketManager.initialize(server);
+      logger.info('WebSocket server initialized');
+    }
     
     // Handle graceful shutdown
     process.on('SIGTERM', () => {

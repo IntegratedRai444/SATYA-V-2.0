@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getAuthToken } from '@/services/auth';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/SupabaseAuthProvider';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,23 +9,17 @@ import { Eye, EyeOff, Shield, AlertTriangle, User, Lock, Loader2 } from 'lucide-
 export default function Login() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { login, error, isLoading, clearError } = useAuth();
+  const { login, error, isLoading, clearError, isAuthenticated } = useAuth();
 
   useEffect(() => {
     console.log('Login component mounted');
     console.log('Auth state:', { error, isLoading });
 
-    const checkAuth = async () => {
-      try {
-        const token = await getAuthToken();
-        console.log('Current auth token exists:', !!token);
-      } catch (err) {
-        console.error('Auth check error:', err);
-      }
-    };
-
-    checkAuth();
-  }, []);
+    // Redirect if already authenticated
+    if (isAuthenticated) {
+      navigate('/dashboard');
+    }
+  }, [isAuthenticated, navigate]);
 
   const [showPassword, setShowPassword] = useState(false);
   const [showRoleSelection, setShowRoleSelection] = useState(false);
@@ -79,17 +72,34 @@ export default function Login() {
       setNetworkError(null);
       setFormErrors({});
 
-      if (login) {
-        await login(formData.email, formData.password);
+      console.log('Attempting login with:', { email: formData.email, passwordLength: formData.password.length });
 
-        const returnUrl = validateReturnUrl(searchParams.get('returnUrl')) || '/dashboard';
-        navigate(returnUrl);
+      if (login) {
+        const result = await login({
+          email: formData.email,
+          password: formData.password
+        });
+
+        console.log('Login result:', result);
+
+        if (result.user) {
+          const returnUrl = validateReturnUrl(searchParams.get('returnUrl')) || '/dashboard';
+          console.log('Login successful, navigating to:', returnUrl);
+          navigate(returnUrl);
+        } else {
+          throw new Error('Login failed - no user returned');
+        }
       }
     } catch (err: any) {
-      console.error('Login error:', err);
+      console.error('Login error details:', {
+        message: err.message,
+        response: err.response,
+        status: err.response?.status,
+        stack: err.stack
+      });
 
       if (err.message === 'Network Error') {
-        setNetworkError('Unable to connect to the server. Please check your internet connection.');
+        setNetworkError('Unable to connect to server. Please check your internet connection and ensure the server is running on port 5001.');
       } else if (err.response) {
         switch (err.response.status) {
           case 401:
@@ -102,10 +112,10 @@ export default function Login() {
             setFormErrors({ ...formErrors, general: 'Server error. Please try again later.' });
             break;
           default:
-            setFormErrors({ ...formErrors, general: 'An error occurred during login' });
+            setFormErrors({ ...formErrors, general: `Server error (${err.response.status}). Please try again.` });
         }
       } else {
-        setFormErrors({ ...formErrors, general: 'An unexpected error occurred' });
+        setFormErrors({ ...formErrors, general: 'An unexpected error occurred. Please try again.' });
       }
     }
   };
@@ -166,25 +176,25 @@ export default function Login() {
 
   return (
     <ErrorBoundary>
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#0a0e1a] p-4">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#0f0f23] p-4">
         <div className="w-full max-w-md mb-8">
           {/* Logo and Header */}
           <div className="text-center">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl mb-4 shadow-lg shadow-blue-500/50">
               <Shield className="w-8 h-8 text-white" />
             </div>
-            <h1 className="text-4xl font-bold text-white mb-2">SatyaAI</h1>
-            <p className="text-slate-400 text-sm">Deepfake detection  Platform</p>
+            <h1 className="text-4xl font-bold text-white mb-2">Satya</h1>
+            <p className="text-slate-400 text-sm">Deepfake Detection System</p>
           </div>
         </div>
 
         {/* Subtitle */}
         <p className="text-center text-slate-300 text-sm mb-8">
-          Secure access to advanced cybersecurity intelligence and analysis tools
+          Secure access to advanced deepfake detection and analysis tools
         </p>
 
         {/* Login Card */}
-        <div className="bg-[#0f1420] border border-slate-800 rounded-2xl p-8 shadow-2xl w-full max-w-md">
+        <div className="bg-[#1a1f2e] border border-slate-800 rounded-2xl p-8 shadow-2xl w-full max-w-md">
           {/* Secure Login Header */}
           <div className="flex items-center justify-center gap-2 mb-8">
             <Lock className="w-5 h-5 text-slate-400" />
@@ -213,9 +223,8 @@ export default function Login() {
                       required
                       value={formData.email}
                       onChange={handleInputChange}
-                      className={`appearance-none block w-full px-3 py-2 border ${
-                        formErrors.email ? 'border-red-300' : 'border-gray-300'
-                      } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm`}
+                      className={`appearance-none block w-full px-3 py-2 border ${formErrors.email ? 'border-red-300' : 'border-gray-300'
+                        } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm`}
                       aria-invalid={!!formErrors.email}
                       aria-describedby={formErrors.email ? 'email-error' : undefined}
                     />
@@ -239,9 +248,8 @@ export default function Login() {
                       required
                       value={formData.password}
                       onChange={handleInputChange}
-                      className={`appearance-none block w-full px-3 py-2 border ${
-                        formErrors.password ? 'border-red-300' : 'border-gray-300'
-                      } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm`}
+                      className={`appearance-none block w-full px-3 py-2 border ${formErrors.password ? 'border-red-300' : 'border-gray-300'
+                        } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm`}
                       aria-invalid={!!formErrors.password}
                       aria-describedby={formErrors.password ? 'password-error' : undefined}
                     />
@@ -268,18 +276,15 @@ export default function Login() {
                     <button
                       type="button"
                       onClick={() => handleRoleSelect('admin')}
-                      className={`p-4 rounded-lg border-2 transition-all ${
-                        selectedRole === 'admin'
+                      className={`p-4 rounded-lg border-2 transition-all ${selectedRole === 'admin'
                           ? 'border-blue-500 bg-blue-500/10'
                           : 'border-slate-700 bg-[#1a1f2e] hover:border-slate-600'
-                      }`}
+                        }`}
                     >
-                      <Shield className={`w-8 h-8 mx-auto mb-2 ${
-                        selectedRole === 'admin' ? 'text-blue-400' : 'text-slate-400'
-                      }`} />
-                      <p className={`font-medium ${
-                        selectedRole === 'admin' ? 'text-blue-400' : 'text-slate-300'
-                      }`}>
+                      <Shield className={`w-8 h-8 mx-auto mb-2 ${selectedRole === 'admin' ? 'text-blue-400' : 'text-slate-400'
+                        }`} />
+                      <p className={`font-medium ${selectedRole === 'admin' ? 'text-blue-400' : 'text-slate-300'
+                        }`}>
                         Admin
                       </p>
                       <p className="text-xs text-slate-500 mt-1">Full Access</p>
@@ -288,18 +293,15 @@ export default function Login() {
                     <button
                       type="button"
                       onClick={() => handleRoleSelect('user')}
-                      className={`p-4 rounded-lg border-2 transition-all ${
-                        selectedRole === 'user'
+                      className={`p-4 rounded-lg border-2 transition-all ${selectedRole === 'user'
                           ? 'border-cyan-500 bg-cyan-500/10'
                           : 'border-slate-700 bg-[#1a1f2e] hover:border-slate-600'
-                      }`}
+                        }`}
                     >
-                      <User className={`w-8 h-8 mx-auto mb-2 ${
-                        selectedRole === 'user' ? 'text-cyan-400' : 'text-slate-400'
-                      }`} />
-                      <p className={`font-medium ${
-                        selectedRole === 'user' ? 'text-cyan-400' : 'text-slate-300'
-                      }`}>
+                      <User className={`w-8 h-8 mx-auto mb-2 ${selectedRole === 'user' ? 'text-cyan-400' : 'text-slate-400'
+                        }`} />
+                      <p className={`font-medium ${selectedRole === 'user' ? 'text-cyan-400' : 'text-slate-300'
+                        }`}>
                         User
                       </p>
                       <p className="text-xs text-slate-500 mt-1">Standard Access</p>

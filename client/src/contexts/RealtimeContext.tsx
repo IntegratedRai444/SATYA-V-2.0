@@ -1,12 +1,8 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
-import {
-  webSocketService,
-  WebSocketMessage,
-  ScanUpdateMessage,
-  SystemAlertMessage
-} from '@/services/websocket';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from '@/components/ui/use-toast';
-import { useAuth } from './AuthContext';
+import { useAuth } from '@/contexts/SupabaseAuthProvider';
+import { webSocketService } from '@/services/websocket';
+import type { WebSocketMessage, ScanUpdateMessage, SystemAlertMessage } from '@/types/websocket';
 
 export type NotificationType = 'info' | 'success' | 'warning' | 'error';
 
@@ -76,7 +72,7 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       read: false,
     };
 
-    setNotifications(prev => [newNotification, ...prev].slice(0, 50)); // Keep only the 50 most recent
+    setNotifications((prev: Notification[]) => [newNotification, ...prev].slice(0, 50)); // Keep only the 50 most recent
     setLastUpdate(new Date());
 
     // Show toast for important notifications
@@ -91,8 +87,8 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // Mark notification as read
   const markAsRead = useCallback((id: string) => {
-    setNotifications(prev =>
-      prev.map(notif =>
+    setNotifications((prev: Notification[]) =>
+      prev.map((notif: Notification) =>
         notif.id === id ? { ...notif, read: true } : notif
       )
     );
@@ -100,8 +96,8 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // Mark all notifications as read
   const markAllAsRead = useCallback(() => {
-    setNotifications(prev =>
-      prev.map(notif => ({
+    setNotifications((prev: Notification[]) =>
+      prev.map((notif: Notification) => ({
         ...notif,
         read: true
       }))
@@ -129,7 +125,7 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const unsubscribe = webSocketService.subscribe((message: WebSocketMessage) => {
       if (message.type === 'scan_update' && message.payload.scanId === scanId) {
         const scanMessage = message as ScanUpdateMessage;
-        setActiveScans(prev => ({
+        setActiveScans((prev: RealtimeContextType['activeScans']) => ({
           ...prev,
           [scanId]: {
             status: scanMessage.payload.status,
@@ -224,7 +220,7 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       });
     });
 
-    const unsubscribeReconnecting = webSocketService.on('reconnecting', (data: any) => {
+    const unsubscribeReconnecting = webSocketService.on('reconnecting', (data: { attempt: number; maxAttempts: number }) => {
       setConnectionStatus('connecting');
       setReconnectAttempt(data.attempt);
       addNotification({
