@@ -2,24 +2,25 @@ import express, { type Express } from "express";
 import fs from "fs";
 import path from "path";
 import { type Server } from "http";
-import { nanoid } from "nanoid";
 
-// Dynamic import for Vite to avoid type issues
+// Vite dynamic imports - using any for dynamic imports to avoid type conflicts
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let vite: any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let createViteServer: any;
 
 // This will be populated when Vite is loaded
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let viteServer: any;
 
 // Get directory name in CommonJS
 const currentDir = process.cwd();
-const __dirname = path.dirname(process.argv[1] || '');
 
 // Simple logger since createLogger was removed
 const viteLogger = {
   info: (msg: string) => console.log(`[vite] ${msg}`),
   warn: (msg: string) => console.warn(`[vite] ${msg}`),
-  error: (msg: string, options?: any) => {
+  error: (msg: string, options?: unknown) => {
     console.error(`[vite] ${msg}`, options || '');
     process.exit(1);
   }

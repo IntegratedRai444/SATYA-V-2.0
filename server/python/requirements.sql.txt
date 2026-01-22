@@ -1,0 +1,17 @@
+# SatyaAI Optional SQLAlchemy Requirements
+# Install ONLY if you need advanced ORM features in the future
+# NOT REQUIRED for current Supabase-based functionality
+
+# Database ORM (Optional)
+sqlalchemy>=2.0.45
+alembic>=1.13.0
+
+# Database Migration Tools
+alembic>=1.13.0
+
+# Advanced Database Features (if needed)
+psycopg2-binary>=2.9.0
+asyncpg>=0.29.0
+
+# Connection Pooling (if needed)
+sqlalchemy-utils>=0.41.0

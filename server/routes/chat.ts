@@ -2,6 +2,8 @@ import { Router, type Request, type Response } from 'express';
 import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { supabaseAuth } from '../middleware/supabase-auth';
+import { supabase } from '../config/supabase';
+import { auditLogger } from '../middleware/audit-logger';
 
 // Extend the Express Request type to include user
 interface AuthenticatedRequest extends Request {
@@ -10,8 +12,8 @@ interface AuthenticatedRequest extends Request {
     email: string;
     role: string;
     email_verified: boolean;
-    user_metadata?: Record<string, any>;
-    [key: string]: any; // Allow additional properties
+    user_metadata?: Record<string, unknown>;
+    [key: string]: unknown; // Allow additional properties
   };
 }
 import { logger } from '../config';
@@ -37,11 +39,76 @@ const openai = new OpenAI({
 // Check if OpenAI is properly configured
 const isChatEnabled = process.env.ENABLE_CHAT === 'true' && process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'sk-placeholder-key-replace-with-real-key' && process.env.OPENAI_API_KEY.startsWith('sk-');
 
-// In-memory conversation storage (use database in production)
-const conversations = new Map<string, ChatCompletionMessageParam[]>();
+// Database conversation storage
+interface DatabaseConversation {
+  id: string;
+  user_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Helper functions for database operations
+const createConversation = async (userId: string, title: string): Promise<string> => {
+  const { data, error } = await supabase
+    .from('chat_conversations')
+    .insert({
+      user_id: userId,
+      title: title || 'New Chat'
+    })
+    .select('id')
+    .single();
+  
+  if (error) throw error;
+  return data.id;
+};
+
+const getConversationMessages = async (conversationId: string): Promise<ChatCompletionMessageParam[]> => {
+  const { data, error } = await supabase
+    .from('chat_messages')
+    .select('role, content, created_at')
+    .eq('conversation_id', conversationId)
+    .order('created_at', { ascending: true });
+  
+  if (error) throw error;
+  
+  return data.map(msg => ({
+    role: msg.role as 'user' | 'assistant' | 'system',
+    content: msg.content
+  }));
+};
+
+const saveMessage = async (conversationId: string, role: 'user' | 'assistant', content: string): Promise<void> => {
+  const { error } = await supabase
+    .from('chat_messages')
+    .insert({
+      conversation_id: conversationId,
+      role,
+      content
+    });
+  
+  if (error) throw error;
+  
+  // Update conversation timestamp
+  await supabase
+    .from('chat_conversations')
+    .update({ updated_at: new Date().toISOString() })
+    .eq('id', conversationId);
+};
+
+const getUserConversations = async (userId: string): Promise<DatabaseConversation[]> => {
+  const { data, error } = await supabase
+    .from('chat_conversations')
+    .select('id, title, created_at, updated_at')
+    .eq('user_id', userId)
+    .order('updated_at', { ascending: false });
+  
+  if (error) throw error;
+  return data as DatabaseConversation[];
+};
 
 // POST /api/chat/message - Send message to AI assistant
-router.post('/message', chatRateLimit, supabaseAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/message', chatRateLimit, supabaseAuth, auditLogger('chat_message_send', 'chat_message'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     // Check if chat is enabled
     if (!isChatEnabled) {
@@ -77,11 +144,31 @@ router.post('/message', chatRateLimit, supabaseAuth, async (req: AuthenticatedRe
       });
     }
 
-    // Get or create conversation history
-    const convId = conversationId || `conv-${Date.now()}`;
-    let history = conversations.get(convId) || [];
+    // Get or create conversation
+    let convId = conversationId;
+    let history: ChatCompletionMessageParam[] = [];
+    
+    if (convId) {
+      // Load existing conversation
+      try {
+        history = await getConversationMessages(convId);
+      } catch (error) {
+        logger.error('Failed to load conversation:', error);
+        // If conversation doesn't exist, create new one
+        convId = null;
+      }
+    }
+    
+    if (!convId) {
+      // Create new conversation
+      convId = await createConversation(req.user!.id, 'New Chat');
+      history = [];
+    }
 
-    // Add user message to history
+    // Save user message to database
+    await saveMessage(convId, 'user', message);
+    
+    // Add user message to history for API call
     history.push({
       role: 'user',
       content: message
@@ -158,8 +245,8 @@ You are Satya Sentinel.`
       content: assistantMessage
     });
 
-    // Store updated history
-    conversations.set(convId, history);
+    // Save assistant message to database
+    await saveMessage(convId, 'assistant', assistantMessage);
 
     // Return response
     res.json({
@@ -176,17 +263,18 @@ You are Satya Sentinel.`
       }
     });
 
-  } catch (error: any) {
-    logger.error('Chat error:', error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Failed to process message';
+    console.error('Chat error:', error);
     res.status(500).json({
       success: false,
-      error: error.message || 'Failed to process message'
+      error: errorMessage
     });
   }
 });
 
 // GET /api/chat/history - Get chat history
-router.get('/history', supabaseAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/history', supabaseAuth, auditLogger('sensitive_data_access', 'chat_conversations'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     // Check if chat is enabled
     if (!isChatEnabled) {
@@ -197,43 +285,74 @@ router.get('/history', supabaseAuth, async (req: AuthenticatedRequest, res: Resp
       });
     }
 
-    // Convert conversations to history format
-    const history = Array.from(conversations.entries()).map(([id, messages]) => {
-      const firstMsg = messages[0];
-      const lastMsg = messages[messages.length - 1];
-      const firstContent = firstMsg && 'content' in firstMsg && typeof firstMsg.content === 'string' ? firstMsg.content : '';
-      const lastContent = lastMsg && 'content' in lastMsg && typeof lastMsg.content === 'string' ? lastMsg.content : '';
-      
-      return {
-        id,
-        title: firstContent.substring(0, 50) || 'New Conversation',
-        timestamp: new Date(),
-        preview: lastContent.substring(0, 100) || ''
-      };
-    });
+    // Get user's conversations from database
+    const conversations = await getUserConversations(req.user!.id);
+    
+    // Convert to history format with message previews
+    const history = await Promise.all(
+      conversations.map(async (conv) => {
+        const messages = await getConversationMessages(conv.id);
+        const firstMsg = messages[0];
+        const lastMsg = messages[messages.length - 1];
+        const firstContent = (typeof firstMsg?.content === 'string' ? firstMsg.content : '') || '';
+        const lastContent = (typeof lastMsg?.content === 'string' ? lastMsg.content : '') || '';
+        
+        return {
+          id: conv.id,
+          title: firstContent.substring(0, 50) || 'New Conversation',
+          timestamp: new Date(conv.updated_at),
+          preview: lastContent.substring(0, 100) || ''
+        };
+      })
+    );
 
     res.json({
       success: true,
       data: history
     });
-  } catch (error: any) {
-    logger.error('Chat history error:', error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Failed to fetch chat history';
+    console.error('Chat history error:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch chat history'
+      error: errorMessage
     });
   }
 });
 
 // GET /api/chat/conversation/:id - Get specific conversation
-router.get('/conversation/:id', supabaseAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/conversation/:id', supabaseAuth, auditLogger('sensitive_data_access', 'chat_conversation'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const history = conversations.get(id) || [];
+    const userId = req.user?.id;
+    
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'User not authenticated'
+      });
+    }
 
+    // Verify conversation belongs to user
+    const { data: conversation, error: convError } = await supabase
+      .from('chat_conversations')
+      .select('id')
+      .eq('id', id)
+      .eq('user_id', userId)
+      .single();
+    
+    if (convError || !conversation) {
+      return res.status(404).json({
+        success: false,
+        error: 'Conversation not found'
+      });
+    }
+
+    const history = await getConversationMessages(id);
+    
     const messages = history.map((msg, index) => ({
       id: `${id}-${index}`,
-      content: msg.content,
+      content: typeof msg.content === 'string' ? msg.content : '',
       isUser: msg.role === 'user',
       timestamp: new Date()
     }));
@@ -242,56 +361,83 @@ router.get('/conversation/:id', supabaseAuth, async (req: AuthenticatedRequest, 
       success: true,
       data: messages
     });
-  } catch (error: any) {
-    logger.error('Get conversation error:', error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Failed to fetch conversation';
+    console.error('Get conversation error:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch conversation'
+      error: errorMessage
     });
   }
 });
 
 // DELETE /api/chat/conversation/:id - Delete conversation
-router.delete('/history/:id', supabaseAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/history/:id', supabaseAuth, auditLogger('admin_action', 'chat_conversation'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    conversations.delete(id);
+    const userId = req.user?.id;
+    
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'User not authenticated'
+      });
+    }
+
+    // Soft delete conversation
+    const { error } = await supabase
+      .from('chat_conversations')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('user_id', userId);
+    
+    if (error) {
+      throw error;
+    }
+
+    // Soft delete messages
+    await supabase
+      .from('chat_messages')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('conversation_id', id);
 
     res.json({
       success: true,
       message: 'Conversation deleted'
     });
-  } catch (error: any) {
-    logger.error('Delete conversation error:', error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Failed to delete conversation';
+    console.error('Delete conversation error:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to delete conversation'
+      error: errorMessage
     });
   }
 });
 
 // POST /api/chat/suggestions - Get suggested responses
-router.post('/suggestions', supabaseAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/suggestions', supabaseAuth, auditLogger('sensitive_data_access', 'chat_suggestions'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { message, conversationContext } = req.body;
-    
-    // Generate contextual suggestions based on the message
+    // Generate contextual suggestions based on common deepfake detection queries
     const suggestions = [
-      "Can you explain this analysis result in more detail?",
-      "What confidence level should I be concerned about?",
-      "How does this compare to other similar analyses?",
-      "What steps should I take based on this result?"
+      'How does deepfake detection work?',
+      'What file formats are supported?',
+      'How accurate is the detection?',
+      'What should I look for in fake media?',
+      'Can you explain confidence scores?',
+      'How do I protect myself from deepfakes?'
     ];
-    
+
     res.json({
       success: true,
       data: suggestions
     });
-  } catch (error) {
-    logger.error('Chat suggestions error:', error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Failed to generate suggestions';
+    console.error('Chat suggestions error:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to generate suggestions'
+      error: errorMessage
     });
   }
 });

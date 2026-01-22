@@ -7,6 +7,11 @@ import { z } from 'zod';
 import { ZodError } from 'zod';
 import RedisStore from 'rate-limit-redis';
 import { createClient } from 'redis';
+import crypto from 'crypto';
+
+// Node.js globals
+declare const Buffer: typeof globalThis.Buffer;
+declare const process: typeof globalThis.process;
 
 declare module 'express-serve-static-core' {
   interface Request {
@@ -15,7 +20,7 @@ declare module 'express-serve-static-core' {
       email: string;
       role: string;
       email_verified: boolean;
-      user_metadata?: Record<string, any>;
+      user_metadata?: Record<string, unknown>;
     };
     rateLimit?: {
       limit: number;
@@ -85,7 +90,7 @@ const initializeRateLimitStore = async () => {
       
       // Create Redis store with proper typing
       const redisStore = new RedisStore({
-        // @ts-ignore - The Redis client type is compatible
+        // Type assertion for Redis client compatibility
         sendCommand: (...args: string[]) => redisClient.sendCommand(args),
         prefix: 'ratelimit:'
       });
@@ -113,7 +118,7 @@ export type Request = ExpressRequest & {
     email: string;
     role: string;
     email_verified: boolean;
-    user_metadata?: Record<string, any>;
+    user_metadata?: Record<string, unknown>;
   };
   rateLimit?: {
     limit: number;
@@ -128,8 +133,6 @@ const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 const MAX_REQUESTS_PER_WINDOW = 100; // General API requests
 const MAX_AUTH_REQUESTS = 10; // Auth-specific endpoints (login, register, etc.)
 const MAX_REFRESH_REQUESTS = 5; // Refresh token requests per window
-const MAX_LOGIN_ATTEMPTS = 5; // Login attempts before temporary block
-const LOGIN_BLOCK_DURATION = 15 * 60 * 1000; // 15 minutes block after max attempts
 
 // Create rate limiters as functions that return the configured middleware
 const createRateLimiters = async () => {
@@ -139,7 +142,7 @@ const createRateLimiters = async () => {
   const apiRateLimiter = rateLimit({
     windowMs: RATE_LIMIT_WINDOW_MS,
     max: MAX_REQUESTS_PER_WINDOW,
-    store: store as any, // Type assertion for RedisStore compatibility
+    store: store as RedisStore | MemoryStore, // Type assertion for RedisStore compatibility
     skip: (req: ExpressRequest) => {
       // Skip rate limiting for health checks and static files
       return req.path === '/health' || req.path.startsWith('/static/');
@@ -147,7 +150,7 @@ const createRateLimiters = async () => {
     keyGenerator: (req) => {
       return (req.ip || 'unknown') + ':' + (req.user?.id || 'anonymous');
     },
-    handler: (req, res) => {
+    handler: (req: ExpressRequest, res: Response) => {
       res.status(429).json({
         success: false,
         code: 'RATE_LIMIT_EXCEEDED',
@@ -163,8 +166,8 @@ const createRateLimiters = async () => {
     message: 'Too many authentication attempts, please try again later.',
     standardHeaders: true,
     legacyHeaders: false,
-    store: store as any, // Type assertion needed due to RedisStore type issues
-    keyGenerator: (req) => {
+    store: store as RedisStore | MemoryStore, // Type assertion needed due to RedisStore type issues
+    keyGenerator: (req: ExpressRequest) => {
       // Include both IP and email if available for auth endpoints
       const identifier = req.body?.email || 'unknown';
       return `auth:${req.ip || 'unknown'}:${identifier}`;
@@ -173,7 +176,7 @@ const createRateLimiters = async () => {
       // Skip rate limiting for password reset requests
       return req.path.includes('reset-password');
     },
-    handler: (req, res) => {
+    handler: (req: ExpressRequest, res: Response) => {
       res.status(429).json({
         success: false,
         code: 'AUTH_RATE_LIMIT_EXCEEDED',
@@ -190,14 +193,14 @@ const createRateLimiters = async () => {
     message: 'Too many refresh token attempts, please try again later.',
     standardHeaders: true,
     legacyHeaders: false,
-    store: store as any, // Type assertion needed due to RedisStore type issues
-    keyGenerator: (req) => {
+    store: store as RedisStore | MemoryStore, // Type assertion needed due to RedisStore type issues
+    keyGenerator: (req: ExpressRequest) => {
       // Use IP + user ID if available, otherwise just IP
       const userId = req.user?.id || 'anonymous';
       const refreshToken = req.body?.refresh_token || 'none';
       return `refresh:${req.ip || 'unknown'}:${userId}:${refreshToken.substring(0, 10)}`;
     },
-    handler: (req, res) => {
+    handler: (req: ExpressRequest, res: Response) => {
       const retryAfter = Math.ceil(RATE_LIMIT_WINDOW_MS / 1000);
       res.status(429).json({
         success: false,
@@ -249,17 +252,17 @@ export const speedLimiter = slowDown({
   delayMs: 1000 // Add 1 second of delay per request above delayAfter
 });
 
-// Token validation schema
-const tokenSchema = z.object({
-  sub: z.string().uuid(),
-  email: z.string().email(),
-  role: z.enum(['user', 'admin', 'moderator']).default('user'),
-  exp: z.number().int().positive(),
-  iat: z.number().int().positive()
-});
+// Token validation schema (kept for potential future use)
+// const tokenSchema = z.object({
+//   sub: z.string().uuid(),
+//   email: z.string().email(),
+//   role: z.enum(['user', 'admin', 'moderator']).default('user'),
+//   exp: z.number().int().positive(),
+//   iat: z.number().int().positive()
+// });
 
 /**
- * JWT Authentication Middleware with enhanced security and email verification
+ * Supabase Authentication Middleware with enhanced security and email verification
  */
 export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -268,8 +271,8 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     const authHeader = req.headers.authorization;
     
     // Also check for token in cookies (for web clients)
-    if (!authHeader && req.cookies?.auth_token) {
-      token = req.cookies.auth_token;
+    if (!authHeader && req.cookies?.['sb-access-token']) {
+      token = req.cookies['sb-access-token'];
     } else if (authHeader?.startsWith('Bearer ')) {
       token = authHeader.split(' ')[1];
     }
@@ -415,15 +418,12 @@ export const requireRole = (roles: UserRole | UserRole[]) => {
 };
 
 // CSRF token generation and validation
-import crypto from 'crypto';
-
 const CSRF_TOKEN_SECRET = process.env.CSRF_TOKEN_SECRET || 'dev_csrf_secret_for_development_only';
 if (process.env.NODE_ENV !== 'development' && CSRF_TOKEN_SECRET.length < 32) {
   throw new Error('CSRF_TOKEN_SECRET must be at least 32 characters long');
 }
 
 const CSRF_TOKEN_AGE = 60 * 60 * 1000; // 1 hour (reduced from 24h)
-const CSRF_TOKEN_LENGTH = 64; // 256 bits
 
 /**
  * Generate a CSRF token with HMAC
@@ -608,7 +608,8 @@ export const errorHandler = (
   err: Error,
   req: Request,
   res: Response,
-  next: NextFunction
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _next: NextFunction
 ) => {
   logger.error(`[${new Date().toISOString()}] ${req.method} ${req.path}`, {
     error: err.message,

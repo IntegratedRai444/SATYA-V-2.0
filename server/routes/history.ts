@@ -1,7 +1,5 @@
-import { Router, Request, Response, NextFunction } from 'express';
-import { body, type ValidationChain } from 'express-validator';
-import { validateRequest } from '../middleware/validate-request';
-import { authenticate } from '../middleware/auth.middleware';
+import { Router, Request, Response } from 'express';
+import { supabaseAuth } from '../middleware/supabase-auth';
 import { supabase } from '../config/supabase';
 import { logger } from '../config/logger';
 
@@ -15,27 +13,15 @@ declare module 'express-serve-static-core' {
       email: string;
       role: string;
       email_verified: boolean;
-      user_metadata?: Record<string, any> | undefined;
+      user_metadata?: Record<string, unknown> | undefined;
     };
   }
 }
 
-// Validation chains
-const createJobValidation: ValidationChain[] = [
-  body('modality').isIn(['image', 'audio', 'video', 'multimodal']).withMessage('Invalid modality'),
-  body('status').isIn(['pending', 'processing', 'completed', 'failed']).withMessage('Invalid status'),
-  body('filename').notEmpty().withMessage('Filename is required'),
-  body('mime_type').notEmpty().withMessage('MIME type is required'),
-  body('size_bytes').isInt({ min: 0 }).withMessage('Size must be positive'),
-  body('confidence').isFloat({ min: 0, max: 1 }).withMessage('Confidence must be between 0 and 1'),
-  body('is_deepfake').isBoolean().withMessage('is_deepfake must be boolean'),
-  body('model_name').notEmpty().withMessage('Model name is required'),
-  body('model_version').notEmpty().withMessage('Model version is required'),
-];
 
 // GET /api/v2/history - Get paginated list of user's analysis jobs
 router.get('/',
-  authenticate,
+  supabaseAuth,
   async (req: Request, res: Response) => {
     try {
       const userId = req.user?.id;
@@ -53,24 +39,21 @@ router.get('/',
 
       // Fetch user's analysis jobs with pagination
       const { data: jobs, error } = await supabase
-        .from('analysis_jobs')
+        .from('tasks')
         .select(`
           id,
-          modality,
+          type,
           status,
-          filename,
-          mime_type,
-          size_bytes,
-          confidence,
-          is_deepfake,
-          model_name,
-          model_version,
-          summary,
+          file_name,
+          file_type,
+          file_size,
+          result,
+          report_code,
           created_at,
-          completed_at,
-          report_code
+          completed_at
         `)
         .eq('user_id', userId)
+        .eq('type', 'analysis')
         .order('created_at', { ascending: false })
         .range(offset, limit);
 
@@ -84,16 +67,28 @@ router.get('/',
 
       // Get total count for pagination
       const { count } = await supabase
-        .from('analysis_jobs')
+        .from('tasks')
         .select('*', { count: 'exact', head: true })
-        .eq('user_id', userId);
+        .eq('user_id', userId)
+        .eq('type', 'analysis');
 
       const totalPages = Math.ceil((count || 0) / limit);
 
       res.json({
         success: true,
         data: {
-          jobs: jobs || [],
+          jobs: jobs?.map(job => ({
+            ...job,
+            modality: job.type,
+            filename: job.file_name,
+            mime_type: job.file_type,
+            size_bytes: job.file_size,
+            confidence: job.result?.confidence,
+            is_deepfake: job.result?.is_deepfake,
+            model_name: job.result?.model_name,
+            model_version: job.result?.model_version,
+            summary: job.result?.summary
+          })) || [],
           pagination: {
             page,
             limit,
@@ -116,7 +111,7 @@ router.get('/',
 
 // GET /api/v2/history/:jobId - Get full job details with analysis results
 router.get('/:jobId',
-  authenticate,
+  supabaseAuth,
   async (req: Request, res: Response) => {
     try {
       const userId = req.user?.id;
@@ -131,35 +126,30 @@ router.get('/:jobId',
 
       // Fetch job details
       const { data: job, error: jobError } = await supabase
-        .from('analysis_jobs')
+        .from('tasks')
         .select(`
           id,
-          modality,
+          type,
           status,
-          filename,
-          mime_type,
-          size_bytes,
-          file_hash,
+          file_name,
+          file_type,
+          file_size,
+          file_path,
           progress,
           metadata,
-          error_message,
-          priority,
-          retry_count,
+          error,
           report_code,
           started_at,
           completed_at,
           created_at,
-          updated_at,
-          confidence,
-          is_deepfake,
-          model_name,
-          model_version,
-          summary
+          updated_at
         `)
         .eq('id', jobId)
         .eq('user_id', userId)
+        .eq('type', 'analysis')
         .single();
 
+      
       if (jobError || !job) {
         return res.status(404).json({
           success: false,
@@ -167,30 +157,47 @@ router.get('/:jobId',
         });
       }
 
-      // Fetch analysis results for this job
-      const { data: results, error: resultsError } = await supabase
-        .from('analysis_results')
-        .select(`
-          id,
-          model_name,
-          confidence,
-          is_deepfake,
-          analysis_data,
-          proof_json,
-          created_at
-        `)
-        .eq('job_id', jobId)
-        .order('created_at', { ascending: false });
-
-      if (resultsError) {
-        logger.error('Failed to fetch analysis results:', resultsError);
-        // Continue without results rather than failing
-      }
+      // Fetch analysis results (stored in tasks.result)
+      const jobWithResult = job as {
+        result?: {
+          confidence?: number;
+          is_deepfake?: boolean;
+          model_name?: string;
+          model_version?: string;
+          summary?: Record<string, unknown>;
+          analysis_data?: Record<string, unknown>;
+          proof_json?: Record<string, unknown>;
+          [key: string]: unknown;
+        };
+      } | null;
+      
+      const analysisData = jobWithResult?.result;
+      const results = analysisData ? [{
+        id: job.id,
+        model_name: analysisData.model_name || 'SatyaAI',
+        confidence: analysisData.confidence,
+        is_deepfake: analysisData.is_deepfake,
+        analysis_data: analysisData,
+        proof_json: analysisData.proof_json || {},
+        created_at: job.created_at
+      }] : [];
 
       res.json({
         success: true,
         data: {
-          job,
+          job: {
+            ...job,
+            modality: job.type,
+            filename: job.file_name,
+            mime_type: job.file_type,
+            size_bytes: job.file_size,
+            confidence: analysisData?.confidence,
+            is_deepfake: analysisData?.is_deepfake,
+            model_name: analysisData?.model_name,
+            model_version: analysisData?.model_version,
+            summary: analysisData?.summary,
+            error_message: job.error
+          },
           results: results || []
         }
       });
@@ -206,7 +213,7 @@ router.get('/:jobId',
 
 // DELETE /api/v2/history/:jobId - Delete a specific analysis job
 router.delete('/:jobId',
-  authenticate,
+  supabaseAuth,
   async (req: Request, res: Response) => {
     try {
       const userId = req.user?.id;
@@ -221,10 +228,11 @@ router.delete('/:jobId',
 
       // First check if job belongs to user
       const { data: job, error: checkError } = await supabase
-        .from('analysis_jobs')
+        .from('tasks')
         .select('id')
         .eq('id', jobId)
         .eq('user_id', userId)
+        .eq('type', 'analysis')
         .single();
 
       if (checkError || !job) {
@@ -236,10 +244,11 @@ router.delete('/:jobId',
 
       // Delete the job (cascade will delete related analysis_results)
       const { error: deleteError } = await supabase
-        .from('analysis_jobs')
+        .from('tasks')
         .delete()
         .eq('id', jobId)
-        .eq('user_id', userId);
+        .eq('user_id', userId)
+        .eq('type', 'analysis');
 
       if (deleteError) {
         logger.error('Failed to delete analysis job:', deleteError);
@@ -271,24 +280,32 @@ export const createAnalysisJob = async (
     filename: string;
     mime_type: string;
     size_bytes: number;
-    file_hash?: string;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
     status?: 'pending' | 'processing' | 'completed' | 'failed';
   }
 ) => {
   const { data, error } = await supabase
-    .from('analysis_jobs')
+    .from('tasks')
     .insert({
       user_id: userId,
-      modality: jobData.modality,
-      status: 'processing',
-      filename: jobData.filename,
-      mime_type: jobData.mime_type,
-      size_bytes: jobData.size_bytes,
-      file_hash: jobData.file_hash,
-      metadata: jobData.metadata || {},
+      type: 'analysis', // Fixed: Always use 'analysis' for task type
+      status: jobData.status || 'processing',
+      file_name: jobData.filename,
+      file_type: jobData.mime_type,
+      file_size: jobData.size_bytes,
+      metadata: { 
+        ...jobData.metadata, 
+        media_type: jobData.modality // Store modality in metadata for reference
+      },
       progress: 0,
-      started_at: new Date().toISOString()
+      started_at: new Date().toISOString(),
+      result: {
+        confidence: 0,
+        is_deepfake: false,
+        model_name: 'SatyaAI',
+        model_version: '1.0.0',
+        summary: {}
+      }
     })
     .select('id, report_code')
     .single();
@@ -310,26 +327,30 @@ export const updateAnalysisJobWithResults = async (
     is_deepfake?: boolean;
     model_name?: string;
     model_version?: string;
-    summary?: Record<string, any>;
-    analysis_data?: Record<string, any>;
-    proof_json?: Record<string, any>;
+    summary?: Record<string, unknown>;
+    analysis_data?: Record<string, unknown>;
+    proof_json?: Record<string, unknown>;
     error_message?: string;
   }
 ) => {
   // Update the job
   const { data: jobUpdate, error: jobUpdateError } = await supabase
-    .from('analysis_jobs')
+    .from('tasks')
     .update({
       status: results.status,
-      confidence: results.confidence,
-      is_deepfake: results.is_deepfake,
-      model_name: results.model_name,
-      model_version: results.model_version,
-      summary: results.summary,
       progress: results.status === 'completed' ? 100 : 0,
       completed_at: results.status === 'completed' ? new Date().toISOString() : null,
-      error_message: results.error_message,
-      updated_at: new Date().toISOString()
+      error: results.error_message,
+      updated_at: new Date().toISOString(),
+      result: {
+        confidence: results.confidence || 0,
+        is_deepfake: results.is_deepfake || false,
+        model_name: results.model_name || 'SatyaAI',
+        model_version: results.model_version || '1.0.0',
+        summary: results.summary || {},
+        analysis_data: results.analysis_data || {},
+        proof_json: results.proof_json || {}
+      }
     })
     .eq('id', jobId)
     .select()
@@ -338,27 +359,6 @@ export const updateAnalysisJobWithResults = async (
   if (jobUpdateError) {
     logger.error('Failed to update analysis job:', jobUpdateError);
     throw new Error('Failed to update analysis job');
-  }
-
-  // Insert analysis results if provided
-  if (results.analysis_data || results.proof_json) {
-    const { data: resultInsert, error: resultInsertError } = await supabase
-      .from('analysis_results')
-      .insert({
-        job_id: jobId,
-        model_name: results.model_name || 'SatyaAI',
-        confidence: results.confidence,
-        is_deepfake: results.is_deepfake,
-        analysis_data: results.analysis_data || {},
-        proof_json: results.proof_json || {}
-      })
-      .select()
-      .single();
-
-    if (resultInsertError) {
-      logger.error('Failed to insert analysis results:', resultInsertError);
-      throw new Error('Failed to save analysis results');
-    }
   }
 
   return jobUpdate;

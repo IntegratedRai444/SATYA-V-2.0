@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import request from 'supertest';
 import express, { Express } from 'express';
-import analysisRouter from '../../../routes/analysis';
+import { analysisRouter } from '../../../routes/analysis.routes';
 // Mock dependencies
 jest.mock('../../../middleware/auth');
 jest.mock('../../../middleware/upload');
-jest.mock('../../../services/python-bridge');
+jest.mock('../../../services/python-http-bridge');
 jest.mock('../../../config/logger');
 describe('Analysis Routes', () => {
     let app;

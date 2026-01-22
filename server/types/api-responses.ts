@@ -6,7 +6,7 @@ export interface BaseResponse {
   timestamp?: string;
 }
 
-export interface SuccessResponse<T = any> extends BaseResponse {
+export interface SuccessResponse<T = unknown> extends BaseResponse {
   success: true;
   data?: T;
 }

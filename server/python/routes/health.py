@@ -44,6 +44,22 @@ async def detailed_health_check(request: Request):
         "multimodal_detector": hasattr(app.state, "multimodal_detector"),
     }
 
+    # Database status
+    database_status = {
+        "connected": False,
+        "response_time_ms": 0,
+        "error": None
+    }
+    
+    try:
+        from services.database import get_db_manager
+        db_manager = get_db_manager()
+        database_health = await db_manager.health_check()
+        database_status = database_health
+    except Exception as e:
+        database_status["error"] = str(e)
+        database_status["connected"] = False
+
     return {
         "status": "healthy",
         "version": "2.0.0",
@@ -67,6 +83,7 @@ async def detailed_health_check(request: Request):
         "components": {
             "api": "healthy",
             "ml_inference": "healthy" if all(ml_status.values()) else "degraded",
-            "database": "healthy",
+            "database": "healthy" if database_status["connected"] else "unhealthy",
+            "database_details": database_status,
         },
     }

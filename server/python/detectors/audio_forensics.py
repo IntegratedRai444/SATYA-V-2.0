@@ -47,8 +47,19 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # Try to import optional dependencies
 try:
-    from speechbrain.pretrained import EncoderClassifier
-    SPEECHBRAIN_AVAILABLE = True
+    # Fix for speechbrain compatibility with newer torchaudio
+    import torchaudio
+    if hasattr(torchaudio, 'list_audio_backends'):
+        from speechbrain.pretrained import EncoderClassifier
+        SPEECHBRAIN_AVAILABLE = True
+    else:
+        # Fallback for newer torchaudio versions
+        try:
+            from speechbrain.pretrained import EncoderClassifier
+            SPEECHBRAIN_AVAILABLE = True
+        except (ImportError, AttributeError) as e:
+            SPEECHBRAIN_AVAILABLE = False
+            logger.warning(f"speechbrain not compatible with current torchaudio version: {e}")
 except ImportError:
     SPEECHBRAIN_AVAILABLE = False
     logger.warning("speechbrain not installed. Some features will be disabled. Run: pip install speechbrain")

@@ -2,7 +2,13 @@ import { Server as HttpServer } from 'http';
 import { WebSocket, WebSocketServer as WSServer } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../../config/logger';
-import { verifyToken } from '../auth';
+import { supabase } from '../../config/supabase';
+
+// Node.js globals
+declare const process: typeof globalThis.process;
+declare const setInterval: typeof globalThis.setInterval;
+declare const clearInterval: typeof globalThis.clearInterval;
+declare const URL: typeof globalThis.URL;
 
 interface WebSocketClient extends WebSocket {
   id: string;
@@ -168,9 +174,9 @@ export class WebSocketManager {
         return callback(false, 401, 'Authentication required');
       }
 
-      // Verify token
-      const decoded = await verifyToken(token);
-      if (!decoded) {
+      // Verify token with Supabase
+      const { data: { user }, error } = await supabase.auth.getUser(token);
+      if (error || !user) {
         return callback(false, 403, 'Invalid or expired token');
       }
 
@@ -181,7 +187,7 @@ export class WebSocketManager {
       };
 
       // Store user info for later use
-      info.req.user = decoded;
+      info.req.user = user;
 
       // Connection accepted
       callback(true);

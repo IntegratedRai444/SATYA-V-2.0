@@ -1,6 +1,8 @@
 import winston from 'winston';
 import path from 'path';
+import fs from 'fs';
 import { config } from './environment';
+import type { Request, Response, NextFunction } from 'express';
 
 // Define log levels
 const logLevels = {
@@ -20,6 +22,27 @@ const logColors = {
 
 winston.addColors(logColors);
 
+// Secret redaction patterns
+const secretPatterns = [
+  /password[:=]\s*[^\s]+/gi,
+  /secret[:=]\s*[^\s]+/gi,
+  /key[:=]\s*[^\s]+/gi,
+  /token[:=]\s*[^\s]+/gi,
+  /auth[:=]\s*[^\s]+/gi,
+  /supabase.*service.*key/gi,
+  /database.*url/gi,
+  /jwt.*secret/gi,
+  /csrf.*token/gi,
+  /openai.*key/gi,
+  /sk-[a-zA-Z0-9]{20,}/gi
+];
+
+// Redact sensitive information from log messages
+function redactSecrets(message: unknown): string {
+  const messageStr = typeof message === 'string' ? message : JSON.stringify(message);
+  return messageStr.replace(new RegExp(secretPatterns.map((pattern) => pattern.source).join('|'), 'gi'), '[REDACTED]');
+}
+
 // Create custom format for development
 const developmentFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
@@ -28,7 +51,9 @@ const developmentFormat = winston.format.combine(
     const { requestId, traceId, spanId, ...restMeta } = meta;
     const traceInfo = requestId ? `[${requestId}|${traceId}|${spanId}]` : '';
     const metaStr = Object.keys(restMeta).length ? JSON.stringify(restMeta, null, 2) : '';
-    return `${timestamp} ${traceInfo} [${level}]: ${message} ${metaStr}`.trim();
+    const redactedMessage = redactSecrets(message);
+    const redactedMeta = redactSecrets(metaStr);
+    return `${timestamp} ${traceInfo} [${level}]: ${redactedMessage} ${redactedMeta}`.trim();
   })
 );
 
@@ -36,13 +61,13 @@ const developmentFormat = winston.format.combine(
 const productionFormat = winston.format.combine(
   winston.format.timestamp(),
   winston.format.errors({ stack: true }),
-  winston.format((info: any) => {
+  winston.format((info) => {
     // Add tracing context to all log entries
     const { requestId, traceId, spanId, ...rest } = info;
-    const result: any = { ...rest };
-    if (requestId) result.requestId = requestId;
-    if (traceId) result.traceId = traceId;
-    if (spanId) result.spanId = spanId;
+    const result = { ...rest };
+    if (requestId) (result as any).requestId = requestId;
+    if (traceId) (result as any).traceId = traceId;
+    if (spanId) (result as any).spanId = spanId;
     return result;
   })(),
   winston.format.json()
@@ -66,7 +91,6 @@ function createTransports(): winston.transport[] {
     const logFile = config.LOG_FILE || './logs/app.log';
 
     // Ensure log directory exists
-    const fs = require('fs');
     if (!fs.existsSync(logDir)) {
       fs.mkdirSync(logDir, { recursive: true });
     }
@@ -107,7 +131,7 @@ export const logger = winston.createLogger({
 
 // Create request logger middleware
 export function createRequestLogger() {
-  return (req: any, res: any, next: any) => {
+  return (req: Request, res: Response, next: NextFunction) => {
     const start = Date.now();
     
     // Log request
@@ -139,7 +163,7 @@ export function createRequestLogger() {
 }
 
 // Create error logger
-export function logError(error: Error, context?: Record<string, any>) {
+export function logError(error: Error, context?: Record<string, unknown>) {
   logger.error('Application Error', {
     message: error.message,
     stack: error.stack,
@@ -150,7 +174,7 @@ export function logError(error: Error, context?: Record<string, any>) {
 }
 
 // Create performance logger
-export function logPerformance(operation: string, duration: number, context?: Record<string, any>) {
+export function logPerformance(operation: string, duration: number, context?: Record<string, unknown>) {
   logger.info('Performance Metric', {
     operation,
     duration: `${duration}ms`,
@@ -160,7 +184,7 @@ export function logPerformance(operation: string, duration: number, context?: Re
 }
 
 // Create security logger
-export function logSecurity(event: string, context?: Record<string, any>) {
+export function logSecurity(event: string, context?: Record<string, unknown>) {
   logger.warn('Security Event', {
     event,
     ...context,
@@ -169,7 +193,7 @@ export function logSecurity(event: string, context?: Record<string, any>) {
 }
 
 // Create database logger
-export function logDatabase(operation: string, context?: Record<string, any>) {
+export function logDatabase(operation: string, context?: Record<string, unknown>) {
   logger.debug('Database Operation', {
     operation,
     ...context,
@@ -178,7 +202,7 @@ export function logDatabase(operation: string, context?: Record<string, any>) {
 }
 
 // Create AI engine logger
-export function logAIEngine(operation: string, context?: Record<string, any>) {
+export function logAIEngine(operation: string, context?: Record<string, unknown>) {
   logger.info('AI Engine Operation', {
     operation,
     ...context,
@@ -209,7 +233,7 @@ export function logAnalysis(
       responseTime?: number;
       retryAttempt?: number;
     };
-    [key: string]: any;
+    [key: string]: unknown;
   }
 ) {
   const logLevel = event === 'error' ? 'error' : event === 'timeout' ? 'warn' : 'info';
@@ -235,7 +259,7 @@ export function logPythonBridge(
     circuitBreakerState?: string;
     requestId?: string;
     fileSize?: number;
-    [key: string]: any;
+    [key: string]: unknown;
   }
 ) {
   const logLevel = operation === 'error' || operation === 'timeout' ? 'error' : 
@@ -259,7 +283,7 @@ export function logFileProcessing(
     uploadPath?: string;
     processingTime?: number;
     error?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   }
 ) {
   const logLevel = event === 'error' ? 'error' : 'info';
@@ -282,7 +306,7 @@ export function logSystemHealth(
     diskUsage?: number;
     connectionCount?: number;
     error?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   }
 ) {
   const logLevel = status === 'unhealthy' ? 'error' : status === 'degraded' ? 'warn' : 'info';
@@ -306,7 +330,7 @@ export function logUserActivity(
     sessionId?: string;
     analysisType?: string;
     filename?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   }
 ) {
   logger.info(`User Activity ${action.toUpperCase()}`, {

@@ -10,7 +10,9 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 // Polyfill for Node.js globals
 const nodePolyfills = {
   name: 'polyfill-node',
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   setup(build: any) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     build.onResolve({ filter: /^node:/ }, (args: any) => ({
       path: args.path.replace(/^node:/, ''),
       namespace: 'node',
@@ -20,6 +22,7 @@ const nodePolyfills = {
 
 export default defineConfig(({ mode }) => {
   // Load env variables based on the current mode
+  // eslint-disable-next-line no-undef
   const env = loadEnv(mode, process.cwd(), '');
   
   // Validate required environment variables
@@ -66,7 +69,8 @@ export default defineConfig(({ mode }) => {
       global: 'globalThis',
       __dirname: JSON.stringify(''),
       __filename: JSON.stringify(''),
-      __APP_VERSION__: JSON.stringify(process.env.npm_package_version),
+      // eslint-disable-next-line no-undef
+      __APP_VERSION__: JSON.stringify(process.env?.npm_package_version || ''),
     },
     resolve: {
       alias: {
@@ -85,10 +89,10 @@ export default defineConfig(({ mode }) => {
       open: true,
       proxy: {
         '/api': {
-          target: 'http://localhost:5173',
+          target: 'http://localhost:5001',
           changeOrigin: true,
           secure: false,
-          rewrite: (path) => path.replace(/^\/api/, ''),
+          rewrite: (path) => path.replace(/^\/api/, '/api'),
         },
       },
       hmr: {

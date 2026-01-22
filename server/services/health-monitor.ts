@@ -1,12 +1,12 @@
 import { EventEmitter } from 'events';
-import * as fs from 'fs/promises';
 import * as os from 'os';
-import pythonBridgeEnhanced from './python-http-bridge';
+import { setInterval, clearInterval, setImmediate, setTimeout } from 'timers';
+import process from 'process';
+import pythonBridge from './python-http-bridge';
 import { fileProcessor } from './file-processor';
 import { webSocketService } from './websocket/WebSocketManager';
 import { supabase } from '../config/supabase';
 import { logger } from '../config/logger';
-const logSystemHealth = logger.info;
 import checkDiskSpace from 'check-disk-space';
 
 interface HealthMetrics {
@@ -58,10 +58,13 @@ interface AlertThresholds {
 class HealthMonitor extends EventEmitter {
   private metrics: HealthMetrics[] = [];
   private alertThresholds: AlertThresholds;
-  private monitoringInterval: NodeJS.Timeout | null = null;
-  private alertCooldowns: Map<string, number> = new Map();
+  private healthCheckInterval: ReturnType<typeof setInterval> | null = null;
+  private isMonitoring = false;
+  private alertCooldowns = new Map<string, number>();
   private readonly maxMetricsHistory = 100;
   private readonly alertCooldownPeriod = 5 * 60 * 1000; // 5 minutes
+  private readonly CHECK_INTERVAL = 30000;
+  private readonly NodeJSType = (globalThis as Record<string, unknown>).NodeJS;
 
   constructor() {
     super();
@@ -84,15 +87,9 @@ class HealthMonitor extends EventEmitter {
    */
   private startMonitoring(): void {
     // Run health check every 30 seconds
-    this.monitoringInterval = setInterval(async () => {
-      try {
-        await this.performHealthCheck();
-      } catch (error) {
-        logger.error('Health check failed', {
-          error: (error as Error).message
-        });
-      }
-    }, 30000);
+    this.healthCheckInterval = setInterval(() => {
+      this.performHealthCheck();
+    }, this.CHECK_INTERVAL);
 
     // Perform initial health check
     setImmediate(() => this.performHealthCheck());
@@ -108,10 +105,10 @@ class HealthMonitor extends EventEmitter {
       timestamp: new Date(),
       pythonServer: await this.checkPythonServer(),
       database: await this.checkDatabase(),
-      websocket: this.checkWebSocket(),
+      websocket: await this.checkWebSocket(),
       fileSystem: await this.checkFileSystem(),
       memory: this.checkMemory(),
-      processing: this.checkProcessing()
+      processing: await this.checkProcessing()
     };
 
     // Store metrics
@@ -138,23 +135,16 @@ class HealthMonitor extends EventEmitter {
       const startTime = Date.now();
       
       // Check if Python bridge has a health check method
-      if (typeof (pythonBridgeEnhanced as any).checkHealth === 'function') {
-        const health = await (pythonBridgeEnhanced as any).checkHealth();
+      if (typeof pythonBridge.checkServiceHealth === 'function') {
+        const isHealthy = await pythonBridge.checkServiceHealth();
         const responseTime = Date.now() - startTime;
 
-        const status = health.healthy ? 'healthy' : 'unhealthy';
+        const status: 'healthy' | 'degraded' | 'unhealthy' = isHealthy ? 'healthy' : 'unhealthy';
         
-        logSystemHealth('python_server', status, {
-          responseTime,
-          circuitBreakerState: health.circuitBreakerState,
-          error: health.error
-        });
-
         return {
           status,
           responseTime,
-          lastError: health.error,
-          circuitBreakerState: health.circuitBreakerState
+          lastError: isHealthy ? undefined : 'Service health check failed'
         };
       } else {
         // Python bridge doesn't have health check, assume degraded
@@ -185,7 +175,7 @@ class HealthMonitor extends EventEmitter {
       const startTime = Date.now();
       
       // Try direct database connection using dbManager
-      const timeoutPromise = new Promise((_, reject) => 
+      const timeoutPromise = new Promise<never>((_, reject) => 
         setTimeout(() => reject(new Error('Database query timeout')), 3000)
       );
       
@@ -194,24 +184,17 @@ class HealthMonitor extends EventEmitter {
       try {
         await Promise.race([queryPromise, timeoutPromise]);
         const responseTime = Date.now() - startTime;
-        const status = responseTime > this.alertThresholds.databaseResponseTime ? 'degraded' : 'healthy';
-        logSystemHealth('database', status, { responseTime, method: 'postgresql' });
+        const status: 'healthy' | 'degraded' | 'unhealthy' = responseTime > this.alertThresholds.databaseResponseTime ? 'degraded' : 'healthy';
+        
+        logger.info('database', status, { responseTime, method: 'postgresql' });
         return { status, responseTime };
-      } catch (pgError) {
+      } catch (pgError: unknown) {
         // Database check failed, mark as unhealthy
         logger.error('Database health check failed:', pgError);
-        const restStartTime = Date.now();
-        const isHealthy = false;
-        const responseTime = Date.now() - restStartTime;
-        
-        if (isHealthy) {
-          logSystemHealth('database', 'healthy', { responseTime, method: 'rest-api' });
-          return { status: 'healthy', responseTime };
-        }
         throw new Error('Both PostgreSQL and REST API failed');
       }
-    } catch (error) {
-      const errorMessage = (error as Error).message;
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       
       // Check if it's a connection error (expected when using REST API only)
       if (errorMessage.includes('ENOTFOUND') || errorMessage.includes('getaddrinfo')) {
@@ -222,7 +205,7 @@ class HealthMonitor extends EventEmitter {
         };
       }
       
-      logSystemHealth('database', 'unhealthy', { error: errorMessage });
+      logger.info('database', 'unhealthy', { error: errorMessage });
       return {
         status: 'unhealthy',
         lastError: errorMessage
@@ -233,27 +216,27 @@ class HealthMonitor extends EventEmitter {
   /**
    * Check WebSocket health
    */
-  private checkWebSocket(): HealthMetrics['websocket'] {
+  private async checkWebSocket(): Promise<HealthMetrics['websocket']> {
     try {
       const stats = webSocketService.getManager().getStats();
-      const status = stats.totalConnections > 0 ? 'healthy' : 'degraded';
-
-      logSystemHealth('websocket', status, {
+      const status: 'healthy' | 'degraded' | 'unhealthy' = stats.totalConnections > 0 ? 'healthy' : 'degraded';
+      
+      logger.info('websocket', status, {
         connectionCount: stats.totalConnections,
         connectedUsers: stats.connectedUsers,
-        channels: stats.channels
+        channels: stats.channels || 0
       });
-
+      
       return {
         status,
         connectionCount: stats.totalConnections,
         connectedUsers: stats.connectedUsers
       };
-    } catch (error) {
-      logSystemHealth('websocket', 'unhealthy', {
-        error: (error as Error).message
+    } catch (error: unknown) {
+      logger.info('websocket', 'unhealthy', {
+        error: error instanceof Error ? error.message : 'Unknown error'
       });
-
+      
       return {
         status: 'unhealthy',
         connectionCount: 0,
@@ -274,25 +257,27 @@ class HealthMonitor extends EventEmitter {
       const used = total - free;
       const percentage = total > 0 ? (used / total) * 100 : 0;
       
-      const status = percentage > this.alertThresholds.diskUsagePercentage ? 'degraded' : 'healthy';
-
-      logSystemHealth('file_system', status, {
+      const status: 'healthy' | 'degraded' | 'unhealthy' = percentage > this.alertThresholds.diskUsagePercentage ? 'degraded' : 'healthy';
+      
+      logger.info('file_system', status, {
         diskUsage: parseFloat(percentage.toFixed(2)),
         availableSpace: Math.round(free / (1024 * 1024 * 1024)) // Convert to GB
       });
-
+      
       return {
         status,
         diskUsage: parseFloat(percentage.toFixed(2)),
         availableSpace: Math.round(free / (1024 * 1024 * 1024)) // Convert to GB
       };
-    } catch (error) {
-      logSystemHealth('file_system', 'unhealthy', {
-        error: (error as Error).message
+    } catch (error: unknown) {
+      logger.info('file_system', 'unhealthy', {
+        error: error instanceof Error ? error.message : 'Unknown error'
       });
-
+      
       return {
-        status: 'unhealthy'
+        status: 'unhealthy',
+        diskUsage: 0,
+        availableSpace: 0
       };
     }
   }
@@ -307,9 +292,9 @@ class HealthMonitor extends EventEmitter {
       const usedMemory = totalMemory - freeMemory;
       const percentage = (usedMemory / totalMemory) * 100;
 
-      const status = percentage > this.alertThresholds.memoryUsagePercentage ? 'degraded' : 'healthy';
+      const status: 'healthy' | 'degraded' | 'unhealthy' = percentage > this.alertThresholds.memoryUsagePercentage ? 'degraded' : 'healthy';
 
-      logSystemHealth('memory', status, {
+      logger.info('memory', status, {
         memoryUsage: percentage,
         usedMemory: usedMemory / (1024 * 1024 * 1024), // GB
         totalMemory: totalMemory / (1024 * 1024 * 1024) // GB
@@ -321,9 +306,9 @@ class HealthMonitor extends EventEmitter {
         available: freeMemory,
         percentage
       };
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error('Memory check failed', {
-        error: (error as Error).message
+        error: error instanceof Error ? error.message : 'Unknown error'
       });
 
       return {
@@ -338,10 +323,10 @@ class HealthMonitor extends EventEmitter {
   /**
    * Check processing health
    */
-  private checkProcessing(): HealthMetrics['processing'] {
+  private async checkProcessing(): Promise<HealthMetrics['processing']> {
     try {
       const stats = fileProcessor.getStats();
-      const status = stats.activeProcesses > 0 ? 'healthy' : 'degraded';
+      const status: 'healthy' | 'degraded' | 'unhealthy' = stats.activeProcesses > 0 ? 'healthy' : 'degraded';
       
       return {
         status,
@@ -349,7 +334,7 @@ class HealthMonitor extends EventEmitter {
         processingJobs: stats.activeProcesses,
         errorRate: 0 // Track error rate if needed
       };
-    } catch (error) {
+    } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       logger.error('Error checking processing health:', { error: errorMessage });
       
@@ -378,7 +363,7 @@ class HealthMonitor extends EventEmitter {
         available: Math.round(available / (1024 * 1024)), // Convert to MB
         total: Math.round(total / (1024 * 1024)) // Convert to MB
       };
-    } catch (error) {
+    } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       logger.error('Error getting disk usage:', { error: errorMessage });
       return {
@@ -468,7 +453,7 @@ class HealthMonitor extends EventEmitter {
   /**
    * Send alert with cooldown mechanism
    */
-  private sendAlert(alert: { type: string; severity: 'warning' | 'critical'; message: string; context: any }): void {
+  private sendAlert(alert: { type: string; severity: 'warning' | 'critical'; message: string; context: unknown }): void {
     const now = Date.now();
     const lastAlert = this.alertCooldowns.get(alert.type) || 0;
 
@@ -483,15 +468,12 @@ class HealthMonitor extends EventEmitter {
     logger.log(logLevel, `ALERT: ${alert.message}`, {
       alertType: alert.type,
       severity: alert.severity,
-      ...alert.context,
+      ...(typeof alert.context === 'object' && alert.context !== null ? alert.context as Record<string, unknown> : {}),
       timestamp: new Date().toISOString()
     });
 
     // Emit alert event
     this.emit('alert', alert);
-
-    // In production, you might want to send alerts to external services
-    // like Slack, PagerDuty, email, etc.
   }
 
   /**
@@ -548,9 +530,9 @@ class HealthMonitor extends EventEmitter {
    * Shutdown health monitor
    */
   shutdown(): void {
-    if (this.monitoringInterval) {
-      clearInterval(this.monitoringInterval);
-      this.monitoringInterval = null;
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
     }
     
     logger.info('Health monitor shutdown completed');

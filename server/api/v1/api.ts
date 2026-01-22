@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { body, validationResult } from 'express-validator';
+import { body } from 'express-validator';
 import { v4 as uuidv4 } from 'uuid';
-import { authenticateToken, authorize } from '../../middleware/auth';
+import { authenticate, requireRole } from '../../middleware/auth.middleware';
 import { asyncHandler, validateRequest } from '../../middleware/errorHandler';
 import { successResponse, errorResponse } from '../../utils/apiResponse';
 import { logger } from '../../config/logger';
@@ -13,7 +13,7 @@ const router = Router();
 router.use(rateLimiter);
 
 // Apply authentication middleware to all API routes
-router.use(authenticateToken as any);
+router.use(authenticate);
 
 // Health check endpoint
 router.get('/health', asyncHandler(async (req, res) => {
@@ -108,7 +108,7 @@ router.get('/jobs/:jobId', asyncHandler(async (req, res) => {
 // Admin-only route example
 router.get(
   '/admin/stats',
-  authorize(['admin']),
+  requireRole(['admin']),
   asyncHandler(async (req, res) => {
     // In a real app, fetch admin stats
     const stats = {

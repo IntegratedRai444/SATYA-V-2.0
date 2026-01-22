@@ -18,7 +18,7 @@ export default function Register() {
     if (isAuthenticated) {
       navigate('/dashboard');
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, navigate, error, isLoading]);
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -117,18 +117,20 @@ export default function Register() {
           throw new Error('Registration failed - no user returned');
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Registration error details:', {
-        message: err.message,
-        response: err.response,
-        status: err.response?.status,
-        stack: err.stack
+        message: err instanceof Error ? err.message : 'Unknown error',
+        response: err && typeof err === 'object' && 'response' in err ? (err as { response?: { status?: number } }).response : undefined,
+        status: err && typeof err === 'object' && 'response' in err ? (err as { response?: { status?: number } }).response?.status : undefined,
+        stack: err instanceof Error ? err.stack : undefined
       });
 
-      if (err.message === 'Network Error') {
+      const errorObj = err as { message?: string; response?: { status?: number } };
+
+      if (errorObj.message === 'Network Error') {
         setNetworkError('Unable to connect to server. Please check your internet connection and ensure server is running on port 5001.');
-      } else if (err.response) {
-        switch (err.response.status) {
+      } else if (errorObj.response) {
+        switch (errorObj.response.status) {
           case 409:
             setFormErrors({ general: 'An account with this email already exists' });
             break;
@@ -139,10 +141,10 @@ export default function Register() {
             setFormErrors({ general: 'Server error. Please try again later.' });
             break;
           default:
-            setFormErrors({ general: `Registration error (${err.response.status}). Please try again.` });
+            setFormErrors({ general: `Registration error (${errorObj.response.status}). Please try again.` });
         }
-      } else if (err.message) {
-        setFormErrors({ general: err.message });
+      } else if (errorObj.message) {
+        setFormErrors({ general: errorObj.message });
       } else {
         setFormErrors({ general: 'An unexpected error occurred during registration' });
       }
@@ -201,29 +203,50 @@ export default function Register() {
 
   return (
     <ErrorBoundary>
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#0f0f23] p-4">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-50 to-white p-4">
         <div className="w-full max-w-md mb-8">
           {/* Logo and Header */}
           <div className="text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl mb-4 shadow-lg shadow-blue-500/50">
-              <Shield className="w-8 h-8 text-white" />
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full mb-6 shadow-lg">
+              <Shield className="w-10 h-10 text-white" />
             </div>
-            <h1 className="text-4xl font-bold text-white mb-2">Satya</h1>
-            <p className="text-slate-400 text-sm">Deepfake Detection System</p>
+            <h1 className="text-3xl font-bold text-gray-800 mb-2">Satya AI</h1>
+            <p className="text-gray-600 text-lg font-medium">Deepfake Detection System</p>
+          </div>
+        </div>
+
+        {/* Illustration */}
+        <div className="w-full max-w-md mb-8">
+          <div className="flex justify-center">
+            <div className="relative">
+              {/* Illustrated character placeholder */}
+              <div className="w-32 h-32 bg-gradient-to-br from-blue-100 to-blue-200 rounded-full flex items-center justify-center">
+                <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center">
+                  <Shield className="w-12 h-12 text-blue-500" />
+                </div>
+              </div>
+              {/* Floating elements */}
+              <div className="absolute -top-2 -right-2 w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                <div className="w-4 h-4 bg-white rounded-full"></div>
+              </div>
+              <div className="absolute -bottom-2 -left-2 w-6 h-6 bg-blue-400 rounded-full flex items-center justify-center">
+                <div className="w-3 h-3 bg-white rounded-full"></div>
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Subtitle */}
-        <p className="text-center text-slate-300 text-sm mb-8">
+        <p className="text-center text-gray-600 text-base mb-8 max-w-md">
           Create your account to access advanced deepfake detection and analysis tools
         </p>
 
         {/* Registration Card */}
-        <div className="bg-[#1a1f2e] border border-slate-800 rounded-2xl p-8 shadow-2xl w-full max-w-md">
-          {/* Secure Registration Header */}
+        <div className="bg-white border border-gray-200 rounded-2xl p-8 shadow-xl w-full max-w-md">
+          {/* Create Account Header */}
           <div className="flex items-center justify-center gap-2 mb-8">
-            <UserPlus className="w-5 h-5 text-slate-400" />
-            <h2 className="text-xl font-semibold text-white">Create Account</h2>
+            <UserPlus className="w-5 h-5 text-blue-500" />
+            <h2 className="text-2xl font-semibold text-gray-800">Create Account</h2>
           </div>
 
           {renderError()}
@@ -246,8 +269,9 @@ export default function Register() {
                   required
                   value={formData.name}
                   onChange={handleInputChange}
-                  className={`appearance-none block w-full px-3 py-2 border ${formErrors.name ? 'border-red-300' : 'border-gray-300'
-                    } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm`}
+                  className={`w-full px-4 py-3 border ${formErrors.name ? 'border-red-300' : 'border-gray-300'
+                    } rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors`}
+                  placeholder="Enter your full name"
                   aria-invalid={!!formErrors.name}
                   aria-describedby={formErrors.name ? 'name-error' : undefined}
                 />
@@ -271,8 +295,9 @@ export default function Register() {
                   required
                   value={formData.email}
                   onChange={handleInputChange}
-                  className={`appearance-none block w-full px-3 py-2 border ${formErrors.email ? 'border-red-300' : 'border-gray-300'
-                    } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm`}
+                  className={`w-full px-4 py-3 border ${formErrors.email ? 'border-red-300' : 'border-gray-300'
+                    } rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors`}
+                  placeholder="Enter your email address"
                   aria-invalid={!!formErrors.email}
                   aria-describedby={formErrors.email ? 'email-error' : undefined}
                 />
@@ -296,20 +321,21 @@ export default function Register() {
                   required
                   value={formData.password}
                   onChange={handleInputChange}
-                  className={`appearance-none block w-full px-3 py-2 border ${formErrors.password ? 'border-red-300' : 'border-gray-300'
-                    } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm`}
+                  className={`w-full px-4 py-3 border ${formErrors.password ? 'border-red-300' : 'border-gray-300'
+                    } rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors`}
+                  placeholder="Create a strong password"
                   aria-invalid={!!formErrors.password}
                   aria-describedby={formErrors.password ? 'password-error' : undefined}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-blue-500 transition-colors"
                 >
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-gray-500">
                 Must contain at least 8 characters, including uppercase, lowercase, and numbers
               </p>
             </div>
@@ -331,15 +357,16 @@ export default function Register() {
                   required
                   value={formData.confirmPassword}
                   onChange={handleInputChange}
-                  className={`appearance-none block w-full px-3 py-2 border ${formErrors.confirmPassword ? 'border-red-300' : 'border-gray-300'
-                    } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm`}
+                  className={`w-full px-4 py-3 border ${formErrors.confirmPassword ? 'border-red-300' : 'border-gray-300'
+                    } rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors`}
+                  placeholder="Confirm your password"
                   aria-invalid={!!formErrors.confirmPassword}
                   aria-describedby={formErrors.confirmPassword ? 'confirmPassword-error' : undefined}
                 />
                 <button
                   type="button"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-blue-500 transition-colors"
                 >
                   {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
@@ -350,7 +377,7 @@ export default function Register() {
             <div className="space-y-4">
               <Button
                 type="submit"
-                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-75"
+                className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-75 transition-all duration-200"
                 disabled={isLoading}
               >
                 {isLoading ? (
@@ -364,11 +391,11 @@ export default function Register() {
               </Button>
 
               <div className="text-center space-y-2">
-                <div className="text-sm text-gray-500">
+                <div className="text-sm text-gray-600">
                   Already have an account?{' '}
                   <a
                     href="/login"
-                    className="font-medium text-blue-600 hover:text-blue-500"
+                    className="font-medium text-blue-600 hover:text-blue-500 transition-colors"
                     onClick={(e) => {
                       e.preventDefault();
                       navigate('/login');
@@ -384,10 +411,10 @@ export default function Register() {
 
         {/* Footer Note */}
         <div className="mt-6 space-y-2">
-          <p className="text-center text-slate-500 text-xs">
+          <p className="text-center text-gray-500 text-xs">
             By creating an account, you agree to our Terms of Service and Privacy Policy
           </p>
-          <p className="text-center text-slate-500 text-xs">
+          <p className="text-center text-gray-500 text-xs">
             Protected by enterprise-grade security
           </p>
         </div>

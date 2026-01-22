@@ -1,16 +1,16 @@
 import { Response } from 'express';
 
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: {
     code: string;
     message: string;
-    details?: any;
+    details?: unknown;
     retryAfter?: number;
-    [key: string]: any; // Allow additional properties
+    [key: string]: unknown; // Allow additional properties
   };
-  meta?: Record<string, any>;
+  meta?: Record<string, unknown>;
   requestId?: string;
   timestamp?: string;
 }
@@ -23,7 +23,7 @@ export class ApiError extends Error {
     public readonly code: string,
     message: string,
     public readonly statusCode: number = 500,
-    public readonly details?: any,
+    public readonly details?: unknown,
     public readonly retryAfter?: number
   ) {
     super(message);
@@ -36,16 +36,24 @@ export class ApiError extends Error {
   }
 
   toJSON() {
-    return {
+    const result: Record<string, unknown> = {
       code: this.code,
       message: this.message,
-      ...(this.details && { details: this.details }),
-      ...(this.retryAfter && { retryAfter: this.retryAfter }),
     };
+    
+    if (this.details) {
+      result.details = this.details;
+    }
+    
+    if (this.retryAfter !== undefined) {
+      result.retryAfter = this.retryAfter;
+    }
+    
+    return result;
   }
 
   // Common error types as static methods
-  static badRequest(message: string, details?: any) {
+  static badRequest(message: string, details?: unknown) {
     return new ApiError('BAD_REQUEST', message, 400, details);
   }
 
@@ -69,7 +77,7 @@ export class ApiError extends Error {
     return new ApiError('TOO_MANY_REQUESTS', message, 429, undefined, retryAfter);
   }
 
-  static validationError(details: any) {
+  static validationError(details: unknown) {
     return new ApiError('VALIDATION_ERROR', 'Validation failed', 422, details);
   }
 
@@ -87,10 +95,10 @@ declare global {
   }
 }
 
-export const successResponse = <T = any>(
+export const successResponse = <T = unknown>(
   res: Response,
   data: T,
-  meta?: Record<string, any>,
+  meta?: Record<string, unknown>,
   statusCode = 200
 ): Response<ApiResponse<T>> => {
   const response: ApiResponse<T> = {
@@ -114,10 +122,19 @@ export const successResponse = <T = any>(
 export interface ErrorResponseOptions {
   code: string;
   message: string;
-  details?: any;
+  details?: unknown;
   statusCode?: number;
   retryAfter?: number;
-  [key: string]: any; // Allow additional properties
+  [key: string]: unknown; // Allow additional properties
+}
+
+interface ErrorObject {
+  code: string;
+  message: string;
+  details?: unknown;
+  retryAfter?: number;
+  stack?: string;
+  [key: string]: unknown;
 }
 
 export const errorResponse = (
@@ -129,27 +146,40 @@ export const errorResponse = (
   
   // Handle ApiError instances
   if (error instanceof ApiError) {
+    const errorObj: ErrorObject = {
+      code: error.code,
+      message: error.message,
+    };
+    
+    if (error.details) {
+      errorObj.details = error.details;
+    }
+    
+    if (error.retryAfter !== undefined) {
+      errorObj.retryAfter = error.retryAfter;
+    }
+    
     response = {
       success: false,
-      error: {
-        code: error.code,
-        message: error.message,
-        ...(error.details && { details: error.details }),
-        ...(error.retryAfter && { retryAfter: error.retryAfter }),
-      },
+      error: errorObj,
       timestamp: new Date().toISOString(),
     };
     statusCode = error.statusCode;
   } 
   // Handle standard Error objects
   else if (error instanceof Error) {
+    const errorObj: ErrorObject = {
+      code: 'INTERNAL_ERROR',
+      message: error.message || 'An unexpected error occurred',
+    };
+    
+    if (process.env.NODE_ENV !== 'production' && error.stack) {
+      errorObj.stack = error.stack;
+    }
+    
     response = {
       success: false,
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: error.message || 'An unexpected error occurred',
-        ...(process.env.NODE_ENV !== 'production' && { stack: error.stack }),
-      },
+      error: errorObj,
       timestamp: new Date().toISOString(),
     };
     statusCode = 500;
@@ -157,14 +187,22 @@ export const errorResponse = (
   // Handle plain error objects
   else {
     const err = error as ErrorResponseOptions;
+    const errorObj: ErrorObject = {
+      code: err.code || 'UNKNOWN_ERROR',
+      message: err.message || 'An unknown error occurred',
+    };
+    
+    if (err.details) {
+      errorObj.details = err.details;
+    }
+    
+    if (err.retryAfter !== undefined) {
+      errorObj.retryAfter = err.retryAfter;
+    }
+    
     response = {
       success: false,
-      error: {
-        code: err.code || 'UNKNOWN_ERROR',
-        message: err.message || 'An unknown error occurred',
-        ...(err.details && { details: err.details }),
-        ...(err.retryAfter && { retryAfter: err.retryAfter }),
-      },
+      error: errorObj,
       timestamp: new Date().toISOString(),
     };
     statusCode = err.statusCode || statusCode;
@@ -188,87 +226,89 @@ export const serverError = (
   // Log the error for debugging
   console.error('Server Error:', error);
 
-  return errorResponse(
-    res,
-    {
-      code: 'INTERNAL_SERVER_ERROR',
-      message: 'An unexpected error occurred',
-      ...(process.env.NODE_ENV !== 'production' && { 
-        details: errorMessage,
-        stack: errorStack 
-      }),
-    },
-    500
-  );
+  const errorDetails: Record<string, unknown> = {
+    code: 'INTERNAL_SERVER_ERROR',
+    message: 'An unexpected error occurred',
+  };
+  
+  if (process.env.NODE_ENV !== 'production') {
+    errorDetails.details = errorMessage;
+    if (errorStack) {
+      errorDetails.stack = errorStack;
+    }
+  }
+
+  return errorResponse(res, errorDetails as ErrorResponseOptions, 500);
 };
 
 export const notFoundResponse = (
   res: Response, 
   resource = 'Resource',
-  details?: any
+  details?: unknown
 ): Response<ApiResponse> => {
-  return errorResponse(
-    res,
-    {
-      code: 'NOT_FOUND',
-      message: `${resource} not found`,
-      ...(details && { details }),
-    },
-    404
-  );
+  const errorDetails: Record<string, unknown> = {
+    code: 'NOT_FOUND',
+    message: `${resource} not found`,
+  };
+  
+  if (details) {
+    errorDetails.details = details;
+  }
+  
+  return errorResponse(res, errorDetails as ErrorResponseOptions, 404);
 };
 
 export const unauthorizedResponse = (
   res: Response, 
   message = 'Unauthorized',
-  details?: any
+  details?: unknown
 ): Response<ApiResponse> => {
-  return errorResponse(
-    res,
-    {
-      code: 'UNAUTHORIZED',
-      message,
-      ...(details && { details }),
-    },
-    401
-  );
+  const errorDetails: Record<string, unknown> = {
+    code: 'UNAUTHORIZED',
+    message,
+  };
+  
+  if (details) {
+    errorDetails.details = details;
+  }
+  
+  return errorResponse(res, errorDetails as ErrorResponseOptions, 401);
 };
 
 export const forbiddenResponse = (
   res: Response, 
   message = 'Forbidden',
-  details?: any
+  details?: unknown
 ): Response<ApiResponse> => {
-  return errorResponse(
-    res,
-    {
-      code: 'FORBIDDEN',
-      message,
-      ...(details && { details }),
-    },
-    403
-  );
+  const errorDetails: Record<string, unknown> = {
+    code: 'FORBIDDEN',
+    message,
+  };
+  
+  if (details) {
+    errorDetails.details = details;
+  }
+  
+  return errorResponse(res, errorDetails as ErrorResponseOptions, 403);
 };
 
 export const validationError = (
   res: Response, 
-  details: any,
+  details: unknown,
   message = 'Validation failed'
 ): Response<ApiResponse> => {
-  return errorResponse(
-    res,
-    {
-      code: 'VALIDATION_ERROR',
-      message,
-      details,
-    },
-    422
-  );
+  const errorDetails: Record<string, unknown> = {
+    code: 'VALIDATION_ERROR',
+    message,
+    details,
+  };
+  
+  return errorResponse(res, errorDetails as ErrorResponseOptions, 422);
 };
 
 // Export all error types for convenience
 export const apiErrors = {
-  badRequest: (message: string, details?: any) => 
+  badRequest: (message: string, details?: unknown) => 
     ApiError.badRequest(message, details),
   
   unauthorized: (message = 'Unauthorized') => 
@@ -286,7 +326,7 @@ export const apiErrors = {
   tooManyRequests: (message = 'Too many requests', retryAfter?: number) => 
     ApiError.tooManyRequests(message, retryAfter),
     
-  validation: (details: any) => 
+  validation: (details: unknown) => 
     ApiError.validationError(details),
     
   internal: (message = 'Internal server error') => 

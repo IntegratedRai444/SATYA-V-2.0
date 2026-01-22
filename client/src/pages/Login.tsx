@@ -19,7 +19,7 @@ export default function Login() {
     if (isAuthenticated) {
       navigate('/dashboard');
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, navigate, error, isLoading]);
 
   const [showPassword, setShowPassword] = useState(false);
   const [showRoleSelection, setShowRoleSelection] = useState(false);
@@ -90,18 +90,20 @@ export default function Login() {
           throw new Error('Login failed - no user returned');
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Login error details:', {
-        message: err.message,
-        response: err.response,
-        status: err.response?.status,
-        stack: err.stack
+        message: err instanceof Error ? err.message : 'Unknown error',
+        response: err && typeof err === 'object' && 'response' in err ? (err as { response?: { status?: number } }).response : undefined,
+        status: err && typeof err === 'object' && 'response' in err ? (err as { response?: { status?: number } }).response?.status : undefined,
+        stack: err instanceof Error ? err.stack : undefined
       });
 
-      if (err.message === 'Network Error') {
-        setNetworkError('Unable to connect to server. Please check your internet connection and ensure the server is running on port 5001.');
-      } else if (err.response) {
-        switch (err.response.status) {
+      const errorObj = err as { message?: string; response?: { status?: number } };
+
+      if (errorObj.message === 'Network Error') {
+        setNetworkError('Unable to connect to server. Please check your internet connection and ensure server is running on port 5001.');
+      } else if (errorObj.response) {
+        switch (errorObj.response.status) {
           case 401:
             setFormErrors({ ...formErrors, general: 'Invalid email or password' });
             break;
@@ -112,7 +114,7 @@ export default function Login() {
             setFormErrors({ ...formErrors, general: 'Server error. Please try again later.' });
             break;
           default:
-            setFormErrors({ ...formErrors, general: `Server error (${err.response.status}). Please try again.` });
+            setFormErrors({ ...formErrors, general: `Server error (${errorObj.response.status}). Please try again.` });
         }
       } else {
         setFormErrors({ ...formErrors, general: 'An unexpected error occurred. Please try again.' });
@@ -176,29 +178,50 @@ export default function Login() {
 
   return (
     <ErrorBoundary>
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#0f0f23] p-4">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-50 to-white p-4">
         <div className="w-full max-w-md mb-8">
           {/* Logo and Header */}
           <div className="text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl mb-4 shadow-lg shadow-blue-500/50">
-              <Shield className="w-8 h-8 text-white" />
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full mb-6 shadow-lg">
+              <Shield className="w-10 h-10 text-white" />
             </div>
-            <h1 className="text-4xl font-bold text-white mb-2">Satya</h1>
-            <p className="text-slate-400 text-sm">Deepfake Detection System</p>
+            <h1 className="text-3xl font-bold text-gray-800 mb-2">Satya AI</h1>
+            <p className="text-gray-600 text-lg font-medium">Deepfake Detection System</p>
+          </div>
+        </div>
+
+        {/* Illustration */}
+        <div className="w-full max-w-md mb-8">
+          <div className="flex justify-center">
+            <div className="relative">
+              {/* Illustrated character placeholder */}
+              <div className="w-32 h-32 bg-gradient-to-br from-blue-100 to-blue-200 rounded-full flex items-center justify-center">
+                <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center">
+                  <Lock className="w-12 h-12 text-blue-500" />
+                </div>
+              </div>
+              {/* Floating elements */}
+              <div className="absolute -top-2 -right-2 w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                <div className="w-4 h-4 bg-white rounded-full"></div>
+              </div>
+              <div className="absolute -bottom-2 -left-2 w-6 h-6 bg-blue-400 rounded-full flex items-center justify-center">
+                <div className="w-3 h-3 bg-white rounded-full"></div>
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Subtitle */}
-        <p className="text-center text-slate-300 text-sm mb-8">
+        <p className="text-center text-gray-600 text-base mb-8 max-w-md">
           Secure access to advanced deepfake detection and analysis tools
         </p>
 
         {/* Login Card */}
-        <div className="bg-[#1a1f2e] border border-slate-800 rounded-2xl p-8 shadow-2xl w-full max-w-md">
+        <div className="bg-white border border-gray-200 rounded-2xl p-8 shadow-xl w-full max-w-md">
           {/* Secure Login Header */}
           <div className="flex items-center justify-center gap-2 mb-8">
-            <Lock className="w-5 h-5 text-slate-400" />
-            <h2 className="text-xl font-semibold text-white">Secure Login</h2>
+            <Lock className="w-5 h-5 text-blue-500" />
+            <h2 className="text-2xl font-semibold text-gray-800">Secure Login</h2>
           </div>
 
           {renderError()}
@@ -223,8 +246,9 @@ export default function Login() {
                       required
                       value={formData.email}
                       onChange={handleInputChange}
-                      className={`appearance-none block w-full px-3 py-2 border ${formErrors.email ? 'border-red-300' : 'border-gray-300'
-                        } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm`}
+                      className={`w-full px-4 py-3 border ${formErrors.email ? 'border-red-300' : 'border-gray-300'
+                        } rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors`}
+                      placeholder="Enter your email address"
                       aria-invalid={!!formErrors.email}
                       aria-describedby={formErrors.email ? 'email-error' : undefined}
                     />
@@ -248,15 +272,16 @@ export default function Login() {
                       required
                       value={formData.password}
                       onChange={handleInputChange}
-                      className={`appearance-none block w-full px-3 py-2 border ${formErrors.password ? 'border-red-300' : 'border-gray-300'
-                        } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm`}
+                      className={`w-full px-4 py-3 border ${formErrors.password ? 'border-red-300' : 'border-gray-300'
+                        } rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors`}
+                      placeholder="Enter your password"
                       aria-invalid={!!formErrors.password}
                       aria-describedby={formErrors.password ? 'password-error' : undefined}
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-blue-500 transition-colors"
                     >
                       {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                     </button>
@@ -268,8 +293,8 @@ export default function Login() {
                 {/* Role Selection for Rishabh Kapoor */}
                 <div className="space-y-4">
                   <div className="text-center mb-4">
-                    <p className="text-slate-300 text-sm mb-2">Welcome, Rishabh Kapoor!</p>
-                    <p className="text-slate-400 text-xs">Select your login role:</p>
+                    <p className="text-gray-600 text-sm mb-2">Welcome, Rishabh Kapoor!</p>
+                    <p className="text-gray-500 text-xs">Select your login role:</p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
@@ -278,16 +303,16 @@ export default function Login() {
                       onClick={() => handleRoleSelect('admin')}
                       className={`p-4 rounded-lg border-2 transition-all ${selectedRole === 'admin'
                           ? 'border-blue-500 bg-blue-500/10'
-                          : 'border-slate-700 bg-[#1a1f2e] hover:border-slate-600'
+                          : 'border-gray-200 bg-white hover:border-gray-300'
                         }`}
                     >
-                      <Shield className={`w-8 h-8 mx-auto mb-2 ${selectedRole === 'admin' ? 'text-blue-400' : 'text-slate-400'
+                      <Shield className={`w-8 h-8 mx-auto mb-2 ${selectedRole === 'admin' ? 'text-blue-400' : 'text-gray-500'
                         }`} />
-                      <p className={`font-medium ${selectedRole === 'admin' ? 'text-blue-400' : 'text-slate-300'
+                      <p className={`font-medium ${selectedRole === 'admin' ? 'text-blue-400' : 'text-gray-600'
                         }`}>
                         Admin
                       </p>
-                      <p className="text-xs text-slate-500 mt-1">Full Access</p>
+                      <p className="text-xs text-gray-500 mt-1">Full Access</p>
                     </button>
 
                     <button
@@ -295,23 +320,23 @@ export default function Login() {
                       onClick={() => handleRoleSelect('user')}
                       className={`p-4 rounded-lg border-2 transition-all ${selectedRole === 'user'
                           ? 'border-cyan-500 bg-cyan-500/10'
-                          : 'border-slate-700 bg-[#1a1f2e] hover:border-slate-600'
+                          : 'border-gray-200 bg-white hover:border-gray-300'
                         }`}
                     >
-                      <User className={`w-8 h-8 mx-auto mb-2 ${selectedRole === 'user' ? 'text-cyan-400' : 'text-slate-400'
+                      <User className={`w-8 h-8 mx-auto mb-2 ${selectedRole === 'user' ? 'text-cyan-400' : 'text-gray-500'
                         }`} />
-                      <p className={`font-medium ${selectedRole === 'user' ? 'text-cyan-400' : 'text-slate-300'
+                      <p className={`font-medium ${selectedRole === 'user' ? 'text-cyan-400' : 'text-gray-600'
                         }`}>
                         User
                       </p>
-                      <p className="text-xs text-slate-500 mt-1">Standard Access</p>
+                      <p className="text-xs text-gray-500 mt-1">Standard Access</p>
                     </button>
                   </div>
 
                   <button
                     type="button"
                     onClick={() => setShowRoleSelection(false)}
-                    className="w-full text-sm text-slate-400 hover:text-slate-300 transition-colors mt-2"
+                    className="w-full text-sm text-gray-500 hover:text-blue-500 transition-colors mt-2"
                   >
                     ← Back to login
                   </button>
@@ -323,7 +348,7 @@ export default function Login() {
             <div className="space-y-4">
               <Button
                 type="submit"
-                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-75"
+                className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-75 transition-all duration-200"
                 disabled={isLoading}
               >
                 {isLoading ? (
@@ -337,10 +362,10 @@ export default function Login() {
               </Button>
 
               <div className="text-center space-y-2">
-                <div className="text-sm text-gray-500">
+                <div className="text-sm text-gray-600">
                   <a
                     href="/forgot-password"
-                    className="font-medium text-blue-600 hover:text-blue-500"
+                    className="font-medium text-blue-600 hover:text-blue-500 transition-colors"
                     onClick={(e) => {
                       e.preventDefault();
                       setFormErrors({
@@ -352,11 +377,11 @@ export default function Login() {
                     Forgot your password?
                   </a>
                 </div>
-                <div className="text-sm text-gray-500">
+                <div className="text-sm text-gray-600">
                   Don't have an account?{' '}
                   <a
                     href="/register"
-                    className="font-medium text-blue-600 hover:text-blue-500"
+                    className="font-medium text-blue-600 hover:text-blue-500 transition-colors"
                     onClick={(e) => {
                       e.preventDefault();
                       navigate('/register');
@@ -372,10 +397,10 @@ export default function Login() {
 
         {/* Footer Note */}
         <div className="mt-6 space-y-2">
-          <p className="text-center text-slate-500 text-xs">
+          <p className="text-center text-gray-500 text-xs">
             By signing in, you agree to our Terms of Service and Privacy Policy
           </p>
-          <p className="text-center text-slate-500 text-xs">
+          <p className="text-center text-gray-500 text-xs">
             Protected by enterprise-grade security
           </p>
         </div>

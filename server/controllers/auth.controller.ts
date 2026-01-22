@@ -1,12 +1,10 @@
 import type { Request as ExpressRequest, Response as ExpressResponse } from 'express';
 import { supabase } from '../config/supabase';
 import { logger } from '../config/logger';
-import * as authService from '../services/authService';
-import { generateTokenPair, rotateRefreshToken } from '../services/auth/tokenService';
-import { rateLimiter } from '../middleware/rateLimiter';
-import jwt from 'jsonwebtoken';
-import { addMinutes } from 'date-fns';
 import { validatePassword } from '../../shared/utils/password';
+
+// Node.js globals
+declare const process: typeof globalThis.process;
 
 interface AuthRequest extends ExpressRequest {
   user?: {
@@ -14,7 +12,7 @@ interface AuthRequest extends ExpressRequest {
     email: string;
     role: string;
     email_verified: boolean;
-    user_metadata?: Record<string, any>;
+    user_metadata?: Record<string, unknown>;
   };
 }
 
@@ -36,12 +34,13 @@ export const authController = {
         });
       }
       
+      // Sign up with Supabase Auth
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: { 
           data: user_metadata,
-          emailRedirectTo: `${process.env.CLIENT_URL}/auth/callback`
+          emailRedirectTo: `${process.env.CLIENT_URL || 'http://localhost:5173'}/auth/callback`
         }
       });
 
@@ -54,20 +53,41 @@ export const authController = {
         throw new Error('No user data returned from authentication service');
       }
 
+      // Create user profile in public.users table
+      if (data.user) {
+        const { error: profileError } = await supabase
+          .from('users')
+          .insert([
+            { 
+              id: data.user.id,
+              email: data.user.email,
+              role: 'user',
+              created_at: new Date().toISOString()
+            }
+          ]);
+
+        if (profileError) {
+          logger.error('Error creating user profile:', profileError);
+          // Don't throw error, user is created in Supabase Auth
+          // Profile can be created later
+        }
+      }
+
       res.status(201).json({
         success: true,
         message: 'Signup successful. Please check your email for verification.',
         user: data.user
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Registration error:', error);
       
       // Handle specific Supabase errors
-      if (error.status === 400) {
+      if (error && typeof error === 'object' && 'status' in error && (error as { status: number }).status === 400) {
+        const supabaseError = error as { code?: string; message?: string };
         return res.status(400).json({
           success: false,
-          code: error.code || 'REGISTRATION_FAILED',
-          message: error.message || 'Invalid registration data',
+          code: supabaseError.code || 'REGISTRATION_FAILED',
+          message: supabaseError.message || 'Invalid registration data',
           error: process.env.NODE_ENV === 'development' ? error : undefined
         });
       }
@@ -76,7 +96,7 @@ export const authController = {
         success: false, 
         code: 'REGISTRATION_ERROR',
         message: 'Failed to register user',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        error: process.env.NODE_ENV === 'development' ? (error as Error).message : undefined
       });
     }
   },
@@ -203,13 +223,13 @@ export const authController = {
           .eq('id', user.id);
       }
       
-      // Generate token pair using our token service
-      const tokenPair = generateTokenPair({
-        id: authUser.id,
-        email: authUser.email || '',
-        role: authUser.user_metadata?.role || 'user'
-      });
+      // Get the session from Supabase
+      const session = data.session;
       
+      if (!session) {
+        throw new Error('Failed to create session');
+      }
+
       logger.info(`Successful login for user: ${authUser.email}`, {
         userId: authUser.id,
         ip: clientIp,
@@ -227,13 +247,13 @@ export const authController = {
       } as const;
 
       // Set access token cookie (short-lived)
-      res.cookie('satya_access_token', tokenPair.accessToken, {
+      res.cookie('sb-access-token', session.access_token, {
         ...baseCookieOptions,
         maxAge: 15 * 60 * 1000 // 15 minutes
       });
 
       // Set refresh token cookie (longer-lived, httpOnly, secure)
-      res.cookie('satya_refresh_token', tokenPair.refreshToken, {
+      res.cookie('sb-refresh-token', session.refresh_token, {
         ...baseCookieOptions,
         path: '/api/auth/refresh',
         maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
@@ -246,12 +266,16 @@ export const authController = {
         role: authUser.user_metadata?.role || 'user',
         email_verified: authUser.email_confirmed_at !== null,
         full_name: authUser.user_metadata?.full_name,
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+        expires_in: session.expires_in,
+        token_type: 'bearer'
       };
       
       res.json({
         success: true,
         user: userData,
-        expiresIn: 15 * 60 // 15 minutes in seconds
+        expiresIn: session.expires_in
       });
     } catch (error) {
       logger.error('Login error:', error);
@@ -265,37 +289,40 @@ export const authController = {
 
   async refreshToken(req: AuthRequest, res: Response) {
     try {
-      const refreshToken = req.cookies?.satya_refresh_token;
+      const refreshToken = req.cookies?.['sb-refresh-token'];
+      
       if (!refreshToken) {
         return res.status(401).json({
           success: false,
-          code: 'MISSING_REFRESH_TOKEN',
-          message: 'Refresh token is required'
-        });
-      }
-      
-      // Check rate limiting for refresh token endpoint
-      const clientIp = req.ip || req.socket?.remoteAddress || 'unknown-ip';
-      const userId = req.user?.id?.toString() || 'anonymous';
-      
-      try {
-        // This will throw if rate limit is exceeded
-        await rateLimiter('auth')(req, res, () => {});
-      } catch (error) {
-        logger.warn('Rate limit exceeded for refresh token', { userId, ip: clientIp });
-        return res.status(429).json({
-          success: false,
-          code: 'RATE_LIMIT_EXCEEDED',
-          message: 'Too many requests, please try again later'
+          code: 'NO_REFRESH_TOKEN',
+          message: 'No refresh token provided'
         });
       }
 
-      // Rotate the refresh token (invalidates the old one, generates new ones)
-      const tokenPair = await rotateRefreshToken(refreshToken);
-      
-      // Set secure HTTP-only cookies with proper configuration
+      const { data, error } = await supabase.auth.refreshSession({
+        refresh_token: refreshToken
+      });
+
+      if (error) {
+        logger.error('Token refresh error:', error);
+        return res.status(401).json({
+          success: false,
+          code: 'INVALID_REFRESH_TOKEN',
+          message: 'Invalid refresh token'
+        });
+      }
+
+      if (!data.session) {
+        return res.status(401).json({
+          success: false,
+          code: 'NO_SESSION',
+          message: 'No session created'
+        });
+      }
+
+      // Set new access token cookie
       const isProduction = process.env.NODE_ENV === 'production';
-      const baseCookieOptions = {
+      const cookieOptions = {
         httpOnly: true,
         secure: isProduction,
         sameSite: isProduction ? 'none' : 'lax' as const,
@@ -303,42 +330,19 @@ export const authController = {
         domain: isProduction ? process.env.COOKIE_DOMAIN : undefined,
       } as const;
 
-      // Set new access token cookie
-      res.cookie('satya_access_token', tokenPair.accessToken, {
-        ...baseCookieOptions,
+      res.cookie('sb-access-token', data.session.access_token, {
+        ...cookieOptions,
         maxAge: 15 * 60 * 1000 // 15 minutes
       });
 
-      // Set new refresh token cookie
-      res.cookie('satya_refresh_token', tokenPair.refreshToken, {
-        ...baseCookieOptions,
-        path: '/api/auth/refresh',
-        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-      });
-
-      return res.json({
+      res.json({
         success: true,
-        expiresIn: 15 * 60 // 15 minutes in seconds
+        access_token: data.session.access_token,
+        expires_in: data.session.expires_in,
+        token_type: 'bearer'
       });
     } catch (error) {
-      logger.error('Token refresh error:', error);
-      
-      if (error instanceof jwt.TokenExpiredError) {
-        return res.status(401).json({
-          success: false,
-          code: 'TOKEN_EXPIRED',
-          message: 'Refresh token has expired'
-        });
-      }
-
-      if (error instanceof jwt.JsonWebTokenError) {
-        return res.status(401).json({
-          success: false,
-          code: 'INVALID_TOKEN',
-          message: 'Invalid refresh token'
-        });
-      }
-
+      logger.error('Refresh token error:', error);
       res.status(500).json({ 
         success: false, 
         code: 'REFRESH_ERROR',
@@ -358,8 +362,8 @@ export const authController = {
         });
       }
       
-      const accessToken = req.cookies?.satya_access_token;
-      const refreshToken = req.cookies?.satya_refresh_token;
+      // Sign out from Supabase
+      await supabase.auth.signOut();
 
       // Clear cookies with same options as when they were set
       const cookieOptions = {
@@ -370,21 +374,11 @@ export const authController = {
         domain: process.env.COOKIE_DOMAIN || undefined
       };
 
-      res.clearCookie('satya_access_token', cookieOptions);
-      res.clearCookie('satya_refresh_token', {
+      res.clearCookie('sb-access-token', cookieOptions);
+      res.clearCookie('sb-refresh-token', {
         ...cookieOptions,
         path: '/api/auth/refresh'
       });
-
-      // Blacklist tokens if they exist (simplified version without database)
-      if (accessToken) {
-        try {
-          const decoded = jwt.verify(accessToken, process.env.JWT_SECRET || 'your-secret-key') as any;
-          logger.info('Token invalidated during logout', { jti: decoded?.jti });
-        } catch (error) {
-          logger.error('Error during token invalidation:', error);
-        }
-      }
 
       res.json({
         success: true,
@@ -402,39 +396,86 @@ export const authController = {
 
   async getProfile(req: AuthRequest, res: Response) {
     try {
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.status(401).json({ success: false, error: 'Unauthorized' });
+      if (!req.user) {
+        return res.status(401).json({ 
+          success: false, 
+          code: 'UNAUTHORIZED',
+          message: 'Not authenticated' 
+        });
       }
       
-      const { data: user, error } = await supabase
+      // Get fresh user data from Supabase
+      const { data: { user }, error } = await supabase.auth.getUser();
+      
+      if (error || !user) {
+        return res.status(404).json({ 
+          success: false, 
+          code: 'USER_NOT_FOUND',
+          message: 'User not found' 
+        });
+      }
+      
+      // Get additional user data from custom table
+      const { data: userData } = await supabase
         .from('users')
         .select('*')
-        .eq('id', userId)
-        .limit(1);
+        .eq('id', user.id)
+        .single();
       
-      if (error || !user || user.length === 0) {
-        return res.status(404).json({ success: false, error: 'User not found' });
-      }
-      
-      // Remove sensitive data
-      const { password: _, ...userData } = user[0];
-      res.json({ success: true, user: userData });
+      res.json({ 
+        success: true, 
+        user: {
+          id: user.id,
+          email: user.email,
+          email_verified: user.email_confirmed_at !== null,
+          user_metadata: user.user_metadata,
+          created_at: user.created_at,
+          updated_at: user.updated_at,
+          ...(userData || {})
+        }
+      });
     } catch (error) {
       logger.error('Error getting user profile:', error);
-      res.status(500).json({ success: false, error: 'Failed to get user profile' });
+      res.status(500).json({ 
+        success: false, 
+        code: 'PROFILE_ERROR',
+        message: 'Failed to get user profile' 
+      });
     }
   },
 
   async updateProfile(req: AuthRequest, res: Response) {
     try {
-      const { fullName, email } = req.body;
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.status(401).json({ success: false, error: 'Unauthorized' });
+      if (!req.user) {
+        return res.status(401).json({ 
+          success: false, 
+          code: 'UNAUTHORIZED',
+          message: 'Not authenticated' 
+        });
       }
       
-      const { data: updatedUser, error } = await supabase
+      const { fullName, email } = req.body;
+      const userId = req.user.id;
+      
+      // Update in Supabase Auth
+      const { data: authUser, error: authError } = await supabase.auth.updateUser({
+        email: email,
+        data: {
+          full_name: fullName
+        }
+      });
+      
+      if (authError) {
+        logger.error('Error updating auth profile:', authError);
+        return res.status(400).json({ 
+          success: false, 
+          code: 'UPDATE_AUTH_ERROR',
+          message: 'Failed to update auth profile' 
+        });
+      }
+      
+      // Update in custom users table
+      const { data: updatedUser, error: dbError } = await supabase
         .from('users')
         .update({ 
           full_name: fullName as string, 
@@ -445,78 +486,123 @@ export const authController = {
         .select('*')
         .single();
       
-      if (error || !updatedUser) {
-        return res.status(404).json({ success: false, error: 'User not found' });
+      if (dbError) {
+        logger.error('Error updating user profile:', dbError);
+        // Don't fail if DB update fails, auth update succeeded
       }
       
-      // Remove sensitive data
-      const { password: _, ...userData } = updatedUser;
-      res.json({ success: true, user: userData });
+      res.json({ 
+        success: true, 
+        user: {
+          id: authUser.user?.id,
+          email: authUser.user?.email,
+          email_verified: authUser.user?.email_confirmed_at !== null,
+          user_metadata: authUser.user?.user_metadata,
+          created_at: authUser.user?.created_at,
+          updated_at: authUser.user?.updated_at,
+          ...(updatedUser || {})
+        }
+      });
     } catch (error) {
       logger.error('Error updating profile:', error);
-      res.status(500).json({ success: false, error: 'Failed to update profile' });
+      res.status(500).json({ 
+        success: false, 
+        code: 'UPDATE_PROFILE_ERROR',
+        message: 'Failed to update profile' 
+      });
     }
   },
 
   async changePassword(req: AuthRequest, res: Response) {
     try {
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.status(401).json({ success: false, message: 'Unauthorized' });
+      if (!req.user) {
+        return res.status(401).json({ 
+          success: false, 
+          code: 'UNAUTHORIZED',
+          message: 'Not authenticated' 
+        });
       }
       
       const { currentPassword, newPassword } = req.body;
       
-      // Get user from database
-      const { data: user, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .limit(1);
-      
-      if (error || !user || user.length === 0) {
-        return res.status(404).json({ success: false, message: 'User not found' });
+      // Validate new password
+      const passwordValidation = validatePassword(newPassword);
+      if (!passwordValidation.isValid) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_PASSWORD',
+          message: 'Password does not meet requirements',
+          errors: passwordValidation.errors
+        });
       }
       
-      // In a real application, verify current password here
-      // For now, we'll just update the password in Supabase Auth
+      // Verify current password by attempting to sign in
+      const { error: verifyError } = await supabase.auth.signInWithPassword({
+        email: req.user.email,
+        password: currentPassword
+      });
+      
+      if (verifyError) {
+        return res.status(400).json({ 
+          success: false, 
+          code: 'INVALID_CURRENT_PASSWORD',
+          message: 'Current password is incorrect' 
+        });
+      }
+      
+      // Update password in Supabase Auth
       const { error: updateError } = await supabase.auth.updateUser({
         password: newPassword
       });
       
       if (updateError) {
         logger.error('Password update error:', updateError);
-        return res.status(400).json({ success: false, message: 'Failed to update password' });
+        return res.status(400).json({ 
+          success: false, 
+          code: 'PASSWORD_UPDATE_FAILED',
+          message: 'Failed to update password' 
+        });
       }
       
-      res.json({ success: true, message: 'Password updated successfully' });
+      res.json({ 
+        success: true, 
+        message: 'Password updated successfully' 
+      });
     } catch (error) {
       logger.error('Change password error:', error);
-      res.status(500).json({ success: false, message: 'Internal server error' });
+      res.status(500).json({ 
+        success: false, 
+        code: 'CHANGE_PASSWORD_ERROR',
+        message: 'Internal server error' 
+      });
     }
   },
 
-  // OAuth endpoints
+  // OAuth endpoints - simplified for Supabase
   async oauthRedirect(req: AuthRequest, res: Response) {
     try {
       const { provider } = req.params;
-      const { redirectUri } = req.query;
       
       if (!['google', 'github', 'microsoft'].includes(provider)) {
-        return res.status(400).json({ success: false, message: 'Invalid OAuth provider' });
+        return res.status(400).json({ 
+          success: false, 
+          code: 'INVALID_PROVIDER',
+          message: 'Invalid OAuth provider' 
+        });
       }
 
-      // For now, redirect to frontend with provider info
-      const redirectUrl = new URL(process.env.FRONTEND_URL || 'http://localhost:3000');
-      redirectUrl.pathname = `/oauth/${provider}`;
-      if (redirectUri) {
-        redirectUrl.searchParams.set('redirect_uri', redirectUri as string);
-      }
+      // For Supabase OAuth, redirect to frontend to handle OAuth flow
+      const baseUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
+      const redirectUrl = `${baseUrl}/auth/oauth/${provider}`;
       
-      res.redirect(redirectUrl.toString());
+      res.redirect(redirectUrl);
     } catch (error) {
       logger.error('OAuth redirect error:', error);
-      res.status(500).json({ success: false, message: 'OAuth initialization failed' });
+      res.status(500).json({ 
+        success: false, 
+        code: 'OAUTH_ERROR',
+        message: 'OAuth initialization failed' 
+      });
     }
   },
 
@@ -526,20 +612,22 @@ export const authController = {
       const { code, state } = req.query;
 
       if (!code || !state) {
-        return res.status(400).json({ success: false, message: 'Invalid OAuth callback parameters' });
+        return res.status(400).json({ 
+          success: false, 
+          code: 'INVALID_OAUTH_PARAMS',
+          message: 'Invalid OAuth callback parameters' 
+        });
       }
 
-      // For now, just redirect to the frontend with the code and state
-      const redirectUrl = new URL(process.env.FRONTEND_URL || 'http://localhost:3000');
-      redirectUrl.pathname = '/oauth/callback';
-      redirectUrl.searchParams.set('provider', provider);
-      redirectUrl.searchParams.set('code', code as string);
-      redirectUrl.searchParams.set('state', state as string);
+      // For Supabase OAuth, redirect to frontend with OAuth data
+      const baseUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
+      const redirectUrl = `${baseUrl}/auth/oauth/callback?provider=${provider}&code=${code}&state=${state}`;
       
-      res.redirect(redirectUrl.toString());
+      res.redirect(redirectUrl);
     } catch (error) {
       logger.error('OAuth callback error:', error);
-      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=oauth_failed`);
+      const fallbackUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
+      res.redirect(`${fallbackUrl}/login?error=oauth_failed`);
     }
   }
 };

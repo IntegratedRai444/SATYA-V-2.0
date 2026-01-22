@@ -1,4 +1,3 @@
-import { JwtPayload } from 'jsonwebtoken';
 import { SupabaseUser } from './supabase';
 
 declare global {
@@ -9,7 +8,7 @@ declare global {
         id: string;
         role: string;
         email: string;
-        user_metadata?: Record<string, any>;
+        user_metadata?: Record<string, unknown>;
       };
       file?: Express.Multer.File;
     }

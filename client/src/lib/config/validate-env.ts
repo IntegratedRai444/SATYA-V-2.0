@@ -4,11 +4,13 @@ type EnvConfig = {
   // API Configuration
   VITE_AUTH_API_URL: string;
   VITE_ANALYSIS_API_URL: string;
+  VITE_API_URL: string;
   VITE_WS_URL?: string;
   
   // Feature Flags
   VITE_ENABLE_ANALYTICS?: string;
   VITE_ENABLE_DEBUG?: string;
+  VITE_ENABLE_ML_MODELS?: string;
 };
 
 // Required environment variables with validation rules
@@ -20,6 +22,19 @@ const ENV_CONFIG: Record<keyof EnvConfig, {
   description: string;
   validate?: (value: string) => { valid: boolean; message?: string };
 }> = {
+  VITE_API_URL: {
+    required: true,
+    type: 'url',
+    description: 'Main API base URL',
+    validate: (value: string) => {
+      try {
+        new URL(value);
+        return { valid: true };
+      } catch {
+        return { valid: false, message: 'Must be a valid URL' };
+      }
+    }
+  },
   VITE_AUTH_API_URL: {
     required: true,
     type: 'url',
@@ -68,6 +83,15 @@ const ENV_CONFIG: Record<keyof EnvConfig, {
     required: false,
     type: 'boolean',
     description: 'Enable debug mode',
+    validate: (value: string) => ({
+      valid: ['true', 'false', ''].includes(value.toLowerCase()),
+      message: 'Must be either "true" or "false"'
+    })
+  },
+  VITE_ENABLE_ML_MODELS: {
+    required: false,
+    type: 'boolean',
+    description: 'Enable ML models',
     validate: (value: string) => ({
       valid: ['true', 'false', ''].includes(value.toLowerCase()),
       message: 'Must be either "true" or "false"'
@@ -224,13 +248,7 @@ function showErrorToUser(message: string): void {
 
 // Run validation when this module is imported
 if (typeof window !== 'undefined') {
-  try {
-    validateEnvironment();
-  } catch (error) {
-    // Error is already logged and shown to the user
-    // Prevent the application from starting with invalid configuration
-    throw error;
-  }
+  validateEnvironment();
 }
 
 // Export a type-safe environment configuration object

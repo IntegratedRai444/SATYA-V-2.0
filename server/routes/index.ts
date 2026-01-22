@@ -1,9 +1,13 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router, Request, Response } from 'express';
 import { healthRouter } from './health.routes';
 import { authRouter } from './auth.routes';
 import { analysisRouter } from './analysis.routes';
 import historyRouter from './history';
 import { chatRouter } from './chat';
+import { notificationsRouter } from './notifications';
+import { userRouter } from './user';
+import { resultsRouter } from './results.routes';
+import { modelsRouter } from './models.routes';
 import { createApiError } from '../middleware/api-version';
 
 const router = Router();
@@ -21,28 +25,40 @@ v2Router.use('/auth', authRouter);
 v2Router.use('/history', historyRouter);
 
 // Analysis routes
-v2Router.use('/analyze', analysisRouter);
+v2Router.use('/analysis', analysisRouter);
 
 // Chat routes
 v2Router.use('/chat', chatRouter);
+
+// Notifications routes
+v2Router.use('/notifications', notificationsRouter);
+
+// User routes
+v2Router.use('/user', userRouter);
+
+// Results routes
+v2Router.use('/results', resultsRouter);
+
+// Models routes
+v2Router.use('/models', modelsRouter);
 
 // Versioned API routes
 router.use('/api/v2', v2Router);
 
 // Default version (v2)
-router.use('/api', (req, res, next) => {
+router.use('/api', (req, res) => {
   // Redirect to the latest version
-  const url = new URL(req.originalUrl, 'http://dummy.com');
-  url.pathname = `/api/v2${url.pathname.replace(/^\/api/, '')}`;
+  const pathname = req.originalUrl.replace(/^\/api/, '');
+  const newUrl = `/api/v2${pathname}`;
   
   // If this is a GET request, do a 302 redirect
   if (req.method === 'GET') {
-    return res.redirect(302, url.pathname + url.search);
+    return res.redirect(302, newUrl);
   }
   
   // For non-GET requests, return a 400 with the correct URL
-  next(createApiError(
-    `API version is required. Use /api/v2${req.path}`,
+  res.status(400).json(createApiError(
+    `API version is required. Use ${newUrl}`,
     400,
     'API_VERSION_REQUIRED',
     { 

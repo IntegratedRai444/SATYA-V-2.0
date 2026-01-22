@@ -5,11 +5,22 @@ import { toast } from '@/components/ui/use-toast';
 import { useAppContext } from '@/contexts/AppContext';
 
 // Import services
-import { authService } from '@/lib/api/services/authService';
 import { analysisService } from '@/lib/api/services/analysisService';
+import apiClient from '@/lib/api';
+
+// Import Supabase auth instead of old authService
+import { 
+  getCurrentUser, 
+  login as supabaseLogin, 
+  register as supabaseRegister, 
+  logout as supabaseLogout, 
+  isAuthenticated as supabaseIsAuthenticated,
+  type User as SupabaseUser,
+  type LoginCredentials as SupabaseLoginCredentials,
+  type RegisterData as SupabaseRegisterData
+} from '@/services/supabaseAuth';
 
 // Import types
-import type { User as AuthUser, RegisterData } from '@/lib/api/services/authService';
 import type { AnalysisResult } from '@/lib/api/services/analysisService';
 
 // Destructure React hooks
@@ -24,7 +35,7 @@ interface UserPreferences {
 }
 
 // Define user type with preferences
-export interface User extends AuthUser, Partial<UserPreferences> {
+export interface User extends SupabaseUser, Partial<UserPreferences> {
   language?: string;
   timezone?: string;
   dateFormat?: string;
@@ -32,13 +43,16 @@ export interface User extends AuthUser, Partial<UserPreferences> {
 }
 
 // Re-export types for backward compatibility
-export type { AnalysisResult, User as UserProfile };
+export type { AnalysisResult, User as UserProfile, SupabaseUser, SupabaseLoginCredentials, SupabaseRegisterData };
 
 export interface LoginCredentials {
   email: string;
   password: string;
   rememberMe?: boolean;
 }
+
+// Re-export for backward compatibility
+export type { LoginCredentials as LegacyLoginCredentials };
 
 export interface Session {
   valid: boolean;
@@ -76,9 +90,9 @@ if (typeof window !== 'undefined') {
 }
 
 // Enhanced query with offline support
-export function useEnhancedQuery<TData = any, TError = Error>(
+export function useEnhancedQuery<TData = unknown, TError = Error>(
   options: UseQueryOptions<TData, TError> & {
-    queryKey: any[];
+    queryKey: readonly unknown[];
     queryFn: () => Promise<TData>;
     offlineCache?: boolean;
   }
@@ -117,7 +131,7 @@ export function useEnhancedQuery<TData = any, TError = Error>(
 }
 
 // Enhanced mutation with offline support
-export function useEnhancedMutation<TData = any, TVariables = any, TError = Error>(
+export function useEnhancedMutation<TData = unknown, TVariables = unknown, TError = Error>(
   mutationFn: (variables: TVariables) => Promise<TData>,
   options?: Omit<UseMutationOptions<TData, TError, TVariables>, 'mutationFn'>
 ) {
@@ -174,61 +188,48 @@ export function useAuth() {
   const { state, dispatch } = useAppContext();
   const queryClient = useQueryClient();
   
-  // Check if user is authenticated
-  const checkAuth = async (): Promise<Session> => {
-    try {
-      const isAuthenticated = authService.isAuthenticated();
-      
-      // Get user from auth service if authenticated
-      let user: User | undefined;
-      if (isAuthenticated) {
-        const userData = await authService.getCurrentUser();
-        const preferences = state.userPreferences || {};
-        
-        // Create user object with merged properties
-        user = {
-          ...userData,
-          ...(preferences.language && { language: preferences.language }),
-          ...(preferences.timezone && { timezone: preferences.timezone }),
-          ...(preferences.dateFormat && { dateFormat: preferences.dateFormat }),
-          ...(preferences.timeFormat && { timeFormat: preferences.timeFormat as '12h' | '24h' })
-        };
-        
-        // Update user preferences in the app context if any exist
-        if (Object.keys(preferences).length > 0) {
-          dispatch({
-            type: 'UPDATE_USER_PREFERENCES',
-            payload: preferences
-          });
-        }
-      }
-      return { valid: isAuthenticated, user: user ? {
-        id: (user as any).id || '',
-        username: (user as any).username || (user as any).email || 'unknown',
-        email: (user as any).email,
-        role: (user as any).role || 'user'
-      } : undefined };
-    } catch (error) {
-      return { valid: false, error: 'Not authenticated' };
-    }
-  };
+  // Get current user from Supabase auth
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   
-  // Login mutation
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const userData = await getCurrentUser();
+        const userWithPreferences: User = {
+          ...userData!,
+          language: ((userData as unknown as Record<string, unknown>).language as string) || 'en',
+          timezone: ((userData as unknown as Record<string, unknown>).timezone as string) || 'UTC',
+          dateFormat: ((userData as unknown as Record<string, unknown>).dateFormat as string) || 'YYYY-MM-DD',
+          timeFormat: (((userData as unknown as Record<string, unknown>).timeFormat as '12h' | '24h') || '24h')
+        };
+        setCurrentUser(userWithPreferences);
+      } catch (error) {
+        console.error('Failed to fetch current user:', error);
+        setCurrentUser(null);
+      }
+    };
+    
+    fetchUser();
+  }, [state.userPreferences]);
+  
+  const user = currentUser || undefined;
+
+  // Login mutation using Supabase
   const loginMutation = useMutation({
-    mutationFn: async (credentials: LoginCredentials) => {
-      const response = await authService.login(credentials);
+    mutationFn: async (credentials: SupabaseLoginCredentials) => {
+      const response = await supabaseLogin(credentials);
       return {
         ...response,
         user: {
           ...response.user,
-          language: (response.user as any).language || 'en-US',
-          timezone: (response.user as any).timezone || 'UTC',
-          dateFormat: (response.user as any).dateFormat || 'YYYY-MM-DD',
-          timeFormat: ((response.user as any).timeFormat || '24h') as '12h' | '24h'
+          language: ((response.user as unknown as Record<string, unknown>).language as string) || 'en-US',
+          timezone: ((response.user as unknown as Record<string, unknown>).timezone as string) || 'UTC',
+          dateFormat: ((response.user as unknown as Record<string, unknown>).dateFormat as string) || 'YYYY-MM-DD',
+          timeFormat: (((response.user as unknown as Record<string, unknown>).timeFormat as '12h' | '24h') || '24h')
         }
       };
     },
-    onSuccess: (data: any) => {
+    onSuccess: (data: { user: User & { language?: string; timezone?: string; dateFormat?: string; timeFormat?: '12h' | '24h' }; [key: string]: unknown }) => {
       // Update user preferences after successful login
       dispatch({
         type: 'UPDATE_USER_PREFERENCES', 
@@ -243,9 +244,9 @@ export function useAuth() {
     },
   });
   
-  // Logout mutation
+  // Logout mutation using Supabase
   const logoutMutation = useMutation({
-    mutationFn: () => authService.logout(),
+    mutationFn: () => supabaseLogout(),
     onSuccess: () => {
       // Reset user preferences on logout
       dispatch({ 
@@ -258,25 +259,26 @@ export function useAuth() {
         } 
       });
       queryClient.clear();
+      setCurrentUser(null);
     },
   });
   
-  // Register mutation
+  // Register mutation using Supabase
   const registerMutation = useMutation({
-    mutationFn: async (data: RegisterData) => {
-      const response = await authService.register(data);
+    mutationFn: async (data: SupabaseRegisterData) => {
+      const response = await supabaseRegister(data);
       return {
         ...response,
         user: {
           ...response.user,
-          language: (response.user as any).language || 'en-US',
-          timezone: (response.user as any).timezone || 'UTC',
-          dateFormat: (response.user as any).dateFormat || 'YYYY-MM-DD',
-          timeFormat: ((response.user as any).timeFormat || '24h') as '12h' | '24h'
+          language: ((response.user as unknown as Record<string, unknown>).language as string) || 'en-US',
+          timezone: ((response.user as unknown as Record<string, unknown>).timezone as string) || 'UTC',
+          dateFormat: ((response.user as unknown as Record<string, unknown>).dateFormat as string) || 'YYYY-MM-DD',
+          timeFormat: (((response.user as unknown as Record<string, unknown>).timeFormat as '12h' | '24h') || '24h')
         }
       };
     },
-    onSuccess: (data: any) => {
+    onSuccess: (data: { user: User & { language?: string; timezone?: string; dateFormat?: string; timeFormat?: '12h' | '24h' }; [key: string]: unknown }) => {
       // Update user preferences after successful registration
       dispatch({ 
         type: 'UPDATE_USER_PREFERENCES', 
@@ -290,40 +292,48 @@ export function useAuth() {
       queryClient.invalidateQueries();
     },
   });
-  
-  // Get current user from auth service
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  
-  useEffect(() => {
-    const fetchUser = async () => {
-      if (authService.isAuthenticated()) {
-        try {
-          const userData = await authService.getCurrentUser();
-          const userWithPreferences = {
-            ...userData,
-            language: (userData as any).language || 'en',
-            timezone: (userData as any).timezone || 'UTC',
-            dateFormat: (userData as any).dateFormat || 'YYYY-MM-DD',
-            timeFormat: (((userData as any).timeFormat as '12h' | '24h') || '24h')
-          };
-          setCurrentUser(userWithPreferences);
-        } catch (error) {
-          console.error('Failed to fetch current user:', error);
-          setCurrentUser(null);
+
+  const checkAuth = async (): Promise<Session> => {
+    try {
+      const isAuth = await supabaseIsAuthenticated();
+      
+      // Get user from auth service if authenticated
+      let user: User | undefined;
+      if (isAuth) {
+        const userData = await getCurrentUser();
+        const preferences = state.userPreferences || {};
+        
+        // Create user object with merged properties
+        user = {
+          ...userData!,
+          ...(preferences.language && { language: preferences.language }),
+          ...(preferences.timezone && { timezone: preferences.timezone }),
+          ...(preferences.dateFormat && { dateFormat: preferences.dateFormat }),
+          ...(preferences.timeFormat && { timeFormat: preferences.timeFormat as '12h' | '24h' })
+        };
+        
+        // Update user preferences in app context if any exist
+        if (Object.keys(preferences).length > 0) {
+          dispatch({
+            type: 'UPDATE_USER_PREFERENCES',
+            payload: preferences
+          });
         }
-      } else {
-        setCurrentUser(null);
       }
-    };
-    
-    fetchUser();
-  }, [state.userPreferences]);
-  
-  const user = currentUser || undefined;
+      return { valid: isAuth, user: user ? {
+        id: ((user as unknown as Record<string, unknown>).id as string) || '',
+        username: ((user as unknown as Record<string, unknown>).username as string) || ((user as unknown as Record<string, unknown>).email as string) || 'unknown',
+        email: ((user as unknown as Record<string, unknown>).email as string),
+        role: ((user as unknown as Record<string, unknown>).role as string) || 'user'
+      } : undefined };
+    } catch (error) {
+      return { valid: false, error: 'Not authenticated' };
+    }
+  };
 
   return {
     // Auth state
-    isAuthenticated: authService.isAuthenticated(),
+    isAuthenticated: !!user,
     user,
     
     // Auth actions
@@ -331,7 +341,7 @@ export function useAuth() {
     loginAsync: loginMutation.mutateAsync,
     logout: logoutMutation.mutate,
     register: registerMutation.mutate,
-    registerAsync: registerMutation.mutateAsync as unknown as (data: RegisterData) => Promise<{
+    registerAsync: registerMutation.mutateAsync as unknown as (data: SupabaseRegisterData) => Promise<{
       user: User;
       accessToken: string;
       refreshToken: string;
@@ -475,7 +485,7 @@ export function useBlockchainVerification() {
   const queryClient = useQueryClient();
   
   const verifyOnBlockchain = useMutation({
-    mutationFn: async (data: { hash: string; metadata: any }) => {
+    mutationFn: async (data: { hash: string; metadata: Record<string, unknown> }) => {
       // Call the analysis service to verify on blockchain
       console.log('Verifying on blockchain:', data.hash);
       const result = await analysisService.analyzeImage(
@@ -515,13 +525,13 @@ export function useEmotionConflictAnalysis() {
       if (data.videoFile) {
         result = await analysisService.analyzeVideo(data.videoFile, {
           includeDetails: true,
-          // @ts-ignore - text is a valid option for video analysis
+          // text is a valid option for video analysis
           text: data.text
         });
       } else if (data.audioFile) {
         result = await analysisService.analyzeAudio(data.audioFile, {
           includeDetails: true,
-          // @ts-ignore - text is a valid option for audio analysis
+          // text is a valid option for audio analysis
           text: data.text
         });
       } else {
@@ -601,19 +611,27 @@ export function useAnalysisHistory() {
     reportCode?: string;
   };
   
-  // Fetch history from API
-  const { data: history, error, isLoading } = useQuery({
+  // Fetch history from API with proper authentication
+  const { data: historyData, error, isLoading } = useQuery({
     queryKey: ['analysis-history'],
-    queryFn: async (): Promise<AnalysisHistoryItem[]> => {
-      const response = await fetch('/api/v2/history');
-      if (!response.ok) {
-        throw new Error('Failed to fetch analysis history');
-      }
-      const data = await response.json();
-      return data.success ? data.data : [];
+    queryFn: async (): Promise<{ jobs: Array<Record<string, unknown>>; pagination: Record<string, unknown> }> => {
+      // Use apiClient for proper authentication and error handling
+      const response = await apiClient.get('/api/v2/history');
+      return response.data;
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
+    retry: (failureCount, error) => {
+      // Don't retry on 401/403 errors, retry up to 3 times on network errors
+      if (error && typeof error === 'object' && 'status' in error) {
+        const status = (error as { status?: number }).status;
+        if (status === 401 || status === 403) return false;
+      }
+      return failureCount < 3;
+    },
   });
+
+  // Extract jobs array from response
+  const history = historyData?.jobs || [];
 
   const saveToHistory = async (item: Omit<AnalysisHistoryItem, 'id' | 'timestamp' | 'jobId' | 'reportCode'>) => {
     // This is now handled automatically by the backend after analysis
@@ -624,36 +642,42 @@ export function useAnalysisHistory() {
 
   const clearHistory = async () => {
     try {
-      const response = await fetch('/api/v2/history', {
-        method: 'DELETE'
-      });
-      if (!response.ok) {
-        throw new Error('Failed to clear analysis history');
-      }
-      const data = await response.json();
-      if (data.success) {
+      const response = await apiClient.delete('/api/v2/history');
+      if (response.success) {
         queryClient.invalidateQueries({ queryKey: ['analysis-history'] });
+        toast({
+          title: 'History Cleared',
+          description: 'All analysis history has been cleared',
+        });
       }
     } catch (error) {
       console.error('Failed to clear history:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to clear history',
+        variant: 'destructive',
+      });
     }
   };
 
   const deleteFromHistory = async (jobId: string) => {
     try {
-      const response = await fetch(`/api/v2/history/${jobId}`, {
-        method: 'DELETE'
-      });
-      if (!response.ok) {
-        throw new Error(`Failed to delete history item: ${jobId}`);
-      }
-      const data = await response.json();
-      if (data.success) {
+      const response = await apiClient.delete(`/api/v2/history/${jobId}`);
+      if (response.success) {
         queryClient.invalidateQueries({ queryKey: ['analysis-history'] });
+        toast({
+          title: 'Item Deleted',
+          description: 'History item has been deleted',
+        });
       }
       return true;
     } catch (error) {
       console.error(`Failed to delete history item ${jobId}:`, error);
+      toast({
+        title: 'Error',
+        description: 'Failed to delete history item',
+        variant: 'destructive',
+      });
       return false;
     }
   };

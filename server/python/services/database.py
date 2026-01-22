@@ -5,6 +5,7 @@ Handles database connections, sessions, and operations
 
 import logging
 import sys
+import asyncio
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -26,7 +27,125 @@ class DatabaseManager:
     def __init__(self):
         """Initialize database manager"""
         self.supabase = get_supabase()
+        self._connection_tested = False
         logger.info("✅ Supabase database manager initialized")
+
+    async def test_connection(self) -> bool:
+        """
+        Test database connection with a simple query
+        """
+        try:
+            # Test connection with a simple query to check if we can reach the database
+            result = self.supabase.table("users").select("count").limit(1).execute()
+            
+            if result is not None:
+                self._connection_tested = True
+                logger.info("✅ Database connection test successful")
+                return True
+            else:
+                logger.error("❌ Database connection test failed: No response")
+                return False
+                
+        except Exception as e:
+            error_str = str(e)
+            logger.error(f"❌ Database connection test failed: {error_str}")
+            
+            # Check if it's an API key issue
+            if "Invalid API key" in error_str or "401" in error_str:
+                logger.error("🔑 API Key Issue Detected!")
+                logger.error("💡 Possible solutions:")
+                logger.error("   1. Check if the API key is expired")
+                logger.error("   2. Verify the key has correct permissions")
+                logger.error("   3. Try regenerating the key in Supabase dashboard")
+                
+                # Try alternative connection test with a different approach
+                try:
+                    logger.info("🔄 Trying alternative connection test...")
+                    # Test with a different table that might have different permissions
+                    result = self.supabase.table("tasks").select("count").limit(1).execute()
+                    if result is not None:
+                        self._connection_tested = True
+                        logger.info("✅ Alternative connection test successful")
+                        return True
+                except Exception as alt_e:
+                    logger.error(f"❌ Alternative connection test also failed: {alt_e}")
+            
+            # Try RPC call as last resort
+            try:
+                logger.info("🔄 Trying RPC connection test...")
+                result = self.supabase.rpc('get_server_time').execute()
+                self._connection_tested = True
+                logger.info("✅ RPC connection test successful")
+                return True
+            except Exception as rpc_e:
+                logger.error(f"❌ RPC connection test also failed: {rpc_e}")
+            
+            return False
+
+    async def disconnect(self):
+        """
+        Close database connections and cleanup resources
+        """
+        try:
+            # Supabase client doesn't need explicit disconnection, but we can cleanup
+            self._connection_tested = False
+            logger.info("✅ Database manager disconnected successfully")
+        except Exception as e:
+            logger.error(f"❌ Error during database disconnect: {e}")
+
+    async def health_check(self) -> dict:
+        """
+        Perform comprehensive health check of database connection
+        """
+        health_status = {
+            "connected": False,
+            "response_time_ms": 0,
+            "error": None,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        try:
+            import time
+            start_time = time.time()
+            
+            # Test basic connectivity
+            result = self.supabase.table("users").select("count").limit(1).execute()
+            
+            response_time = (time.time() - start_time) * 1000
+            health_status["response_time_ms"] = round(response_time, 2)
+            
+            if result is not None:
+                health_status["connected"] = True
+                self._connection_tested = True
+                logger.info(f"✅ Database health check passed ({response_time:.2f}ms)")
+            else:
+                health_status["error"] = "No response from database"
+                
+        except Exception as e:
+            health_status["error"] = str(e)
+            logger.error(f"❌ Database health check failed: {e}")
+            
+        return health_status
+
+    def is_connected(self) -> bool:
+        """Check if database connection has been tested and successful"""
+        return self._connection_tested
+
+    async def execute_with_retry(self, operation, max_retries=3, retry_delay=1.0):
+        """
+        Execute database operation with retry logic
+        """
+        for attempt in range(max_retries):
+            try:
+                return await operation()
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    logger.error(f"❌ Database operation failed after {max_retries} attempts: {e}")
+                    raise e
+                
+                logger.warning(f"⚠️ Database operation failed (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay}s: {e}")
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
 
     def create_tables(self):
         """Create all database tables"""

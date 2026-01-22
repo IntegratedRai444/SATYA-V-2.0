@@ -4,10 +4,10 @@ export type SupabaseUser = User & {
   role?: string;
   email_verified?: boolean;
   phone_verified?: boolean;
-  user_metadata?: Record<string, any>;
+  user_metadata?: Record<string, unknown>;
   app_metadata?: {
     provider?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
 };
 

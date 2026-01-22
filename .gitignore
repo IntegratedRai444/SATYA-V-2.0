@@ -24,7 +24,33 @@ logs/
 
 # Environment
 .env
+.env.*
+!.env.example
 client/.env
+client/.env.*
+!.env.example
+server/.env
+server/.env.*
+!.env.example
+server/python/.env
+server/python/.env.*
+!.env.example
+
+# Secret files (additional protection)
+**/secrets/
+**/credentials/
+**/keys/
+*.key
+*.pem
+*.p12
+*.crt
+*.cer
+
+# Environment-specific files
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
 # Temporary test files
 # **/test_*.py

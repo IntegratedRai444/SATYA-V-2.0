@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
-import { supabase, verifyAuthHeader } from '../config/supabase';
+import { verifyAuthHeader } from '../config/supabase';
 import { logger } from '../config/logger';
-import { SupabaseUser } from '../types/supabase';
+import '../types/express'; // Import to load Express type extensions
 
 /**
  * Middleware to verify Supabase JWT token from Authorization header

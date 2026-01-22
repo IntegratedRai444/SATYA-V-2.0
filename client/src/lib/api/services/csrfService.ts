@@ -13,26 +13,24 @@ const csrfClient = axios.create({
 let csrfToken: string | null = null;
 let tokenPromise: Promise<string> | null = null;
 
-interface CsrfTokenResponse {
-  token: string;
-  expiresIn?: number;
-}
-
 /**
  * Fetches a new CSRF token from the server
  */
 export const fetchCsrfToken = async (): Promise<string> => {
   try {
-    const response = await csrfClient.get<{ data: CsrfTokenResponse }>('/auth/csrf-token');
+    const response = await csrfClient.get<{ token: string }>('/auth/csrf-token');
     
-    if (!response.data?.data?.token) {
+    if (!response.data?.token) {
       throw new Error('Invalid CSRF token response from server');
     }
     
-    const { token, expiresIn } = response.data.data;
+    const { token } = response.data;
     csrfToken = token;
     
-    // If the token has an expiration, set a timeout to refresh it before it expires
+    // Set a reasonable expiration time if not provided by server
+    const expiresIn = 3600; // 1 hour default
+    
+    // If token has an expiration, set a timeout to refresh it before it expires
     if (expiresIn) {
       const refreshTime = Math.max(1000, expiresIn * 1000 - 60000); // Refresh 1 minute before expiry
       setTimeout(() => {
@@ -45,7 +43,7 @@ export const fetchCsrfToken = async (): Promise<string> => {
     return csrfToken || ''; // Ensure we always return a string
   } catch (error) {
     console.error('Failed to fetch CSRF token:', error);
-    // Clear the token on error to force a new fetch on next attempt
+    // Clear token on error to force a new fetch on next attempt
     csrfToken = null;
     throw error;
   }

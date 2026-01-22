@@ -62,11 +62,33 @@ except ImportError:
     DB_AVAILABLE = False
 
 # Import ML services
-try:
-    from satyaai_core import get_satyaai_instance
-    ML_AVAILABLE = True
-except ImportError:
-    logger.warning("ML services not available")
+ENABLE_ML_MODELS = os.getenv("ENABLE_ML_MODELS", "true").lower() == "true"
+
+# Initialize ML_AVAILABLE flag
+ML_AVAILABLE = False
+
+if ENABLE_ML_MODELS:
+    try:
+        # Test basic torch import first
+        import torch
+        logger.info(f"✅ PyTorch available: {torch.__version__}")
+        
+        # Now try to import detectors
+        from detectors.audio_detector import AudioDetector
+        from detectors.image_detector import ImageDetector
+        from detectors.video_detector import VideoDetector
+        from detectors.text_nlp_detector import TextNLPDetector
+        from detectors.multimodal_fusion_detector import MultimodalFusionDetector
+        ML_AVAILABLE = True
+        logger.info("✅ All ML detectors imported successfully")
+    except ImportError as e:
+        logger.warning(f"ML services not available: {e}")
+        ML_AVAILABLE = False
+    except Exception as e:
+        logger.error(f"ML initialization failed: {e}")
+        ML_AVAILABLE = False
+else:
+    logger.warning("ML models disabled by ENABLE_ML_MODELS flag")
     ML_AVAILABLE = False
 
 # Import routers
@@ -116,33 +138,73 @@ async def lifespan(app: FastAPI):
 
                 db_manager = get_db_manager()
 
-                # Validate database connection
-                try:
-                    # Test connection if method exists
-                    if hasattr(db_manager, "test_connection"):
-                        await db_manager.test_connection()
-                    logger.info("✅ Database connected successfully")
-                except Exception as db_error:
-                    logger.error(f"❌ Database connection test failed: {db_error}")
-                    logger.warning(
-                        "⚠️ Continuing without database - some features may be limited"
-                    )
+                # Enhanced database connection test with retry logic
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        # Test connection with timeout
+                        connection_result = await asyncio.wait_for(
+                            db_manager.test_connection(), 
+                            timeout=10.0  # 10 second timeout
+                        )
+                        
+                        if connection_result:
+                            logger.info("✅ Database connected successfully")
+                            
+                            # Perform health check
+                            health_status = await db_manager.health_check()
+                            logger.info(f"📊 Database health: {health_status}")
+                            break
+                        else:
+                            raise Exception("Connection test returned False")
+                            
+                    except asyncio.TimeoutError:
+                        logger.error(f"❌ Database connection timeout (attempt {attempt + 1}/{max_retries})")
+                        if attempt == max_retries - 1:
+                            logger.warning("⚠️ Database connection failed after timeout - continuing without database")
+                            logger.warning("⚠️ Some features may be limited without database connectivity")
+                    except Exception as db_error:
+                        logger.error(f"❌ Database connection test failed (attempt {attempt + 1}/{max_retries}): {db_error}")
+                        if attempt == max_retries - 1:
+                            logger.warning("⚠️ Continuing without database - some features may be limited")
+                        else:
+                            logger.info(f"🔄 Retrying database connection in 2 seconds...")
+                            await asyncio.sleep(2)
+                            
             except Exception as e:
                 logger.error(f"❌ Database initialization failed: {e}")
-                logger.warning(
-                    "⚠️ Continuing without database - some features may be limited"
-                )
+                logger.warning("⚠️ Continuing without database - some features may be limited")
 
         # Load ML models (lazy loading - models will be initialized on first use)
         if ML_AVAILABLE:
             logger.info("🤖 ML/DL models available (will load on first use)...")
-            # Models will be initialized lazily when first needed
+            # Initialize SentinelAgent with all detectors
+            try:
+                from sentinel_agent import SentinelAgent
+                app.state.sentinel_agent = SentinelAgent()
+                logger.info("✅ SentinelAgent initialized with ML capabilities")
+            except Exception as e:
+                logger.error(f"❌ Failed to initialize SentinelAgent: {e}")
+                ML_AVAILABLE = False
+            
+            # Only initialize model placeholders if ML is still available
+            if ML_AVAILABLE:
+                # Models will be initialized lazily when first needed
+                app.state.image_detector = None
+                app.state.video_detector = None
+                app.state.audio_detector = None
+                app.state.text_nlp_detector = None
+                app.state.multimodal_detector = None
+                logger.info("✅ ML models configured for lazy loading")
+        else:
+            logger.warning("⚠️ ML models not available - analysis features disabled")
+            # Ensure app state has ML flags set to False
+            app.state.sentinel_agent = None
             app.state.image_detector = None
             app.state.video_detector = None
             app.state.audio_detector = None
             app.state.text_nlp_detector = None
             app.state.multimodal_detector = None
-            logger.info("✅ ML models configured for lazy loading")
 
         # Initialize cache
         if DB_AVAILABLE:

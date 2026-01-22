@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import { promisify } from 'util';
 import { validateRequest } from '../middleware/validate-request';
-import { authenticate } from '../middleware/auth.middleware';
+import { supabaseAuth } from '../middleware/supabase-auth';
 import { pythonBridge } from '../services/python-http-bridge';
 import { logger } from '../config/logger';
 import { createAnalysisJob, updateAnalysisJobWithResults } from './history';
@@ -234,7 +234,7 @@ const validateAnalysisRequest = [
 // Analyze image
 router.post(
   '/image',
-  authenticate,
+  supabaseAuth,
   upload.single('image'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -313,7 +313,7 @@ router.post(
 // Analyze audio
 router.post(
   '/audio',
-  authenticate,
+  supabaseAuth,
   upload.single('audio'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -392,7 +392,7 @@ router.post(
 // Batch analysis
 router.post(
   '/batch',
-  authenticate,
+  supabaseAuth,
   upload.array('files', 10), // Max 10 files
   async (req: Request, res: Response) => {
     try {
@@ -435,7 +435,7 @@ router.post(
 );
 
 // Get analysis status
-router.get('/status/:id', authenticate, async (req: Request, res: Response) => {
+router.get('/status/:id', supabaseAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     
@@ -453,7 +453,7 @@ router.get('/status/:id', authenticate, async (req: Request, res: Response) => {
 // Analyze video
 router.post(
   '/video',
-  authenticate,
+  supabaseAuth,
   upload.single('video'),
   validateRequest,
   async (req: Request, res: Response) => {
@@ -536,7 +536,7 @@ router.post(
 // Analyze multimodal
 router.post(
   '/multimodal',
-  authenticate,
+  supabaseAuth,
   upload.array('files', 5), // Max 5 files for multimodal
   validateRequest,
   async (req: Request, res: Response) => {
@@ -625,7 +625,7 @@ router.post(
 // Analyze webcam capture
 router.post(
   '/webcam',
-  authenticate,
+  supabaseAuth,
   upload.single('image'),
   validateRequest,
   async (req: Request, res: Response) => {

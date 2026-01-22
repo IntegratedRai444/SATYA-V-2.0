@@ -12,6 +12,8 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
+from sentinel_agent import AnalysisRequest, AnalysisType
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()

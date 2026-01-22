@@ -16,6 +16,7 @@ export default function Settings() {
     fullName: user?.username || '',
     email: user?.email || '',
     username: user?.username || '',
+    avatarUrl: ''
   });
 
   const [passwordData, setPasswordData] = useState({
@@ -31,22 +32,24 @@ export default function Settings() {
         fullName: user?.username || '',
         email: user?.email || '',
         username: user?.username || '',
+        avatarUrl: ''
       });
     }
   }, [user]);
 
-  const handleSaveProfile = async () => {
+  const handleUpdateProfile = async () => {
     setIsLoading(true);
     try {
-      const response = await apiClient.put('/user/profile', {
+      const response = await apiClient.put('/api/v2/user/profile', {
         fullName: profileData.fullName,
-        email: profileData.email,
+        username: profileData.username,
+        avatar_url: profileData.avatarUrl
       });
 
       if (response.success) {
         toast({
           title: 'Profile Updated',
-          description: 'Your profile has been saved successfully.',
+          description: 'Your profile has been updated successfully',
         });
         setIsEditing(false);
       } else {
@@ -56,10 +59,11 @@ export default function Settings() {
           variant: 'destructive',
         });
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update profile';
       toast({
         title: 'Error',
-        description: error.message || 'Failed to update profile',
+        description: errorMessage,
         variant: 'destructive',
       });
     } finally {
@@ -107,10 +111,11 @@ export default function Settings() {
           variant: 'destructive',
         });
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to change password';
       toast({
         title: 'Error',
-        description: error.message || 'Failed to change password',
+        description: errorMessage,
         variant: 'destructive',
       });
     } finally {
@@ -142,10 +147,11 @@ export default function Settings() {
           variant: 'destructive',
         });
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete account';
       toast({
         title: 'Error',
-        description: error.message || 'Failed to delete account',
+        description: errorMessage,
         variant: 'destructive',
       });
     } finally {
@@ -249,7 +255,7 @@ export default function Settings() {
             ) : (
               <>
                 <Button
-                  onClick={handleSaveProfile}
+                  onClick={handleUpdateProfile}
                   className="bg-cyan-500 hover:bg-cyan-600 text-white"
                   disabled={isLoading}
                 >

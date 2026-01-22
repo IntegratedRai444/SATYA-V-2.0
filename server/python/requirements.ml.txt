@@ -1,0 +1,70 @@
+# SatyaAI ML Requirements - Machine Learning Dependencies
+# Install these AFTER core server is working
+
+# ML/AI Core
+torch>=2.4.0
+torchvision>=0.19.0
+torchaudio>=0.19.0
+tensorflow>=2.20.0
+keras>=3.13.0
+
+# NLP & Transformers
+huggingface-hub>=0.36.0
+transformers[torch]>=4.55.0
+timm>=1.0.24
+tokenizers>=0.22.2
+
+# Audio Processing
+librosa>=0.11.0
+soundfile>=0.13.1
+pydub>=0.25.1
+scipy>=1.17.0
+speechbrain>=1.0.3
+openai-whisper>=20250625
+faster-whisper>=1.0.3
+
+# Advanced Computer Vision
+opencv-contrib-python>=4.12.0.88
+scikit-image>=0.26.0
+mediapipe>=0.10.31
+albumentations>=1.4.0
+einops>=0.8.0
+efficientnet-pytorch>=0.7.1
+facenet-pytorch>=2.6.0
+
+# Video Processing
+moviepy>=2.2.1
+imageio>=2.37.2
+imageio-ffmpeg>=0.6.0
+ffmpeg-python>=0.2.0
+
+# Machine Learning
+scikit-learn>=1.8.0
+matplotlib>=3.10.8
+seaborn>=0.13.2
+
+# Model Optimization
+onnxruntime>=1.17.0
+pytorch-lightning>=2.6.0
+
+# Model Explainability
+captum>=0.7.0
+lime>=0.2.0.1
+shap>=0.44.0
+gradio>=4.40.0
+
+# NLP Processing
+nltk>=3.9.0
+textblob>=0.17.1
+
+# Visualization
+plotly>=5.20.0
+bokeh>=3.3.0
+
+# Advanced Utilities
+datasets>=2.18.0
+accelerate>=1.10.0
+
+# Testing (ML-specific)
+pytest-cov>=4.1.0
+pytest-asyncio>=0.21.1

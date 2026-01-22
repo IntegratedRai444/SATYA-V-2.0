@@ -1,0 +1,46 @@
+# SatyaAI Core Requirements - Server Startup Essentials
+# These ensure the FastAPI server starts without ML dependencies
+
+# Core Framework
+fastapi>=0.120.0
+uvicorn[standard]>=0.35.0
+python-multipart>=0.0.21
+pydantic>=2.10.0
+pydantic-settings>=2.5.0
+
+# Database & Caching
+# SQLAlchemy removed - using Supabase directly
+redis>=6.2.0
+
+# Authentication & Security
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+bcrypt>=4.2.0
+pyjwt>=2.8.0
+cryptography>=42.0.0
+
+# API & Networking
+requests>=2.32.5
+httpx>=0.28.1
+
+# Basic Data Processing
+numpy>=1.26.0
+pandas>=2.2.0
+
+# Computer Vision (Basic)
+opencv-python>=4.9.0.80
+Pillow>=10.3.0
+
+# Utilities
+python-dotenv>=1.0.0
+pyyaml>=6.0.1
+tqdm>=4.66.1
+colorama>=0.4.6
+
+# Development Tools
+pytest>=8.3.0
+black==24.1.0
+flake8==7.0.0
+
+# WebSocket Support
+websockets>=12.0

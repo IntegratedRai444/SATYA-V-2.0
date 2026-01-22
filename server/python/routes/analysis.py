@@ -7,18 +7,318 @@ import logging
 import sys
 from pathlib import Path
 from typing import List, Optional
+import base64
+import uuid
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel
 
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from database.analysis import AnalysisResult
 from services.database import get_db_manager
+from sentinel_agent import AnalysisRequest, AnalysisType
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Request/Response models
+class AnalysisRequestModel(BaseModel):
+    image: str  # base64 encoded
+    mimeType: str
+    jobId: str
+    filename: str
+
+class AnalysisResponse(BaseModel):
+    status: str
+    is_deepfake: bool
+    confidence: float
+    model_name: str
+    model_version: str
+    summary: dict
+    proof: dict
+
+@router.post("/image")
+async def analyze_image(request: Request, data: AnalysisRequestModel):
+    """
+    Analyze an image for deepfake detection
+    """
+    try:
+        if not hasattr(request.app.state, "sentinel_agent"):
+            raise HTTPException(
+                status_code=503, 
+                detail="Analysis service unavailable - ML models not initialized"
+            )
+
+        # Decode base64 image
+        try:
+            image_data = base64.b64decode(data.image)
+        except Exception as e:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid image data: {str(e)}"
+            )
+
+        # Create analysis request
+        analysis_request = AnalysisRequest(
+            analysis_type=AnalysisType.IMAGE,
+            content=image_data,
+            metadata={
+                "filename": data.filename,
+                "mime_type": data.mimeType,
+                "job_id": data.jobId,
+                "request_id": f"req_{uuid.uuid4().hex[:8]}",
+            },
+        )
+
+        # Execute analysis through SentinelAgent
+        result = await request.app.state.sentinel_agent.analyze(analysis_request)
+
+        if not result or not hasattr(result, "conclusions") or not result.conclusions:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to analyze image: No valid analysis results",
+            )
+
+        # Get the primary conclusion (highest confidence or most severe)
+        primary_conclusion = max(
+            result.conclusions, key=lambda c: (c.confidence, c.severity)
+        )
+
+        # Extract model info from the first available conclusion
+        model_info = {}
+        if result.conclusions:
+            model_info = result.conclusions[0].metadata.get("model_info", {})
+
+        # Format the response to match what Node.js expects
+        response = {
+            "status": "success",
+            "is_deepfake": primary_conclusion.is_deepfake,
+            "confidence": float(primary_conclusion.confidence),
+            "model_name": model_info.get("name", "SatyaAI-Image"),
+            "model_version": model_info.get("version", "1.0.0"),
+            "summary": {
+                "isDeepfake": primary_conclusion.is_deepfake,
+                "modelInfo": model_info,
+                "processingTime": getattr(result, 'processing_time', 0),
+                "evidenceId": result.evidence_ids[0] if hasattr(result, "evidence_ids") and result.evidence_ids else data.jobId,
+            },
+            "proof": {
+                "model_name": model_info.get("name", "SatyaAI-Image"),
+                "model_version": model_info.get("version", "1.0.0"),
+                "modality": "image",
+                "timestamp": datetime.utcnow().isoformat(),
+                "inference_duration": getattr(result, 'processing_time', 0),
+                "frames_analyzed": 1,
+                "signature": getattr(result, 'signature', f"sig_{uuid.uuid4().hex[:16]}"),
+                "metadata": {
+                    "request_id": f"req_{uuid.uuid4().hex[:8]}",
+                    "user_id": "anonymous",
+                    "analysis_type": "image",
+                    "content_size": len(image_data),
+                },
+            }
+        }
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Image analysis failed: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to process image: {str(e)}"
+        )
+
+@router.post("/video")
+async def analyze_video(request: Request, data: AnalysisRequestModel):
+    """
+    Analyze a video for deepfake detection
+    """
+    try:
+        if not hasattr(request.app.state, "sentinel_agent"):
+            raise HTTPException(
+                status_code=503, 
+                detail="Analysis service unavailable - ML models not initialized"
+            )
+
+        # Decode base64 video
+        try:
+            video_data = base64.b64decode(data.image)
+        except Exception as e:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid video data: {str(e)}"
+            )
+
+        # Create analysis request
+        analysis_request = AnalysisRequest(
+            analysis_type=AnalysisType.VIDEO,
+            content=video_data,
+            metadata={
+                "filename": data.filename,
+                "mime_type": data.mimeType,
+                "job_id": data.jobId,
+                "request_id": f"req_{uuid.uuid4().hex[:8]}",
+            },
+        )
+
+        # Execute analysis through SentinelAgent
+        result = await request.app.state.sentinel_agent.analyze(analysis_request)
+
+        if not result or not hasattr(result, "conclusions") or not result.conclusions:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to analyze video: No valid analysis results",
+            )
+
+        # Get the primary conclusion
+        primary_conclusion = max(
+            result.conclusions, key=lambda c: (c.confidence, c.severity)
+        )
+
+        # Extract model info
+        model_info = {}
+        if result.conclusions:
+            model_info = result.conclusions[0].metadata.get("model_info", {})
+
+        # Format response
+        response = {
+            "status": "success",
+            "is_deepfake": primary_conclusion.is_deepfake,
+            "confidence": float(primary_conclusion.confidence),
+            "model_name": model_info.get("name", "SatyaAI-Video"),
+            "model_version": model_info.get("version", "1.0.0"),
+            "summary": {
+                "isDeepfake": primary_conclusion.is_deepfake,
+                "modelInfo": model_info,
+                "processingTime": getattr(result, 'processing_time', 0),
+                "evidenceId": result.evidence_ids[0] if hasattr(result, "evidence_ids") and result.evidence_ids else data.jobId,
+            },
+            "proof": {
+                "model_name": model_info.get("name", "SatyaAI-Video"),
+                "model_version": model_info.get("version", "1.0.0"),
+                "modality": "video",
+                "timestamp": datetime.utcnow().isoformat(),
+                "inference_duration": getattr(result, 'processing_time', 0),
+                "frames_analyzed": getattr(result, 'frames_analyzed', 0),
+                "signature": getattr(result, 'signature', f"sig_{uuid.uuid4().hex[:16]}"),
+                "metadata": {
+                    "request_id": f"req_{uuid.uuid4().hex[:8]}",
+                    "user_id": "anonymous",
+                    "analysis_type": "video",
+                    "content_size": len(video_data),
+                },
+            }
+        }
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Video analysis failed: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to process video: {str(e)}"
+        )
+
+@router.post("/audio")
+async def analyze_audio(request: Request, data: AnalysisRequestModel):
+    """
+    Analyze audio for deepfake detection
+    """
+    try:
+        if not hasattr(request.app.state, "sentinel_agent"):
+            raise HTTPException(
+                status_code=503, 
+                detail="Analysis service unavailable - ML models not initialized"
+            )
+
+        # Decode base64 audio
+        try:
+            audio_data = base64.b64decode(data.image)
+        except Exception as e:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid audio data: {str(e)}"
+            )
+
+        # Create analysis request
+        analysis_request = AnalysisRequest(
+            analysis_type=AnalysisType.AUDIO,
+            content=audio_data,
+            metadata={
+                "filename": data.filename,
+                "mime_type": data.mimeType,
+                "job_id": data.jobId,
+                "request_id": f"req_{uuid.uuid4().hex[:8]}",
+            },
+        )
+
+        # Execute analysis through SentinelAgent
+        result = await request.app.state.sentinel_agent.analyze(analysis_request)
+
+        if not result or not hasattr(result, "conclusions") or not result.conclusions:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to analyze audio: No valid analysis results",
+            )
+
+        # Get the primary conclusion
+        primary_conclusion = max(
+            result.conclusions, key=lambda c: (c.confidence, c.severity)
+        )
+
+        # Extract model info
+        model_info = {}
+        if result.conclusions:
+            model_info = result.conclusions[0].metadata.get("model_info", {})
+
+        # Format response
+        response = {
+            "status": "success",
+            "is_deepfake": primary_conclusion.is_deepfake,
+            "confidence": float(primary_conclusion.confidence),
+            "model_name": model_info.get("name", "SatyaAI-Audio"),
+            "model_version": model_info.get("version", "1.0.0"),
+            "summary": {
+                "isDeepfake": primary_conclusion.is_deepfake,
+                "modelInfo": model_info,
+                "processingTime": getattr(result, 'processing_time', 0),
+                "evidenceId": result.evidence_ids[0] if hasattr(result, "evidence_ids") and result.evidence_ids else data.jobId,
+            },
+            "proof": {
+                "model_name": model_info.get("name", "SatyaAI-Audio"),
+                "model_version": model_info.get("version", "1.0.0"),
+                "modality": "audio",
+                "timestamp": datetime.utcnow().isoformat(),
+                "inference_duration": getattr(result, 'processing_time', 0),
+                "frames_analyzed": 1,
+                "signature": getattr(result, 'signature', f"sig_{uuid.uuid4().hex[:16]}"),
+                "metadata": {
+                    "request_id": f"req_{uuid.uuid4().hex[:8]}",
+                    "user_id": "anonymous",
+                    "analysis_type": "audio",
+                    "content_size": len(audio_data),
+                },
+            }
+        }
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Audio analysis failed: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to process audio: {str(e)}"
+        )
 
 
 @router.get("/history")

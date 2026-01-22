@@ -21,7 +21,7 @@ export interface AnalysisOptions {
   // Advanced options
   language?: string;
   modelId?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   
   // Media-specific options
   text?: string;
@@ -40,7 +40,7 @@ export interface AnalysisResult {
   result?: {
     isAuthentic: boolean;
     confidence: number;
-    details: Record<string, any>;
+    details: Record<string, unknown>;
     metrics: {
       processingTime: number;
       modelVersion: string;
@@ -56,7 +56,7 @@ export interface AnalysisApiResponse {
   analysis: {
     is_deepfake: boolean;
     confidence: number;
-    model_info: Record<string, any>;
+    model_info: Record<string, unknown>;
     timestamp: string;
     evidence_id: string;
     proof: AnalysisProof;
@@ -84,21 +84,30 @@ export class AnalysisService extends BaseService {
     super(''); // Use empty base path since we're using direct routes
   }
 
-  private validateResponse<T>(response: any): T {
+  private validateResponse<T>(response: unknown): T {
     if (!response) {
       throw new Error('Empty response from server');
     }
 
+    // Type guard to ensure response is an object
+    if (typeof response !== 'object' || response === null) {
+      throw new Error('Invalid response format');
+    }
+
+    const responseObj = response as Record<string, unknown>;
+
     // Check for error response
-    if (response.error) {
-      throw new Error(response.error.message || 'Analysis failed');
+    if (responseObj.error) {
+      const errorObj = responseObj.error as Record<string, unknown>;
+      throw new Error((errorObj.message as string) || 'Analysis failed');
     }
 
     // Validate proof if present
-    if (response.proof) {
+    if (responseObj.proof) {
+      const proofObj = responseObj.proof as Record<string, unknown>;
       const requiredFields = ['model_name', 'model_version', 'signature', 'timestamp'];
       for (const field of requiredFields) {
-        if (response.proof[field] === undefined || response.proof[field] === null) {
+        if (proofObj[field] === undefined || proofObj[field] === null) {
           throw new Error(`Invalid proof: missing required field '${field}'`);
         }
       }
@@ -121,7 +130,7 @@ export class AnalysisService extends BaseService {
     }
 
     try {
-      const response = await this.post<AnalysisApiResponse>('/analysis/image', formData, {
+      const response = await this.post<AnalysisApiResponse>('/api/v2/analysis/image', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -179,7 +188,7 @@ export class AnalysisService extends BaseService {
     formData.append('file', file);
 
     return this.upload<AnalysisResult>(
-      '/analysis/video',
+      '/api/v2/analysis/video',
       formData,
       options
     );
@@ -193,14 +202,14 @@ export class AnalysisService extends BaseService {
     formData.append('file', file);
 
     return this.upload<AnalysisResult>(
-      '/analysis/audio',
+      '/api/v2/analysis/audio',
       formData,
       options
     );
   }
 
   async getAnalysisResult(id: string): Promise<AnalysisResult> {
-    return this.get<AnalysisResult>(`/results/${id}`);
+    return this.get<AnalysisResult>(`/api/v2/results/${id}`);
   }
 
   async getAnalysisHistory(params: {
@@ -208,11 +217,11 @@ export class AnalysisService extends BaseService {
     offset?: number;
     type?: string;
   } = {}): Promise<{ items: AnalysisResult[]; total: number }> {
-    return this.get<{ items: AnalysisResult[]; total: number }>('/history', params);
+    return this.get<{ items: AnalysisResult[]; total: number }>('/api/v2/history', params);
   }
 
   async deleteAnalysis(id: string): Promise<void> {
-    await this.delete(`/results/${id}`);
+    await this.delete(`/api/v2/results/${id}`);
   }
 
   /**
@@ -227,7 +236,7 @@ export class AnalysisService extends BaseService {
     offset?: number;
   } = {}): Promise<{ items: ModelInfo[]; total: number }> {
     try {
-      return await this.get<{ items: ModelInfo[]; total: number }>('/models', options);
+      return await this.get<{ items: ModelInfo[]; total: number }>('/api/v2/models', options);
     } catch (error) {
       console.error('Failed to fetch models:', error);
       // Return a default model if the API call fails
@@ -261,7 +270,10 @@ export class AnalysisService extends BaseService {
         const percentCompleted = Math.round(
           (progressEvent.loaded * 100) / (progressEvent.total || 1)
         );
-        (options.metadata as any).onUploadProgress(percentCompleted);
+        const metadataObj = options.metadata as Record<string, unknown>;
+        if (typeof metadataObj.onUploadProgress === 'function') {
+          metadataObj.onUploadProgress(percentCompleted);
+        }
       };
     }
 

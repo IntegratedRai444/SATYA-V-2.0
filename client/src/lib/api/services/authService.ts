@@ -49,7 +49,7 @@ export class AuthService extends BaseService {
 
   public static getInstance(): AuthService {
     if (!AuthService.instance) {
-      AuthService.instance = new (AuthService as any)();
+      AuthService.instance = new AuthService();
     }
     return AuthService.instance;
   }
@@ -78,47 +78,49 @@ export class AuthService extends BaseService {
 
     // Set the refresh lock
     this.isRefreshing = true;
-    this.refreshLock = new Promise<AuthResponse>(async (resolve, reject) => {
-      try {
-        const response = await this.post<AuthResponse>(
-          '/refresh',
-          {},
-          {
-            skipAuth: true,
-            withCredentials: true,
-            headers: {
-              'X-Requested-With': 'XMLHttpRequest',
-              'X-Refresh-Token': 'true',
-              'Content-Type': 'application/json'
+    this.refreshLock = new Promise<AuthResponse>((resolve, reject) => {
+      (async () => {
+        try {
+          const response = await this.post<AuthResponse>(
+            '/refresh',
+            {},
+            {
+              skipAuth: true,
+              withCredentials: true,
+              headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-Refresh-Token': 'true',
+                'Content-Type': 'application/json'
+              }
             }
+          );
+
+          if (!response.access_token) {
+            throw new Error('No access token in refresh response');
           }
-        );
 
-        if (!response.access_token) {
-          throw new Error('No access token in refresh response');
+          // Update tokens and expiry
+          this.lastTokenRefresh = Date.now();
+          if (response.expires_in) {
+            this.tokenExpiry = this.lastTokenRefresh + (response.expires_in * 1000);
+          }
+
+          // Notify all subscribers
+          this.refreshSubscribers.forEach(({ resolve }) => resolve());
+          this.refreshSubscribers = [];
+
+          resolve(response);
+        } catch (error) {
+          // Notify all subscribers of the error
+          this.refreshSubscribers.forEach(({ reject: rej }) => rej(error as Error));
+          this.refreshSubscribers = [];
+          reject(error);
+        } finally {
+          // Clear the refresh lock
+          this.isRefreshing = false;
+          this.refreshLock = null;
         }
-
-        // Update tokens and expiry
-        this.lastTokenRefresh = Date.now();
-        if (response.expires_in) {
-          this.tokenExpiry = this.lastTokenRefresh + (response.expires_in * 1000);
-        }
-
-        // Notify all subscribers
-        this.refreshSubscribers.forEach(({ resolve }) => resolve());
-        this.refreshSubscribers = [];
-
-        resolve(response);
-      } catch (error) {
-        // Notify all subscribers of the error
-        this.refreshSubscribers.forEach(({ reject: rej }) => rej(error as Error));
-        this.refreshSubscribers = [];
-        reject(error);
-      } finally {
-        // Clear the refresh lock
-        this.isRefreshing = false;
-        this.refreshLock = null;
-      }
+      })();
     });
 
     return this.refreshLock;
