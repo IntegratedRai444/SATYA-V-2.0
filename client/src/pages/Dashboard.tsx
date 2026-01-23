@@ -1,3 +1,4 @@
+import React from 'react';
 import {
   FiCloud,
   FiHelpCircle,
@@ -34,7 +35,20 @@ import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
 import { useDashboardStats } from '@/hooks/useDashboardStats';
 import { useDashboardWebSocket } from '@/hooks/useDashboardWebSocket';
 
-const Dashboard = () => {
+/**
+ * Dashboard Component
+ * 
+ * Main dashboard page displaying:
+ * - System statistics and metrics
+ * - Recent analysis activity
+ * - Progress tracking for ongoing analyses
+ * - Quick access to analysis tools
+ * - Connection status indicators
+ * 
+ * @component
+ * @returns {JSX.Element} Dashboard interface
+ */
+const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { logout } = useAuth();
   
@@ -48,7 +62,7 @@ const Dashboard = () => {
     progress: number;
     status: 'uploading' | 'processing' | 'completed' | 'error' | 'queued';
     message?: string;
-    result?: any;
+    result?: Record<string, unknown>;
   }>>([]);
   
   const [analysisResults] = useState<Array<{

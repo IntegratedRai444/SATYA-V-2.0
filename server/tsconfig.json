@@ -15,7 +15,7 @@
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
     "types": ["node"],
-    "baseUrl": ".",
+    "baseUrl": "./",
     "paths": {
       "@/*": ["./src/*"],
       "@shared/*": ["../shared/*"]
@@ -25,16 +25,6 @@
       "./src/types"
     ]
   },
-  "include": [
-    "src/**/*.ts",
-    "config/**/*.ts",
-    "middleware/**/*.ts",
-    "routes/**/*.ts",
-    "services/**/*.ts",
-    "utils/**/*.ts",
-    "app.ts",
-    "server.ts"
-  ],
   "exclude": [
     "node_modules",
     "dist",

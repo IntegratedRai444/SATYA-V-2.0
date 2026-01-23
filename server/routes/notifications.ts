@@ -1,9 +1,8 @@
 import { Router, Request, type Response } from 'express';
-import { supabaseAuth } from '../middleware/supabase-auth';
 import { supabase } from '../config/supabase';
 import rateLimit from 'express-rate-limit';
 import { auditLogger } from '../middleware/audit-logger';
-import '../types/express'; // Import to load Express type extensions
+// Express types are handled by the main express import
 
 const router = Router();
 
@@ -17,7 +16,7 @@ const notificationRateLimit = rateLimit({
 });
 
 // GET /api/v2/notifications - Get user notifications
-router.get('/', notificationRateLimit, supabaseAuth, auditLogger('sensitive_data_access', 'notifications'), async (req: Request, res: Response) => {
+router.get('/', notificationRateLimit, auditLogger('sensitive_data_access', 'notifications'), async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -76,7 +75,7 @@ router.get('/', notificationRateLimit, supabaseAuth, auditLogger('sensitive_data
 });
 
 // POST /api/v2/notifications - Create notification (for system use)
-router.post('/', notificationRateLimit, supabaseAuth, auditLogger('notification_create', 'notification'), async (req: Request, res: Response) => {
+router.post('/', notificationRateLimit, auditLogger('notification_create', 'notification'), async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -128,7 +127,7 @@ router.post('/', notificationRateLimit, supabaseAuth, auditLogger('notification_
 });
 
 // PUT /api/v2/notifications/:id/read - Mark notification as read
-router.put('/:id/read', notificationRateLimit, supabaseAuth, auditLogger('notification_read', 'notification'), async (req: Request, res: Response) => {
+router.put('/:id/read', notificationRateLimit, auditLogger('notification_read', 'notification'), async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     const { id } = req.params;
@@ -174,7 +173,7 @@ router.put('/:id/read', notificationRateLimit, supabaseAuth, auditLogger('notifi
 });
 
 // PUT /api/v2/notifications/read-all - Mark all notifications as read
-router.put('/read-all', notificationRateLimit, supabaseAuth, auditLogger('notification_read', 'notifications'), async (req: Request, res: Response) => {
+router.put('/read-all', notificationRateLimit, auditLogger('notification_read', 'notifications'), async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
 
@@ -210,7 +209,7 @@ router.put('/read-all', notificationRateLimit, supabaseAuth, auditLogger('notifi
 });
 
 // DELETE /api/v2/notifications/:id - Delete notification
-router.delete('/:id', notificationRateLimit, supabaseAuth, auditLogger('admin_action', 'notification'), async (req: Request, res: Response) => {
+router.delete('/:id', notificationRateLimit, auditLogger('admin_action', 'notification'), async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     const { id } = req.params;
@@ -247,7 +246,7 @@ router.delete('/:id', notificationRateLimit, supabaseAuth, auditLogger('admin_ac
 });
 
 // DELETE /api/v2/notifications - Clear all notifications
-router.delete('/', notificationRateLimit, supabaseAuth, auditLogger('admin_action', 'notifications'), async (req: Request, res: Response) => {
+router.delete('/', notificationRateLimit, auditLogger('admin_action', 'notifications'), async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
 
@@ -282,7 +281,7 @@ router.delete('/', notificationRateLimit, supabaseAuth, auditLogger('admin_actio
 });
 
 // GET /api/v2/notifications/unread-count - Get unread notification count
-router.get('/unread-count', notificationRateLimit, supabaseAuth, auditLogger('sensitive_data_access', 'notifications'), async (req: Request, res: Response) => {
+router.get('/unread-count', notificationRateLimit, auditLogger('sensitive_data_access', 'notifications'), async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
 

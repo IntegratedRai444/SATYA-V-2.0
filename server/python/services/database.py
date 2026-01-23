@@ -14,7 +14,13 @@ from typing import Dict, List, Optional
 # Add database directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "database"))
 
-from database.base import get_supabase
+try:
+    from database.base import get_supabase
+except ImportError:
+    # Fallback if database module not available
+    def get_supabase():
+        return None
+    logger.warning("Database module not available, database features disabled")
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +34,21 @@ class DatabaseManager:
         """Initialize database manager"""
         self.supabase = get_supabase()
         self._connection_tested = False
-        logger.info("✅ Supabase database manager initialized")
+        
+        # Check if supabase is available
+        if self.supabase is None:
+            logger.warning("⚠️ Supabase not available - database features disabled")
+        else:
+            logger.info("✅ Supabase database manager initialized")
 
     async def test_connection(self) -> bool:
         """
         Test database connection with a simple query
         """
+        if self.supabase is None:
+            logger.warning("⚠️ Cannot test connection - Supabase not available")
+            return False
+            
         try:
             # Test connection with a simple query to check if we can reach the database
             result = self.supabase.table("users").select("count").limit(1).execute()
@@ -43,7 +58,7 @@ class DatabaseManager:
                 logger.info("✅ Database connection test successful")
                 return True
             else:
-                logger.error("❌ Database connection test failed: No response")
+                logger.warning("⚠️ Database connection test returned None")
                 return False
                 
         except Exception as e:

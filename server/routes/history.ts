@@ -1,5 +1,4 @@
 import { Router, Request, Response } from 'express';
-import { supabaseAuth } from '../middleware/supabase-auth';
 import { supabase } from '../config/supabase';
 import { logger } from '../config/logger';
 
@@ -21,7 +20,6 @@ declare module 'express-serve-static-core' {
 
 // GET /api/v2/history - Get paginated list of user's analysis jobs
 router.get('/',
-  supabaseAuth,
   async (req: Request, res: Response) => {
     try {
       const userId = req.user?.id;
@@ -111,7 +109,6 @@ router.get('/',
 
 // GET /api/v2/history/:jobId - Get full job details with analysis results
 router.get('/:jobId',
-  supabaseAuth,
   async (req: Request, res: Response) => {
     try {
       const userId = req.user?.id;
@@ -213,7 +210,6 @@ router.get('/:jobId',
 
 // DELETE /api/v2/history/:jobId - Delete a specific analysis job
 router.delete('/:jobId',
-  supabaseAuth,
   async (req: Request, res: Response) => {
     try {
       const userId = req.user?.id;
@@ -242,10 +238,10 @@ router.delete('/:jobId',
         });
       }
 
-      // Delete the job (cascade will delete related analysis_results)
+      // Soft delete the job (set deleted_at timestamp)
       const { error: deleteError } = await supabase
         .from('tasks')
-        .delete()
+        .update({ deleted_at: new Date().toISOString() })
         .eq('id', jobId)
         .eq('user_id', userId)
         .eq('type', 'analysis');

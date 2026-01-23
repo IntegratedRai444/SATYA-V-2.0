@@ -87,7 +87,7 @@ class VideoDetector:
 
         # Initialize image detector for frame analysis
         if IMAGE_DETECTOR_AVAILABLE:
-            self.image_detector = ImageDetector(use_advanced_model=self.config.get("use_advanced_image_model", False))
+            self.image_detector = ImageDetector(use_advanced_model=False)  # Fixed: remove config dependency
             logger.info("✅ Image detector loaded for frame analysis")
         else:
             self.image_detector = None

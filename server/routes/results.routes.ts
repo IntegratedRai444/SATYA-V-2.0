@@ -1,12 +1,11 @@
 import { Router, Request, Response } from 'express';
-import { supabaseAuth } from '../middleware/supabase-auth';
 import { supabase } from '../config/supabase';
 import { logger } from '../config/logger';
 
 const router = Router();
 
 // GET /api/v2/results/:id - Get analysis result by ID
-router.get('/:id', supabaseAuth, async (req: Request, res: Response) => {
+router.get('/:id', async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     const { id } = req.params;
@@ -75,7 +74,7 @@ router.get('/:id', supabaseAuth, async (req: Request, res: Response) => {
 });
 
 // DELETE /api/v2/results/:id - Delete analysis result
-router.delete('/:id', supabaseAuth, async (req: Request, res: Response) => {
+router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     const { id } = req.params;

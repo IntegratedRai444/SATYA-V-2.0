@@ -17,11 +17,27 @@ export const useSupabaseAuth = () => {
     const initializeAuth = async () => {
       try {
         setIsLoading(true);
-        const currentUser = await getCurrentUser();
+        
+        // Add timeout mechanism
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error('Authentication initialization timeout'));
+          }, 10000); // 10 second timeout
+        });
+        
+        const authPromise = getCurrentUser();
+        
+        // Race between auth initialization and timeout
+        const currentUser = await Promise.race([authPromise, timeoutPromise]);
         setUser(currentUser);
-      } catch (err) {
+      } catch (err: unknown) {
         console.error('Auth initialization error:', err);
-        setError('Failed to initialize authentication');
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+        if (errorMessage === 'Authentication initialization timeout') {
+          setError('Authentication timed out. Please refresh the page.');
+        } else {
+          setError('Failed to initialize authentication');
+        }
       } finally {
         setIsLoading(false);
       }

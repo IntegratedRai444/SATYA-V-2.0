@@ -170,18 +170,9 @@ class RetryManager {
   }
 }
 
-// Create axios instances
+// Create axios instance
 const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5001/api/v2',
-  withCredentials: true,
-  headers: {
-    'Content-Type': 'application/json',
-    'X-Requested-With': 'XMLHttpRequest',
-  },
-});
-
-const authApiClient = axios.create({
-  baseURL: import.meta.env.VITE_AUTH_API_URL || '/auth',
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
@@ -210,15 +201,15 @@ export type RequestOptions = {
 
 export class BaseService {
   protected basePath: string;
+  protected client: typeof apiClient;
   protected isAuthService: boolean;
-  private client: typeof apiClient;
   private deduplicator = new RequestDeduplicator();
   private retryManager = new RetryManager();
 
   constructor(basePath: string, isAuthService: boolean = false) {
     this.basePath = basePath;
     this.isAuthService = isAuthService;
-    this.client = isAuthService ? authApiClient : apiClient;
+    this.client = apiClient;
   }
 
   protected async get<T = unknown>(

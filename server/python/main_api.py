@@ -7,15 +7,17 @@ import logging
 import os
 import sys
 import time
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 # Load environment variables from .env file
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Request, status, UploadFile, File, Depends
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -25,11 +27,6 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
-
-from config import Settings
-
-# Initialize settings
-settings = Settings()
 
 # Configure logging with proper encoding for Windows
 if sys.platform == "win32":
@@ -50,16 +47,49 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+from config import Settings
+
+# Initialize settings with error handling
+try:
+    settings = Settings()
+    logger.info("✅ Configuration loaded successfully")
+except Exception as e:
+    logger.error(f"❌ Failed to load configuration: {e}")
+    logger.error("Please check your environment variables and .env file")
+    sys.exit(1)
+
 # Import services
 try:
     from services.cache import CacheManager
-    from services.database import DatabaseManager
-    from services.websocket import WebSocketManager
+    CACHE_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Cache service not available: {e}")
+    CACHE_AVAILABLE = False
+    CacheManager = None
 
-    DB_AVAILABLE = True
-except ImportError:
-    logger.warning("Database services not available")
-    DB_AVAILABLE = False
+try:
+    from services.database import DatabaseManager
+    DATABASE_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Database service not available: {e}")
+    DATABASE_AVAILABLE = False
+    DatabaseManager = None
+
+# WebSocket is handled by Node.js backend - not needed in Python
+WEBSOCKET_AVAILABLE = False
+WebSocketManager = None
+
+# Set DB_AVAILABLE based on individual service availability
+DB_AVAILABLE = DATABASE_AVAILABLE and CACHE_AVAILABLE
+
+# Import middleware
+try:
+    from middleware.auth_middleware import SupabaseAuthMiddleware, get_current_user
+    from middleware.rate_limiter import RateLimitMiddleware
+    MIDDLEWARE_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Middleware not available: {e}")
+    MIDDLEWARE_AVAILABLE = False
 
 # Import ML services
 ENABLE_ML_MODELS = os.getenv("ENABLE_ML_MODELS", "true").lower() == "true"
@@ -112,6 +142,31 @@ try:
 except ImportError as e:
     ROUTES_AVAILABLE = False
 
+# Import unified detector for consistent interface
+try:
+    from detectors.unified_detector import get_unified_detector, ModalityType
+    UNIFIED_DETECTOR_AVAILABLE = True
+    logger.info("✅ Unified detector with consistent interface available")
+except ImportError as e:
+    logger.warning(f"Unified detector not available: {e}")
+    UNIFIED_DETECTOR_AVAILABLE = False
+    get_unified_detector = None
+    ModalityType = None
+except Exception as e:
+    logger.warning(f"Unified detector initialization failed: {e}")
+    UNIFIED_DETECTOR_AVAILABLE = False
+    get_unified_detector = None
+    ModalityType = None
+try:
+    from satyaai_core import SatyaAICore, DetectorType
+    SATYAAI_CORE_AVAILABLE = True
+    logger.info("✅ SatyaAI Core with multi-modal fusion available")
+except ImportError as e:
+    logger.warning(f"SatyaAI Core not available: {e}")
+    SATYAAI_CORE_AVAILABLE = False
+    SatyaAICore = None
+    DetectorType = None
+
 # Import monitoring
 try:
     from prometheus_fastapi_instrumentator import Instrumentator
@@ -126,6 +181,9 @@ except ImportError:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan"""
+    # Declare global variables to fix UnboundLocalError
+    global ML_AVAILABLE, DB_AVAILABLE
+    
     logger.info("🚀 Starting SatyaAI Python API Server...")
 
     # Startup
@@ -178,6 +236,7 @@ async def lifespan(app: FastAPI):
         # Load ML models (lazy loading - models will be initialized on first use)
         if ML_AVAILABLE:
             logger.info("🤖 ML/DL models available (will load on first use)...")
+            
             # Initialize SentinelAgent with all detectors
             try:
                 from sentinel_agent import SentinelAgent
@@ -186,6 +245,39 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.error(f"❌ Failed to initialize SentinelAgent: {e}")
                 ML_AVAILABLE = False
+            
+            # Initialize unified detector for consistent interface
+            if UNIFIED_DETECTOR_AVAILABLE and not hasattr(app.state, 'unified_detector'):
+                try:
+                    import torch  # Import torch here for availability check
+                    config = {
+                        "MODEL_PATH": "models",
+                        "ENABLE_GPU": torch.cuda.is_available(),
+                        "ENABLE_FORENSICS": True,
+                        "ENABLE_MULTIMODAL": True
+                    }
+                    app.state.unified_detector = get_unified_detector(config)
+                    logger.info("✅ Unified detector initialized with consistent interface")
+                except Exception as e:
+                    logger.error(f"❌ Failed to initialize unified detector: {e}")
+                    app.state.unified_detector = None
+            
+            # Initialize SatyaAI Core with multi-modal fusion (only if unified detector not available)
+            if SATYAAI_CORE_AVAILABLE and not hasattr(app.state, 'satyaai_core'):
+                try:
+                    import torch
+                    config = {
+                        "MODEL_PATH": "models",
+                        "ENABLE_GPU": torch.cuda.is_available(),
+                        "ENABLE_SENTINEL": True,
+                        "MAX_WORKERS": 4,
+                        "CACHE_RESULTS": True
+                    }
+                    app.state.satyaai_core = SatyaAICore(config)
+                    logger.info("✅ SatyaAI Core initialized with multi-modal fusion")
+                except Exception as e:
+                    logger.error(f"❌ Failed to initialize SatyaAI Core: {e}")
+                    app.state.satyaai_core = None
             
             # Only initialize model placeholders if ML is still available
             if ML_AVAILABLE:
@@ -200,6 +292,7 @@ async def lifespan(app: FastAPI):
             logger.warning("⚠️ ML models not available - analysis features disabled")
             # Ensure app state has ML flags set to False
             app.state.sentinel_agent = None
+            app.state.satyaai_core = None
             app.state.image_detector = None
             app.state.video_detector = None
             app.state.audio_detector = None
@@ -296,6 +389,30 @@ async def preflight_handler(request: Request, full_path: str):
 
 # Add browser blocking middleware (commented out for testing)
 # app.add_middleware(BlockBrowserMiddleware)
+
+# Add Supabase auth middleware if available
+if MIDDLEWARE_AVAILABLE and settings.SUPABASE_URL and settings.SUPABASE_ANON_KEY:
+    try:
+        app.add_middleware(
+            SupabaseAuthMiddleware,
+            supabase_url=settings.SUPABASE_URL,
+            supabase_anon_key=settings.SUPABASE_ANON_KEY,
+            public_paths=["/api/v2/docs", "/api/v2/redoc", "/health", "/"]
+        )
+        logger.info("✅ Supabase auth middleware enabled")
+    except Exception as e:
+        logger.error(f"Failed to add Supabase auth middleware: {e}")
+else:
+    logger.warning("⚠️ Supabase auth middleware not available - missing configuration")
+
+# Add rate limiting middleware if available
+if MIDDLEWARE_AVAILABLE:
+    try:
+        from middleware.rate_limiter import RateLimitMiddleware
+        app.add_middleware(RateLimitMiddleware)
+        logger.info("✅ Rate limiting middleware enabled")
+    except Exception as e:
+        logger.error(f"Failed to add rate limiting middleware: {e}")
 
 # Compression - Compress responses > 1KB
 app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=6)
@@ -456,8 +573,18 @@ if ROUTES_AVAILABLE:
     # All routes are now registered through the route_configs list
 
 # ============================================================================
-# ROOT ENDPOINTS
-# ============================================================================
+# WEBSOCKET ENDPOINT (Removed - handled by Node.js backend)
+# WebSocket communication is handled by Node.js gateway
+# Python focuses on ML computation only
+
+# FastAPI WebSocket endpoint (for completeness, but not used)
+# @app.websocket("/ws")
+# async def websocket_endpoint(websocket: WebSocket):
+#     """WebSocket endpoint for real-time communication (handled by Node.js)"""
+#     await websocket.accept()
+#     client_id = f"client_{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}"
+#     logger.info(f"WebSocket client connected: {client_id}")
+#     # WebSocket logic handled by Node.js backend
 
 
 @app.get("/")
@@ -517,8 +644,321 @@ async def wiring_check():
     return {"routes": routes}
 
 
-# WEBSOCKET ENDPOINT
-# ============================================================================
+@app.post("/api/v2/analysis/unified/image")
+async def analyze_image_unified(
+    file: UploadFile = File(...),
+    analyze_forensics: bool = True,
+    current_user: Optional[Dict] = Depends(get_current_user) if MIDDLEWARE_AVAILABLE else None
+):
+    """
+    Unified image analysis with consistent interface.
+    
+    Args:
+        file: Image file to analyze
+        analyze_forensics: Whether to perform forensic analysis
+        current_user: Authenticated user (if auth enabled)
+        
+    Returns:
+        Standardized analysis result
+    """
+    if not UNIFIED_DETECTOR_AVAILABLE or not hasattr(app.state, 'unified_detector') or app.state.unified_detector is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Unified detector not available"
+        )
+    
+    try:
+        # Read and validate file
+        contents = await file.read()
+        if not contents or len(contents) < 100:
+            raise ValueError("Invalid file")
+        
+        # Perform unified analysis
+        detector = app.state.unified_detector
+        result = detector.detect_image(contents, analyze_forensics=analyze_forensics)
+        
+        # Add metadata
+        result_dict = result.to_dict()
+        result_dict.update({
+            "filename": file.filename,
+            "file_size": len(contents),
+            "user_id": current_user.get("id") if current_user else "anonymous"
+        })
+        
+        logger.info(f"Unified image analysis: {result.authenticity} ({result.confidence:.2f})")
+        return {
+            "success": result.success,
+            "result": result_dict
+        }
+        
+    except Exception as e:
+        logger.error(f"Unified image analysis failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v2/analysis/unified/video")
+async def analyze_video_unified(
+    file: UploadFile = File(...),
+    analyze_frames: Optional[int] = None,
+    current_user: Optional[Dict] = Depends(get_current_user) if MIDDLEWARE_AVAILABLE else None
+):
+    """
+    Unified video analysis with consistent interface.
+    
+    Args:
+        file: Video file to analyze
+        analyze_frames: Number of frames to analyze
+        current_user: Authenticated user (if auth enabled)
+        
+    Returns:
+        Standardized analysis result
+    """
+    if not UNIFIED_DETECTOR_AVAILABLE or not hasattr(app.state, 'unified_detector') or app.state.unified_detector is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Unified detector not available"
+        )
+    
+    try:
+        # Read and validate file
+        contents = await file.read()
+        if not contents or len(contents) < 100:
+            raise ValueError("Invalid file")
+        
+        # Perform unified analysis
+        detector = app.state.unified_detector
+        result = detector.detect_video(contents, analyze_frames=analyze_frames)
+        
+        # Add metadata
+        result_dict = result.to_dict()
+        result_dict.update({
+            "filename": file.filename,
+            "file_size": len(contents),
+            "user_id": current_user.get("id") if current_user else "anonymous"
+        })
+        
+        logger.info(f"Unified video analysis: {result.authenticity} ({result.confidence:.2f})")
+        return {
+            "success": result.success,
+            "result": result_dict
+        }
+        
+    except Exception as e:
+        logger.error(f"Unified video analysis failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v2/analysis/unified/audio")
+async def analyze_audio_unified(
+    file: UploadFile = File(...),
+    current_user: Optional[Dict] = Depends(get_current_user) if MIDDLEWARE_AVAILABLE else None
+):
+    """
+    Unified audio analysis with consistent interface.
+    
+    Args:
+        file: Audio file to analyze
+        current_user: Authenticated user (if auth enabled)
+        
+    Returns:
+        Standardized analysis result
+    """
+    if not UNIFIED_DETECTOR_AVAILABLE or not hasattr(app.state, 'unified_detector') or app.state.unified_detector is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Unified detector not available"
+        )
+    
+    try:
+        # Read and validate file
+        contents = await file.read()
+        if not contents or len(contents) < 100:
+            raise ValueError("Invalid file")
+        
+        # Perform unified analysis
+        detector = app.state.unified_detector
+        result = detector.detect_audio(contents)
+        
+        # Add metadata
+        result_dict = result.to_dict()
+        result_dict.update({
+            "filename": file.filename,
+            "file_size": len(contents),
+            "user_id": current_user.get("id") if current_user else "anonymous"
+        })
+        
+        logger.info(f"Unified audio analysis: {result.authenticity} ({result.confidence:.2f})")
+        return {
+            "success": result.success,
+            "result": result_dict
+        }
+        
+    except Exception as e:
+        logger.error(f"Unified audio analysis failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v2/analysis/unified/status")
+async def get_unified_detector_status():
+    """
+    Get the status of the unified detector.
+    
+    Returns:
+        Status information about the unified detector and available modalities
+    """
+    if not UNIFIED_DETECTOR_AVAILABLE:
+        return {
+            "available": False,
+            "reason": "Unified detector not available"
+        }
+    
+    if not hasattr(app.state, 'unified_detector') or app.state.unified_detector is None:
+        return {
+            "available": False,
+            "reason": "Unified detector not initialized"
+        }
+    
+    try:
+        detector = app.state.unified_detector
+        return {
+            "available": True,
+            "detector_info": detector.get_detector_info(),
+            "performance_metrics": detector.get_performance_metrics()
+        }
+    except Exception as e:
+        logger.error(f"Failed to get unified detector status: {e}")
+        return {
+            "available": False,
+            "reason": f"Status check failed: {str(e)}"
+        }
+async def analyze_multimodal(
+    image: Optional[UploadFile] = File(None),
+    audio: Optional[UploadFile] = File(None),
+    video: Optional[UploadFile] = File(None),
+    current_user: Optional[Dict] = Depends(get_current_user) if MIDDLEWARE_AVAILABLE else None
+):
+    """
+    Multi-modal analysis combining image, audio, and video detection.
+    
+    Args:
+        image: Optional image file
+        audio: Optional audio file  
+        video: Optional video file
+        current_user: Authenticated user (if auth enabled)
+        
+    Returns:
+        Fused analysis results from multiple modalities
+    """
+    if not SATYAAI_CORE_AVAILABLE or not hasattr(app.state, 'satyaai_core') or app.state.satyaai_core is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Multi-modal fusion engine not available"
+        )
+    
+    try:
+        # Read media files
+        image_buffer = None
+        audio_buffer = None
+        video_buffer = None
+        
+        if image:
+            image_buffer = await image.read()
+            # Validate image
+            if not image_buffer or len(image_buffer) < 100:
+                raise ValueError("Invalid image file")
+                
+        if audio:
+            audio_buffer = await audio.read()
+            # Validate audio
+            if not audio_buffer or len(audio_buffer) < 100:
+                raise ValueError("Invalid audio file")
+                
+        if video:
+            video_buffer = await video.read()
+            # Validate video
+            if not video_buffer or len(video_buffer) < 100:
+                raise ValueError("Invalid video file")
+        
+        # Check if at least one modality is provided
+        if not any([image_buffer, audio_buffer, video_buffer]):
+            raise HTTPException(
+                status_code=400,
+                detail="At least one media file must be provided"
+            )
+        
+        # Perform multi-modal analysis
+        satyaai_core = app.state.satyaai_core
+        result = satyaai_core.analyze_multimodal(
+            image_buffer=image_buffer,
+            audio_buffer=audio_buffer,
+            video_buffer=video_buffer
+        )
+        
+        # Add metadata
+        result.update({
+            "analysis_timestamp": datetime.utcnow().isoformat(),
+            "modalities_analyzed": {
+                "image": image_buffer is not None,
+                "audio": audio_buffer is not None,
+                "video": video_buffer is not None
+            },
+            "fusion_engine": "satyaai_core",
+            "user_id": current_user.get("id") if current_user else "anonymous"
+        })
+        
+        logger.info(f"Multi-modal analysis completed: {result.get('authenticity', 'Unknown')}")
+        return {
+            "success": True,
+            "result": result
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Multi-modal analysis failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Multi-modal analysis failed: {str(e)}"
+        )
+
+@app.get("/api/v2/analysis/multimodal/status")
+async def get_multimodal_status():
+    """
+    Get the status of multi-modal fusion engine.
+    
+    Returns:
+        Status information about available modalities and fusion engine
+    """
+    if not SATYAAI_CORE_AVAILABLE:
+        return {
+            "available": False,
+            "reason": "SatyaAI Core not available",
+            "modalities": {"image": False, "audio": False, "video": False}
+        }
+    
+    if not hasattr(app.state, 'satyaai_core') or app.state.satyaai_core is None:
+        return {
+            "available": False,
+            "reason": "SatyaAI Core not initialized",
+            "modalities": {"image": False, "audio": False, "video": False}
+        }
+    
+    try:
+        model_info = app.state.satyaai_core.get_model_info()
+        return {
+            "available": True,
+            "fusion_engine": "satyaai_core",
+            "modalities": {
+                "image": model_info.get("image_detector", {}).get("available", False),
+                "video": model_info.get("video_detector", {}).get("available", False),
+                "audio": model_info.get("audio_detector", {}).get("available", False)
+            },
+            "model_info": model_info
+        }
+    except Exception as e:
+        logger.error(f"Failed to get multi-modal status: {e}")
+        return {
+            "available": False,
+            "reason": f"Status check failed: {str(e)}",
+            "modalities": {"image": False, "audio": False, "video": False}
+        }
 
 from fastapi import WebSocket, WebSocketDisconnect
 

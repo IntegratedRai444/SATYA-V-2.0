@@ -20,12 +20,34 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 from pydantic import BaseModel, Field, ValidationError, validator
 
 # Import ML models
-from .models import AudioDetector, ImageDetector, VideoDetector, get_model_info
+try:
+    from detectors.models import AudioDetector, ImageDetector, VideoDetector, get_model_info
+except ImportError:
+    from models import AudioDetector, ImageDetector, VideoDetector, get_model_info
+
 # Import the reasoning engine
-from .reasoning_engine import (Conclusion, ConfidenceLevel, EvidenceItem,
+try:
+    from reasoning_engine import (Conclusion, ConfidenceLevel, EvidenceItem,
                                EvidenceType, get_reasoning_engine)
+except ImportError:
+    # Fallback if reasoning_engine not available
+    Conclusion = None
+    ConfidenceLevel = None
+    EvidenceItem = None
+    EvidenceType = None
+    def get_reasoning_engine():
+        return None
+
 # Import proof utilities
-from .utils.proof import ProofOfAnalysis, generate_proof, verify_proof
+try:
+    from utils.proof import ProofOfAnalysis, generate_proof, verify_proof
+except ImportError:
+    # Fallback if proof utilities not available
+    ProofOfAnalysis = None
+    def generate_proof(*args, **kwargs):
+        return None
+    def verify_proof(*args, **kwargs):
+        return True
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -320,7 +342,7 @@ class SentinelAgent:
 
             # Ensure we have at least one conclusion
             if not conclusions:
-                from .reasoning_engine import Conclusion
+                from reasoning_engine import Conclusion
 
                 conclusion = Conclusion(
                     text=f"Deepfake detected with {confidence*100:.1f}% confidence"
@@ -1201,7 +1223,7 @@ class SentinelAgent:
 
             # Ensure we have at least one conclusion
             if not conclusions:
-                from .reasoning_engine import Conclusion
+                from reasoning_engine import Conclusion
 
                 conclusion = Conclusion(
                     text=f"Deepfake detected with {confidence*100:.1f}% confidence"

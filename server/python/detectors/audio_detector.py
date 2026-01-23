@@ -24,6 +24,9 @@ try:
 except ImportError:
     AUDIO_FORENSICS_AVAILABLE = False
     logger.warning("Audio forensics not available")
+except Exception as e:
+    AUDIO_FORENSICS_AVAILABLE = False
+    logger.warning(f"Audio forensics initialization failed: {e}")
 
 # Import enhanced audio processing
 try:
@@ -263,13 +266,32 @@ class AudioDetector:
                     self.model = Wav2Vec2ForSequenceClassification.from_pretrained(
                         model_name
                     )
-                    self.model = self.model.to(self.device)
+                    # Fix meta tensor issue by ensuring model is on correct device
+                    if hasattr(self.model, 'device') and str(self.model.device) == 'meta':
+                        self.model = self.model.to_empty(device=self.device)
+                    else:
+                        self.model = self.model.to(self.device)
                     self.model.eval()
                     self.models_loaded = True
                     logger.info(f"✅ Loaded audio model: {model_name}")
                     return True
                 except Exception as e:
                     logger.warning(f"Could not load {model_name}: {e}")
+                    # Check if it's a meta tensor issue
+                    if "meta tensor" in str(e):
+                        logger.warning(f"Meta tensor issue detected for {model_name}, trying alternative approach...")
+                        try:
+                            # Try loading with empty device first
+                            self.model = Wav2Vec2ForSequenceClassification.from_pretrained(
+                                model_name
+                            )
+                            self.model = self.model.to_empty(device=self.device)
+                            self.model.eval()
+                            self.models_loaded = True
+                            logger.info(f"✅ Loaded audio model with empty device approach: {model_name}")
+                            return True
+                        except Exception as e2:
+                            logger.warning(f"Alternative approach also failed: {e2}")
                     continue
 
             logger.error(

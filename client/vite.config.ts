@@ -3,7 +3,6 @@ import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { stripConsolePlugin } from './vite-plugin-strip-console';
-import { sentryVitePlugin } from '@sentry/vite-plugin';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -33,7 +32,7 @@ export default defineConfig(({ mode }) => {
     throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
   }
   
-  // Only include Sentry in production
+  // Production plugins
   const plugins = [
     react({
       jsxImportSource: '@emotion/react',
@@ -47,19 +46,6 @@ export default defineConfig(({ mode }) => {
       exclude: ['console.warn', 'console.error', 'console.info'],
     }),
   ];
-
-  if (mode === 'production') {
-    plugins.push(
-      sentryVitePlugin({
-        org: 'your-org-name',
-        project: 'your-project-name',
-        authToken: env.SENTRY_AUTH_TOKEN,
-        sourcemaps: {
-          ignore: ['node_modules'],
-        },
-      })
-    );
-  }
   
   return {
     base: '/',
@@ -92,7 +78,6 @@ export default defineConfig(({ mode }) => {
           target: 'http://localhost:5001',
           changeOrigin: true,
           secure: false,
-          rewrite: (path) => path.replace(/^\/api/, '/api'),
         },
       },
       hmr: {

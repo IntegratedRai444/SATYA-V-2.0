@@ -1,10 +1,8 @@
 import { Router, Request, type Response } from 'express';
 import { body, validationResult } from 'express-validator';
-import { supabaseAuth } from '../middleware/supabase-auth';
 import { supabase } from '../config/supabase';
 import rateLimit from 'express-rate-limit';
 import { auditLogger } from '../middleware/audit-logger';
-import '../types/express'; // Import to load Express type extensions
 
 const router = Router();
 
@@ -18,7 +16,7 @@ const userRateLimit = rateLimit({
 });
 
 // GET /api/v2/user/profile - Get user profile
-router.get('/profile', userRateLimit, supabaseAuth, auditLogger('sensitive_data_access', 'user_profile'), async (req: Request, res: Response) => {
+router.get('/profile', userRateLimit, auditLogger('sensitive_data_access', 'user_profile'), async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -80,7 +78,7 @@ router.put('/profile', [
   body('fullName').optional().isString().isLength({ min: 1, max: 100 }),
   body('username').optional().isString().isLength({ min: 3, max: 30 }).matches(/^[a-zA-Z0-9_]+$/),
   body('avatar_url').optional().isURL(),
-], userRateLimit, supabaseAuth, auditLogger('user_profile_update', 'user_profile'), async (req: Request, res: Response) => {
+], userRateLimit, auditLogger('user_profile_update', 'user_profile'), async (req: Request, res: Response) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -143,7 +141,7 @@ router.put('/preferences', [
   body('auto_analyze').optional().isBoolean(),
   body('sensitivity_level').optional().isIn(['low', 'medium', 'high']),
   body('chat_model').optional().isString().isLength({ min: 1, max: 50 }),
-], userRateLimit, supabaseAuth, auditLogger('user_preferences_update', 'user_preferences'), async (req: Request, res: Response) => {
+], userRateLimit, auditLogger('user_preferences_update', 'user_preferences'), async (req: Request, res: Response) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -195,7 +193,7 @@ router.put('/preferences', [
 });
 
 // DELETE /api/v2/user/account - Delete user account (soft delete)
-router.delete('/account', userRateLimit, supabaseAuth, auditLogger('user_delete', 'user_account'), async (req: Request, res: Response) => {
+router.delete('/account', userRateLimit, auditLogger('user_delete', 'user_account'), async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -254,7 +252,7 @@ router.delete('/account', userRateLimit, supabaseAuth, auditLogger('user_delete'
 });
 
 // GET /api/v2/user/stats - Get user statistics
-router.get('/stats', userRateLimit, supabaseAuth, auditLogger('sensitive_data_access', 'user_statistics'), async (req: Request, res: Response) => {
+router.get('/stats', userRateLimit, auditLogger('sensitive_data_access', 'user_statistics'), async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -290,6 +288,72 @@ router.get('/stats', userRateLimit, supabaseAuth, auditLogger('sensitive_data_ac
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Failed to fetch user statistics';
     console.error('Get user stats error:', error);
+    res.status(500).json({
+      success: false,
+      error: errorMessage
+    });
+  }
+});
+
+// GET /api/v2/user/analytics - Get user analytics
+router.get('/analytics', userRateLimit, auditLogger('sensitive_data_access', 'user_analytics'), async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'User not authenticated'
+      });
+    }
+
+    // Get user's analysis data
+    const { data: tasks, error: tasksError } = await supabase
+      .from('tasks')
+      .select('id, type, created_at, confidence, is_deepfake, file_name')
+      .eq('user_id', userId)
+      .eq('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .limit(50); // Recent 50 activities
+
+    if (tasksError) {
+      console.error('User analytics error:', tasksError);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to fetch user analytics'
+      });
+    }
+
+    // Calculate usage by type
+    const usageByType = {
+      image: tasks?.filter(t => t.type === 'image').length || 0,
+      audio: tasks?.filter(t => t.type === 'audio').length || 0,
+      video: tasks?.filter(t => t.type === 'video').length || 0,
+      multimodal: tasks?.filter(t => t.type === 'multimodal').length || 0,
+      webcam: tasks?.filter(t => t.type === 'webcam').length || 0
+    };
+
+    // Format recent activity
+    const recentActivity = tasks?.map(task => ({
+      id: task.id,
+      modality: task.type,
+      created_at: task.created_at,
+      confidence: task.confidence || 0,
+      is_deepfake: task.is_deepfake || false,
+      file_name: task.file_name || 'Unknown'
+    })) || [];
+
+    const analytics = {
+      usage_by_type: usageByType,
+      recent_activity: recentActivity
+    };
+
+    res.json({
+      success: true,
+      analytics
+    });
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Failed to fetch user analytics';
+    console.error('Get user analytics error:', error);
     res.status(500).json({
       success: false,
       error: errorMessage

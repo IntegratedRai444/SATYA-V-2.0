@@ -28,10 +28,10 @@ router = APIRouter()
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# File size limits (in bytes)
+# File size limits (in bytes) - Match Node.js backend
 MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
-MAX_VIDEO_SIZE = 100 * 1024 * 1024  # 100 MB
-MAX_AUDIO_SIZE = 50 * 1024 * 1024  # 50 MB
+MAX_VIDEO_SIZE = 50 * 1024 * 1024   # 50 MB (matches Node.js)
+MAX_AUDIO_SIZE = 50 * 1024 * 1024   # 50 MB
 
 # Allowed file types
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/jpg", "image/webp"}

@@ -1,13 +1,9 @@
-"""
-Image Deepfake Detector - UPGRADED
-Detects manipulated images using advanced multi-modal facial forensics and CNN analysis
-Integrates MediaPipe, DeepFace, dlib, and advanced AI models
-"""
 
 import io
 import logging
 import os
 import time
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -41,6 +37,169 @@ try:
 except ImportError:
     FORENSIC_ANALYSIS_AVAILABLE = False
     logger.warning("Forensic analysis not available")
+
+# Import enhanced forensic methods from detector.py
+class ForensicAnalyzer:
+    """Advanced forensic analysis capabilities integrated from detector.py"""
+    
+    @staticmethod
+    def analyze_ela(image: np.ndarray) -> Dict[str, Any]:
+        """Error Level Analysis for detecting compression artifacts"""
+        try:
+            from PIL import Image, ImageEnhance
+            
+            # Convert to PIL if needed
+            if isinstance(image, np.ndarray):
+                pil_image = Image.fromarray(image)
+            else:
+                pil_image = image
+            
+            # Save at quality 95, then resave at quality 75 and compare
+            original_temp = io.BytesIO()
+            pil_image.save(original_temp, 'JPEG', quality=95)
+            original_temp.seek(0)
+            
+            # Resave at lower quality
+            resaved_temp = io.BytesIO()
+            temp_img = Image.open(original_temp)
+            temp_img.save(resaved_temp, 'JPEG', quality=75)
+            resaved_temp.seek(0)
+            
+            # Calculate difference
+            from PIL import ImageChops
+            ela_img = ImageChops.difference(Image.open(original_temp), Image.open(resaved_temp))
+            
+            # Enhance the difference
+            ela_img = ImageEnhance.Contrast(ela_img).enhance(10.0)
+            
+            # Calculate ELA score
+            ela_array = np.array(ela_img.convert('L'))
+            ela_score = np.mean(ela_array) / 255.0
+            
+            return {
+                'ela_score': ela_score,
+                'ela_mean': float(np.mean(ela_array)),
+                'ela_std': float(np.std(ela_array)),
+                'analysis': 'High ELA scores may indicate manipulation'
+            }
+            
+        except Exception as e:
+            logger.error(f"ELA analysis failed: {e}")
+            return {'ela_score': 0.5, 'error': str(e)}
+    
+    @staticmethod
+    def analyze_prnu(image: np.ndarray) -> Dict[str, Any]:
+        """Photo Response Non-Uniformity analysis"""
+        try:
+            # Simple PRNU approximation using noise patterns
+            gray = np.mean(image, axis=2) if len(image.shape) == 3 else image
+            
+            # Apply wavelet-like denoising
+            from scipy import ndimage
+            
+            # Gaussian blur as reference
+            blurred = ndimage.gaussian_filter(gray, sigma=2)
+            
+            # Calculate noise residual
+            noise_residual = gray.astype(float) - blurred.astype(float)
+            
+            # Calculate PRNU characteristics
+            prnu_mean = np.mean(noise_residual)
+            prnu_std = np.std(noise_residual)
+            prnu_skewness = float((noise_residual - prnu_mean)**3).mean() / (prnu_std**3 + 1e-8)
+            
+            # PRNU consistency score (lower is more consistent)
+            prnu_consistency = prnu_std / (np.abs(prnu_mean) + 1e-8)
+            
+            return {
+                'prnu_mean': float(prnu_mean),
+                'prnu_std': float(prnu_std),
+                'prnu_skewness': prnu_skewness,
+                'prnu_consistency': float(prnu_consistency),
+                'analysis': 'PRNU inconsistencies may indicate manipulation'
+            }
+            
+        except Exception as e:
+            logger.error(f"PRNU analysis failed: {e}")
+            return {'prnu_consistency': 1.0, 'error': str(e)}
+    
+    @staticmethod
+    def analyze_frequency_domain(image: np.ndarray) -> Dict[str, Any]:
+        """Frequency domain analysis for detecting manipulation artifacts"""
+        try:
+            gray = np.mean(image, axis=2) if len(image.shape) == 3 else image
+            
+            # FFT analysis
+            fft = np.fft.fft2(gray)
+            fft_shift = np.fft.fftshift(fft)
+            magnitude = np.abs(fft_shift)
+            
+            # Analyze frequency distribution
+            h, w = magnitude.shape
+            center_h, center_w = h // 2, w // 2
+            
+            # Low frequency energy (center region)
+            low_freq_region = magnitude[center_h-h//8:center_h+h//8, center_w-w//8:center_w+w//8]
+            low_freq_energy = np.mean(low_freq_region)
+            
+            # High frequency energy (outer regions)
+            high_freq_energy = np.mean(magnitude) - low_freq_energy
+            
+            # Frequency ratio
+            freq_ratio = low_freq_energy / (high_freq_energy + 1e-8)
+            
+            # Detect unusual frequency patterns
+            freq_anomaly_score = 0.0
+            if freq_ratio < 2:  # Too much high frequency
+                freq_anomaly_score += 0.3
+            if freq_ratio > 10:  # Too much low frequency
+                freq_anomaly_score += 0.3
+            
+            return {
+                'low_freq_energy': float(low_freq_energy),
+                'high_freq_energy': float(high_freq_energy),
+                'frequency_ratio': float(freq_ratio),
+                'freq_anomaly_score': freq_anomaly_score,
+                'analysis': 'Unusual frequency patterns may indicate manipulation'
+            }
+            
+        except Exception as e:
+            logger.error(f"Frequency analysis failed: {e}")
+            return {'freq_anomaly_score': 0.0, 'error': str(e)}
+    
+    @staticmethod
+    def analyze_texture_patterns(image: np.ndarray) -> Dict[str, Any]:
+        """Texture analysis for detecting inconsistencies"""
+        try:
+            gray = np.mean(image, axis=2) if len(image.shape) == 3 else image
+            
+            # Local Binary Pattern approximation
+            kernel_size = 9
+            texture_map = np.zeros_like(gray, dtype=np.float32)
+            
+            for i in range(kernel_size//2, gray.shape[0] - kernel_size//2):
+                for j in range(kernel_size//2, gray.shape[1] - kernel_size//2):
+                    patch = gray[i-kernel_size//2:i+kernel_size//2+1, j-kernel_size//2:j+kernel_size//2+1]
+                    texture_map[i, j] = np.var(patch)
+            
+            # Analyze texture patterns
+            texture_mean = np.mean(texture_map)
+            texture_std = np.std(texture_map)
+            
+            # Detect texture anomalies
+            anomaly_map = np.abs(texture_map - texture_mean) / (texture_std + 1e-8)
+            anomaly_score = np.mean(anomaly_map > 2.0)  # Percentage of anomalous regions
+            
+            return {
+                'texture_mean': float(texture_mean),
+                'texture_std': float(texture_std),
+                'anomaly_score': float(anomaly_score),
+                'analysis': 'Texture inconsistencies may indicate manipulation'
+            }
+            
+        except Exception as e:
+            logger.error(f"Texture analysis failed: {e}")
+            return {'anomaly_score': 0.0, 'error': str(e)}
 
 
 class ImageDetector:
@@ -659,12 +818,9 @@ class ImageDetector:
         return edges.astype(np.float32)
     
     def analyze(self, image: np.ndarray, detect_faces: bool = False, 
-                analyze_forensics: bool = False, return_face_data: bool = False) -> Dict[str, Any]:
+                analyze_forensics: bool = True, return_face_data: bool = False) -> Dict[str, Any]:
         """
-        Analyze an image and extract signals for deepfake detection.
-        
-        This method only performs signal extraction and preprocessing.
-        All ML inference and final decisions are handled by deepfake_classifier.py.
+        Enhanced image analysis with comprehensive forensic analysis and ML integration.
         
         Args:
             image: Input image as numpy array (RGB)
@@ -673,17 +829,17 @@ class ImageDetector:
             return_face_data: Whether to include detailed face data in results
             
         Returns:
-            Dictionary containing signal data for the classifier:
-            - image: Preprocessed image data
-            - signals: Dictionary of extracted signals
-            - metadata: Additional processing information
-            
-        Raises:
-            RuntimeError: If analysis fails
-            ValueError: If input is invalid
+            Dictionary containing comprehensive analysis results:
+            - ml_analysis: ML model predictions
+            - forensic_analysis: Detailed forensic analysis
+            - technical_details: Processing information
+            - authenticity: Final authenticity assessment
+            - confidence: Overall confidence score
         """
-        if not isinstance(image, (np.ndarray, PILImage.Image)):
+        if not isinstance(image, (np.ndarray, Image.Image)):
             raise ValueError("Input must be a numpy array or PIL Image")
+        
+        start_time = time.time()
         
         try:
             # Convert numpy array to PIL Image if needed
@@ -691,51 +847,316 @@ class ImageDetector:
                 image_pil = Image.fromarray(image)
             else:
                 image_pil = image
+                image = np.array(image_pil)
                 
-            img_array = np.array(image)
-            
-            # Basic image statistics
-            if len(img_array.shape) == 3:
-                gray = np.mean(img_array, axis=2)
-            else:
-                gray = img_array
-                
-            # Extract signals (no ML inference here)
-            signals = {}
-            signals['statistics'] = {
-                'mean_intensity': float(np.mean(gray)),
-                'std_intensity': float(np.std(gray)),
-                'min_intensity': float(np.min(gray)),
-                'max_intensity': float(np.max(gray)),
-                'image_size': {
-                    'height': img_array.shape[0],
-                    'width': img_array.shape[1] if len(img_array.shape) > 1 else 0,
-                    'channels': img_array.shape[2] if len(img_array.shape) > 2 else 1
-                }
-            }
-            
-            # Add metadata
-            metadata = {
-                'image_size': image_pil.size,
-                'image_mode': image_pil.mode,
-                'processing_timestamp': datetime.utcnow().isoformat(),
-                'detect_faces': detect_faces,
-                'analyze_forensics': analyze_forensics,
-            }
-            
-            # Return only signals and metadata - NO VERDICTS
+            # Initialize result structure
             result = {
-                'image': image_pil,  # Return PIL Image object
-                'signals': signals,
-                'metadata': metadata
+                'success': True,
+                'authenticity': 'UNCERTAIN',
+                'confidence': 0.5,
+                'analysis_date': datetime.utcnow().isoformat(),
+                'ml_analysis': {},
+                'forensic_analysis': {},
+                'technical_details': {
+                    'image_size': image_pil.size,
+                    'image_mode': image_pil.mode,
+                    'processing_timestamp': datetime.utcnow().isoformat(),
+                    'detect_faces': detect_faces,
+                    'analyze_forensics': analyze_forensics,
+                },
+                'key_findings': [],
+                'detailed_analysis': {}
             }
             
-            logger.debug("Image signals extracted successfully")
+            # 1. ML Analysis (if available)
+            if ML_CLASSIFIER_AVAILABLE:
+                try:
+                    ml_result = predict_image(image)
+                    result['ml_analysis'] = {
+                        'prediction': ml_result['prediction'],
+                        'confidence': ml_result['confidence'],
+                        'class_probs': ml_result.get('class_probs', {}),
+                        'inference_time': ml_result.get('inference_time', 0.0),
+                        'performance_metrics': ml_result.get('performance_metrics', {})
+                    }
+                    result['key_findings'].append(f"ML model predicts: {ml_result['prediction']} with {ml_result['confidence']:.2f} confidence")
+                except Exception as e:
+                    logger.error(f"ML analysis failed: {e}")
+                    result['ml_analysis'] = {'error': str(e)}
+                    result['key_findings'].append("ML analysis failed - using forensic analysis only")
+            else:
+                result['key_findings'].append("ML models not available - using forensic analysis only")
+            
+            # 2. Forensic Analysis (if requested)
+            if analyze_forensics:
+                try:
+                    forensic_results = self._comprehensive_forensic_analysis(image)
+                    result['forensic_analysis'] = forensic_results
+                    
+                    # Extract key forensic findings
+                    if 'ela_analysis' in forensic_results:
+                        ela_score = forensic_results['ela_analysis'].get('ela_score', 0.5)
+                        if ela_score > 0.7:
+                            result['key_findings'].append(f"High ELA score ({ela_score:.2f}) suggests possible manipulation")
+                    
+                    if 'frequency_analysis' in forensic_results:
+                        freq_score = forensic_results['frequency_analysis'].get('freq_anomaly_score', 0.0)
+                        if freq_score > 0.3:
+                            result['key_findings'].append(f"Frequency anomalies detected ({freq_score:.2f})")
+                    
+                    if 'texture_analysis' in forensic_results:
+                        texture_score = forensic_results['texture_analysis'].get('anomaly_score', 0.0)
+                        if texture_score > 0.2:
+                            result['key_findings'].append(f"Texture inconsistencies detected ({texture_score:.2f})")
+                            
+                except Exception as e:
+                    logger.error(f"Forensic analysis failed: {e}")
+                    result['forensic_analysis'] = {'error': str(e)}
+                    result['key_findings'].append("Forensic analysis failed")
+            
+            # 3. Face Analysis (if requested)
+            if detect_faces:
+                try:
+                    face_results = self._analyze_faces(image)
+                    result['face_analysis'] = face_results
+                    result['key_findings'].append(f"Detected {len(face_results.get('faces', []))} face(s)")
+                except Exception as e:
+                    logger.error(f"Face analysis failed: {e}")
+                    result['face_analysis'] = {'error': str(e)}
+            
+            # 4. Comprehensive scoring and final assessment
+            authenticity, confidence = self._calculate_comprehensive_score(result)
+            result['authenticity'] = authenticity
+            result['confidence'] = confidence
+            
+            # 5. Processing time
+            processing_time = time.time() - start_time
+            result['technical_details']['processing_time_seconds'] = processing_time
+            
+            logger.debug(f"Comprehensive image analysis completed in {processing_time:.2f}s")
             return result
             
         except Exception as e:
-            logger.error(f"Signal extraction failed: {e}", exc_info=True)
-            raise RuntimeError(f"Failed to extract image signals: {e}")
+            logger.error(f"Comprehensive analysis failed: {e}", exc_info=True)
+            return {
+                'success': False,
+                'authenticity': 'UNCERTAIN',
+                'confidence': 0.0,
+                'error': str(e),
+                'processing_time': time.time() - start_time
+            }
+    
+    def _comprehensive_forensic_analysis(self, image: np.ndarray) -> Dict[str, Any]:
+        """
+        Perform comprehensive forensic analysis using multiple techniques.
+        
+        Args:
+            image: Input image as numpy array
+            
+        Returns:
+            Dictionary containing detailed forensic analysis results
+        """
+        forensic_results = {}
+        
+        try:
+            # 1. Error Level Analysis
+            ela_result = ForensicAnalyzer.analyze_ela(image)
+            forensic_results['ela_analysis'] = ela_result
+            
+            # 2. PRNU Analysis
+            prnu_result = ForensicAnalyzer.analyze_prnu(image)
+            forensic_results['prnu_analysis'] = prnu_result
+            
+            # 3. Frequency Domain Analysis
+            freq_result = ForensicAnalyzer.analyze_frequency_domain(image)
+            forensic_results['frequency_analysis'] = freq_result
+            
+            # 4. Texture Analysis
+            texture_result = ForensicAnalyzer.analyze_texture_patterns(image)
+            forensic_results['texture_analysis'] = texture_result
+            
+            # 5. Statistical Analysis
+            stat_result = self._analyze_image_statistics(image)
+            forensic_results['statistical_analysis'] = {
+                'stat_score': stat_result,
+                'analysis': 'Statistical properties analysis'
+            }
+            
+            # 6. Metadata Analysis
+            if isinstance(image, np.ndarray):
+                image_pil = Image.fromarray(image)
+            else:
+                image_pil = image
+            
+            metadata_result = self.analyze_metadata(image_pil)
+            forensic_results['metadata_analysis'] = metadata_result
+            
+            # 7. Overall forensic score
+            forensic_score = self._calculate_forensic_score(forensic_results)
+            forensic_results['overall_forensic_score'] = forensic_score
+            
+            logger.info("Comprehensive forensic analysis completed")
+            return forensic_results
+            
+        except Exception as e:
+            logger.error(f"Forensic analysis failed: {e}")
+            return {'error': str(e), 'overall_forensic_score': 0.5}
+    
+    def _calculate_forensic_score(self, forensic_results: Dict[str, Any]) -> float:
+        """
+        Calculate overall forensic score based on all analysis results.
+        
+        Args:
+            forensic_results: Dictionary containing all forensic analysis results
+            
+        Returns:
+            float: Overall forensic score (0.0 = definitely fake, 1.0 = definitely real)
+        """
+        scores = []
+        weights = []
+        
+        # ELA Analysis (weight: 0.25)
+        if 'ela_analysis' in forensic_results:
+            ela_score = forensic_results['ela_analysis'].get('ela_score', 0.5)
+            # High ELA score suggests manipulation, so invert
+            forensic_ela_score = 1.0 - min(ela_score, 1.0)
+            scores.append(forensic_ela_score)
+            weights.append(0.25)
+        
+        # PRNU Analysis (weight: 0.20)
+        if 'prnu_analysis' in forensic_results:
+            prnu_consistency = forensic_results['prnu_analysis'].get('prnu_consistency', 1.0)
+            # Lower consistency suggests manipulation
+            forensic_prnu_score = 1.0 / (1.0 + prnu_consistency)
+            scores.append(forensic_prnu_score)
+            weights.append(0.20)
+        
+        # Frequency Analysis (weight: 0.20)
+        if 'frequency_analysis' in forensic_results:
+            freq_anomaly = forensic_results['frequency_analysis'].get('freq_anomaly_score', 0.0)
+            # Higher anomaly suggests manipulation
+            forensic_freq_score = 1.0 - min(freq_anomaly, 1.0)
+            scores.append(forensic_freq_score)
+            weights.append(0.20)
+        
+        # Texture Analysis (weight: 0.15)
+        if 'texture_analysis' in forensic_results:
+            texture_anomaly = forensic_results['texture_analysis'].get('anomaly_score', 0.0)
+            # Higher anomaly suggests manipulation
+            forensic_texture_score = 1.0 - min(texture_anomaly, 1.0)
+            scores.append(forensic_texture_score)
+            weights.append(0.15)
+        
+        # Statistical Analysis (weight: 0.10)
+        if 'statistical_analysis' in forensic_results:
+            stat_score = forensic_results['statistical_analysis'].get('stat_score', 0.5)
+            scores.append(stat_score)
+            weights.append(0.10)
+        
+        # Metadata Analysis (weight: 0.10)
+        if 'metadata_analysis' in forensic_results:
+            integrity_score = forensic_results['metadata_analysis'].get('integrity_score', 0.95)
+            scores.append(integrity_score)
+            weights.append(0.10)
+        
+        # Calculate weighted average
+        if scores and weights:
+            forensic_score = sum(s * w for s, w in zip(scores, weights)) / sum(weights)
+        else:
+            forensic_score = 0.5  # Neutral if no analysis available
+        
+        return max(0.0, min(1.0, forensic_score))
+    
+    def _calculate_comprehensive_score(self, result: Dict[str, Any]) -> Tuple[str, float]:
+        """
+        Calculate comprehensive authenticity score combining ML and forensic analysis.
+        
+        Args:
+            result: Dictionary containing all analysis results
+            
+        Returns:
+            Tuple of (authenticity_label, confidence_score)
+        """
+        ml_score = 0.5
+        forensic_score = 0.5
+        
+        # Extract ML score
+        if 'ml_analysis' in result and result['ml_analysis']:
+            ml_analysis = result['ml_analysis']
+            if 'prediction' in ml_analysis and 'confidence' in ml_analysis:
+                if ml_analysis['prediction'] == 'real':
+                    ml_score = ml_analysis['confidence']
+                else:  # 'fake'
+                    ml_score = 1.0 - ml_analysis['confidence']
+        
+        # Extract forensic score
+        if 'forensic_analysis' in result and result['forensic_analysis']:
+            forensic_score = result['forensic_analysis'].get('overall_forensic_score', 0.5)
+        
+        # Combine scores with weights (ML: 0.6, Forensic: 0.4)
+        combined_score = ml_score * 0.6 + forensic_score * 0.4
+        
+        # Determine authenticity label
+        if combined_score >= 0.7:
+            authenticity = 'REAL'
+        elif combined_score <= 0.3:
+            authenticity = 'FAKE'
+        else:
+            authenticity = 'UNCERTAIN'
+        
+        # Calculate confidence based on agreement between methods
+        ml_confidence = result.get('ml_analysis', {}).get('confidence', 0.5)
+        forensic_confidence = abs(forensic_score - 0.5) * 2  # Convert to 0-1 scale
+        
+        # Higher confidence when methods agree
+        score_diff = abs(ml_score - forensic_score)
+        agreement_bonus = max(0, 1.0 - score_diff) * 0.2
+        
+        confidence = (ml_confidence + forensic_confidence) / 2 + agreement_bonus
+        confidence = max(0.0, min(1.0, confidence))
+        
+        return authenticity, confidence
+    
+    def _analyze_faces(self, image: np.ndarray) -> Dict[str, Any]:
+        """
+        Analyze faces in the image for manipulation detection.
+        
+        Args:
+            image: Input image as numpy array
+            
+        Returns:
+            Dictionary containing face analysis results
+        """
+        try:
+            # Try to use advanced face detection if available
+            if hasattr(self, 'detect_faces'):
+                faces = self.detect_faces(image)
+            else:
+                # Fallback to basic face detection
+                faces = self._detect_face_regions(np.mean(image, axis=2) if len(image.shape) == 3 else image)
+            
+            face_results = {
+                'faces': faces,
+                'face_count': len(faces),
+                'analysis': 'Face detection and analysis completed'
+            }
+            
+            # Analyze each face for manipulation
+            for i, face in enumerate(faces):
+                if 'box' in face:
+                    box = face['box']
+                    face_image = self.extract_face(image, box)
+                    if face_image is not None:
+                        # Classify face authenticity
+                        face_confidence, face_label = self.classify_authenticity(face_image)
+                        face['authenticity'] = face_label
+                        face['confidence'] = face_confidence
+            
+            return face_results
+            
+        except Exception as e:
+            logger.error(f"Face analysis failed: {e}")
+            return {'error': str(e), 'faces': [], 'face_count': 0}
     
     def _analyze_image_statistics(self, image: np.ndarray) -> float:
         """
@@ -772,156 +1193,56 @@ class ImageDetector:
             score += 0.1
         
         return max(0.0, min(1.0, score))
-            
-        try:
-            # Analyze JPEG compression artifacts
-            if hasattr(image_pil, 'format') and image_pil.format == 'JPEG':
-                # Real images typically have natural compression patterns
-                import numpy as np
-                img_array = np.array(image_pil)
-
-                # Check for over-compression (common in manipulated images)
-            
-            # Calculate Local Binary Pattern (simplified)
-            lbp_score = self._calculate_lbp_score(gray)
-            
-            # Calculate texture energy
-            texture_energy = self._calculate_texture_energy(gray)
-            
-            # Combine scores
-            score = (lbp_score + texture_energy) / 2
-            return max(0.0, min(1.0, score))
-        except Exception as e:
-            logger.error(f"Texture analysis error: {e}")
-            return 0.5
-    
-    def _analyze_frequency_domain(self, image: np.ndarray) -> float:
-        """Analyze frequency domain characteristics."""
-        try:
-            if len(image.shape) == 3:
-                gray = np.mean(image, axis=2)
-            else:
-                gray = image
-            
-            # FFT analysis
-            fft = np.fft.fft2(gray)
-            fft_shift = np.fft.fftshift(fft)
-            magnitude = np.abs(fft_shift)
-            
-            # Analyze frequency distribution
-            h, w = magnitude.shape
-            center_h, center_w = h // 2, w // 2
-            
-            # Low frequency energy (center region)
-            low_freq_region = magnitude[center_h-h//8:center_h+h//8, center_w-w//8:center_w+w//8]
-            low_freq_energy = np.mean(low_freq_region)
-            
-            # High frequency energy (outer regions)
-            high_freq_energy = np.mean(magnitude) - low_freq_energy
-            
-            # Natural images have balanced frequency distribution
-            freq_ratio = low_freq_energy / (high_freq_energy + 1e-8)
-            
-            score = 0.5
-            if 2 < freq_ratio < 10:  # Reasonable frequency balance
-                score += 0.3
-            
-            return max(0.0, min(1.0, score))
-            
-        except Exception as e:
-            logger.error(f"Frequency analysis error: {e}")
-            return 0.5
-    
-    def _analyze_edge_patterns(self, image: np.ndarray) -> float:
-        """Analyze edge patterns for manipulation artifacts."""
-        try:
-            if len(image.shape) == 3:
-                gray = np.mean(image, axis=2)
-            else:
-                gray = image
-            
-            # Calculate gradients
-            grad_x = np.gradient(gray, axis=1)
-            grad_y = np.gradient(gray, axis=0)
-            
-            # Edge magnitude
-            edge_magnitude = np.sqrt(grad_x**2 + grad_y**2)
-            
-            # Edge statistics
-            edge_mean = np.mean(edge_magnitude)
-            edge_std = np.std(edge_magnitude)
-            
-            # Strong edges with reasonable variation indicate natural images
-            score = 0.5
-            if edge_mean > 5:  # Sufficient edge content
-                score += 0.2
-            if 2 < edge_std < 20:  # Reasonable edge variation
-                score += 0.2
-            
-            # Check for unnatural edge patterns
-            edge_histogram = np.histogram(edge_magnitude, bins=50)[0]
-            edge_entropy = -np.sum(edge_histogram * np.log(edge_histogram + 1e-8))
-            
-            if edge_entropy > 2:  # Good edge diversity
-                score += 0.1
-            
-            return max(0.0, min(1.0, score))
-            
-        except Exception as e:
-            logger.error(f"Edge analysis error: {e}")
-            return 0.5
     
     def _calculate_skewness(self, data: np.ndarray) -> float:
         """Calculate skewness of data."""
-        mean_val = np.mean(data)
-        std_val = np.std(data)
-        if std_val == 0:
-            return 0
-        return np.mean(((data - mean_val) / std_val) ** 3)
+        mean = np.mean(data)
+        std = np.std(data)
+        if std == 0:
+            return 0.0
+        return float(np.mean(((data - mean) / std) ** 3))
     
     def _calculate_kurtosis(self, data: np.ndarray) -> float:
         """Calculate kurtosis of data."""
-        mean_val = np.mean(data)
-        std_val = np.std(data)
-        if std_val == 0:
-            return 0
-        return np.mean(((data - mean_val) / std_val) ** 4) - 3
+        mean = np.mean(data)
+        std = np.std(data)
+        if std == 0:
+            return 0.0
+        return float(np.mean(((data - mean) / std) ** 4)) - 3.0
     
     def _calculate_lbp_score(self, gray: np.ndarray) -> float:
-        """Calculate Local Binary Pattern score (simplified)."""
+        """Calculate Local Binary Pattern score."""
         try:
-            # Simplified LBP calculation
+            # Simple LBP approximation
             h, w = gray.shape
-            lbp = np.zeros((h-2, w-2))
+            lbp = np.zeros_like(gray)
             
             for i in range(1, h-1):
                 for j in range(1, w-1):
                     center = gray[i, j]
                     code = 0
                     
-                    # 8-neighborhood
+                    # 8 neighbors
                     neighbors = [
                         gray[i-1, j-1], gray[i-1, j], gray[i-1, j+1],
-                        gray[i, j+1], gray[i+1, j+1], gray[i+1, j],
-                        gray[i+1, j-1], gray[i, j-1]
+                        gray[i, j+1], gray[i+1, j+1], gray[i+1, j], gray[i+1, j-1], gray[i, j-1]
                     ]
                     
                     for k, neighbor in enumerate(neighbors):
                         if neighbor >= center:
                             code |= (1 << k)
                     
-                    lbp[i-1, j-1] = code
+                    lbp[i, j] = code
             
             # Calculate LBP histogram uniformity
-            hist = np.histogram(lbp, bins=256)[0]
-            uniformity = np.sum(hist**2) / (np.sum(hist)**2 + 1e-8)
+            hist, _ = np.histogram(lbp, bins=256, range=(0, 255))
+            hist = hist.astype(float)
+            hist = hist / (np.sum(hist) + 1e-8)
             
-            # Natural textures have moderate uniformity
-            if 0.01 < uniformity < 0.1:
-                return 0.8
-            else:
-                return 0.4
-                
+            # Uniformity score (lower is more uniform)
+            uniformity = np.sum(hist ** 2)
+            return 1.0 - min(uniformity, 1.0)
+            
         except Exception as e:
             logger.error(f"LBP calculation error: {e}")
             return 0.5
@@ -929,26 +1250,19 @@ class ImageDetector:
     def _calculate_texture_energy(self, gray: np.ndarray) -> float:
         """Calculate texture energy."""
         try:
-            # Calculate co-occurrence matrix (simplified)
-            h, w = gray.shape
-            energy = 0
+            # Simple texture energy calculation
+            kernel_size = 5
+            energy_map = np.zeros_like(gray, dtype=np.float32)
             
-            # Horizontal co-occurrence
-            for i in range(h):
-                for j in range(w-1):
-                    diff = abs(int(gray[i, j]) - int(gray[i, j+1]))
-                    energy += diff
+            for i in range(kernel_size//2, gray.shape[0] - kernel_size//2):
+                for j in range(kernel_size//2, gray.shape[1] - kernel_size//2):
+                    patch = gray[i-kernel_size//2:i+kernel_size//2+1, j-kernel_size//2:j+kernel_size//2+1]
+                    energy_map[i, j] = np.sum(patch ** 2)
             
-            # Normalize
-            energy = energy / (h * (w-1) * 255)
+            # Normalize and return average energy
+            avg_energy = np.mean(energy_map) / (255 ** 2)
+            return min(avg_energy, 1.0)
             
-            # Natural textures have moderate energy
-            if 0.1 < energy < 0.5:
-                return 0.8
-            else:
-                return 0.4
-                
         except Exception as e:
             logger.error(f"Texture energy calculation error: {e}")
             return 0.5
-    

@@ -117,11 +117,23 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 # Try to import optional dependencies
 try:
-    from speechbrain.pretrained import EncoderClassifier
-    SPEECHBRAIN_AVAILABLE = True
-except ImportError:
+    # Try different import methods for speechbrain compatibility
+    try:
+        from speechbrain.pretrained import EncoderClassifier
+        SPEECHBRAIN_AVAILABLE = True
+    except (ImportError, AttributeError) as e:
+        # Try alternative import
+        try:
+            import speechbrain
+            from speechbrain.inference.classifiers import EncoderClassifier
+            SPEECHBRAIN_AVAILABLE = True
+            logger.warning(f"Used alternative speechbrain import due to: {e}")
+        except (ImportError, AttributeError):
+            SPEECHBRAIN_AVAILABLE = False
+            logger.warning("speechbrain not compatible with current torchaudio version. Some features will be disabled. Run: pip install speechbrain==0.5.15")
+except Exception as e:
     SPEECHBRAIN_AVAILABLE = False
-    logger.warning("speechbrain not installed. Some features will be disabled. Run: pip install speechbrain")
+    logger.warning(f"speechbrain initialization failed: {e}. Some features will be disabled.")
 
 class RiskLevel(Enum):
     """Risk level classification for audio analysis results."""

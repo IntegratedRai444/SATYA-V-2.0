@@ -1,6 +1,35 @@
 // Types
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD';
 
+// CSRF Token Management
+const getCsrfToken = (): string | null => {
+  if (typeof document === 'undefined') return null;
+  
+  const cookies = document.cookie.split(';');
+  const csrfCookie = cookies.find(cookie => 
+    cookie.trim().startsWith('__Host-csrf_token=')
+  );
+  
+  return csrfCookie ? csrfCookie.trim().substring('__Host-csrf_token='.length) : null;
+};
+
+const fetchCsrfToken = async (): Promise<string | null> => {
+  try {
+    const response = await fetch('/api/v2/auth/csrf-token', {
+      method: 'GET',
+      credentials: 'include',
+    });
+    
+    if (!response.ok) return null;
+    
+    const data = await response.json();
+    return data.token || null;
+  } catch (error) {
+    console.warn('Failed to fetch CSRF token:', error);
+    return null;
+  }
+};
+
 export interface RetryPolicy {
   maxRetries: number;
   initialDelay: number;
@@ -48,10 +77,16 @@ class ApiError extends Error {
   }
 }
 
-// Auth service placeholder
+// Function to set the auth service reference (kept for backward compatibility)
+export const setAuthService = () => {
+  // No-op: kept for backward compatibility
+};
+
+// Auth service placeholder - Cookie-based auth only
 const authService = {
   getToken: (): string | null => {
-    return typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    // Force cookie-based authentication only
+    return null;
   },
   refreshToken: async (): Promise<{ access_token: string }> => {
     // This will be replaced with actual refresh token logic
@@ -91,6 +126,17 @@ class ApiClient {
     
     // Initialize cleanup interval
     this.cleanupInterval = setInterval(() => this.cleanupCache(), CACHE_CLEANUP_INTERVAL);
+    
+    // Initialize CSRF token
+    this.initializeCsrfToken();
+  }
+
+  private async initializeCsrfToken(): Promise<void> {
+    try {
+      await fetchCsrfToken();
+    } catch (error) {
+      console.warn('CSRF token initialization failed:', error);
+    }
   }
 
   // Clean up resources when the instance is no longer needed
@@ -251,6 +297,14 @@ class ApiClient {
           ...(token && { Authorization: `Bearer ${token}` }),
           ...options.headers,
         };
+
+        // Add CSRF token for state-changing methods
+        if (!['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(method)) {
+          const csrfToken = getCsrfToken();
+          if (csrfToken) {
+            headers['X-CSRF-Token'] = csrfToken;
+          }
+        }
 
         const response = await fetch(url, {
           method,
@@ -414,11 +468,13 @@ class ApiClient {
 
 // Create a singleton instance with environment variable
 const getApiBaseUrl = (): string => {
-  if (typeof process !== 'undefined' && process.env.VITE_API_URL) {
-    return process.env.VITE_API_URL;
-  }
+  // Check Vite environment first
   if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) {
     return import.meta.env.VITE_API_URL as string;
+  }
+  // Fallback for other environments
+  if (typeof window !== 'undefined' && (window as unknown as Record<string, unknown>).__VITE_API_URL__) {
+    return (window as unknown as Record<string, unknown>).__VITE_API_URL__ as string;
   }
   throw new Error('VITE_API_URL environment variable is not set');
 };

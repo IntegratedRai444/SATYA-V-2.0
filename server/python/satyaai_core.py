@@ -233,7 +233,15 @@ class SatyaAICore:
         # Initialize video detector
         if VIDEO_DETECTOR_AVAILABLE:
             try:
-                self.video_detector = VideoDetector(self.model_path, self.enable_gpu)
+                video_config = {
+                    "model_path": self.model_path,
+                    "use_optimization": True,
+                    "use_enhanced_model": True,
+                    "temporal_window": 30,
+                    "frame_sample_rate": 2,
+                    "max_frames": 100
+                }
+                self.video_detector = VideoDetector(config=video_config)
                 initialized_components.append("video_detector")
                 logger.info("Video detector initialized successfully")
             except Exception as e:
@@ -242,7 +250,13 @@ class SatyaAICore:
         # Initialize audio detector
         if AUDIO_DETECTOR_AVAILABLE:
             try:
-                self.audio_detector = AudioDetector(self.model_path, self.enable_gpu)
+                audio_config = {
+                    "model_path": self.model_path,
+                    "use_enhanced_audio": True,
+                    "use_audio_model": True
+                }
+                device = 'cuda' if self.enable_gpu else 'cpu'
+                self.audio_detector = AudioDetector(device=device, config=audio_config)
                 initialized_components.append("audio_detector")
                 logger.info("Audio detector initialized successfully")
             except Exception as e:

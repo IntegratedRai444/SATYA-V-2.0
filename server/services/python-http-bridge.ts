@@ -61,7 +61,7 @@ class PythonHttpBridge {
     this.client.interceptors.response.use(
       (response) => response,
       async (error: AxiosError<PythonApiError>) => {
-        const { config, response } = error;
+        const { config } = error;
         
         // If no config or max retries exceeded, reject
         if (!config || !this.shouldRetry(error)) {
@@ -85,21 +85,22 @@ class PythonHttpBridge {
   }
 
   private shouldRetry(error: AxiosError): boolean {
-    // Don't retry if no config or max retries exceeded
-    if (!error.config || (error.config.retryCount || 0) >= this.retryConfig.maxRetries) {
+    const retryCount = error.config?.retryCount || 0;
+    
+    // Don't retry if we've exceeded max retries
+    if (retryCount >= this.retryConfig.maxRetries) {
       return false;
     }
 
-    // Retry on network errors or 5xx responses
-    if (!error.response) {
-      return true; // Network error
-    }
+    // Don't retry on file upload endpoints (prevent duplicate uploads)
+    const isUploadEndpoint = error.config?.url?.includes('/upload') || 
+                           error.config?.url?.includes('/analysis/');
 
-    // Retry on server errors and rate limits
+    // Retry only on network errors and 5xx server errors (not on timeouts for uploads)
     return (
-      error.response.status >= 500 || 
-      error.response.status === 429 || // Too Many Requests
-      error.response.status === 408    // Request Timeout
+      !error.response || // Network errors
+      (error.response.status >= 500 && !isUploadEndpoint) || // Server errors (except uploads)
+      (error.response.status === 429 && !isUploadEndpoint) // Rate limit (except uploads)
     );
   }
 
@@ -116,14 +117,65 @@ class PythonHttpBridge {
       const { response } = error as AxiosError<PythonApiError>;
       
       if (response) {
-        // Use server-provided error if available
+        const status = response.status;
+        
+        // Standardize error codes based on HTTP status
+        let code: string;
+        let message: string;
+        
+        switch (status) {
+          case 400:
+            code = 'INVALID_REQUEST';
+            message = 'Invalid request to AI service';
+            break;
+          case 401:
+            code = 'PYTHON_AUTH_ERROR';
+            message = 'AI service authentication failed';
+            break;
+          case 403:
+            code = 'PYTHON_FORBIDDEN';
+            message = 'AI service access forbidden';
+            break;
+          case 404:
+            code = 'PYTHON_NOT_FOUND';
+            message = 'AI service endpoint not found';
+            break;
+          case 422:
+            code = 'VALIDATION_ERROR';
+            message = 'Invalid data provided to AI service';
+            break;
+          case 500:
+            code = 'PYTHON_ERROR';
+            message = 'AI service internal error';
+            break;
+          case 502:
+            code = 'PYTHON_DOWN';
+            message = 'AI engine temporarily unavailable';
+            break;
+          case 503:
+            code = 'SERVICE_UNAVAILABLE';
+            message = 'AI service temporarily unavailable';
+            break;
+          case 504:
+            code = 'ANALYSIS_TIMEOUT';
+            message = 'Analysis request timed out';
+            break;
+          default:
+            code = 'PYTHON_ERROR';
+            message = `AI service error (${status})`;
+        }
+        
         return {
-          error: response.data?.error || 'Request failed',
-          code: response.status,
-          details: response.data?.details || {
-            status: response.status,
+          error: response.data?.error || message,
+          code: status,
+          details: {
+            code,
+            message,
+            originalError: response.data?.error,
+            status,
             statusText: response.statusText,
             url: error.config?.url,
+            timestamp: new Date().toISOString()
           },
         };
       }
@@ -131,32 +183,59 @@ class PythonHttpBridge {
       // Network error or timeout
       if (error.code === 'ECONNABORTED') {
         return {
-          error: 'Request timeout',
-          code: 408,
-          details: { message: 'The request timed out' },
+          error: 'Analysis timeout',
+          code: 504,
+          details: {
+            code: 'ANALYSIS_TIMEOUT',
+            message: 'The analysis request timed out',
+            timeout: pythonConfig.requestTimeout,
+            timestamp: new Date().toISOString()
+          },
         };
       }
 
-      // Other axios errors
+      // Connection refused
+      if (error.code === 'ECONNREFUSED') {
+        return {
+          error: 'AI engine unavailable',
+          code: 503,
+          details: {
+            code: 'PYTHON_DOWN',
+            message: 'Cannot connect to AI service',
+            url: error.config?.url,
+            timestamp: new Date().toISOString()
+          },
+        };
+      }
+
+      // Other network errors
       return {
-        error: error.message || 'Network error',
+        error: 'Network error',
         code: 0,
-        details: { message: 'A network error occurred' },
+        details: {
+          code: 'NETWORK_ERROR',
+          message: error.message || 'A network error occurred',
+          timestamp: new Date().toISOString()
+        },
       };
     }
 
     // Non-axios error
     return {
-      error: error.message || 'Unknown error',
+      error: 'Unexpected error',
       code: 500,
-      details: { message: 'An unexpected error occurred' },
+      details: {
+        code: 'UNKNOWN_ERROR',
+        message: error.message || 'An unexpected error occurred',
+        timestamp: new Date().toISOString()
+      },
     };
   }
 
   /**
    * Make a request to the Python service
    */
-  private async request<T = any>(config: AxiosRequestConfig): Promise<AxiosResponse<ApiResponse<T>>> {
+  private async request<T = unknown>(config: AxiosRequestConfig): Promise<AxiosResponse<ApiResponse<T>>> {
     try {
       const response = await this.client.request<ApiResponse<T>>({
         ...config,
@@ -168,22 +247,22 @@ class PythonHttpBridge {
     }
   }
 
-  public async get<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
+  public async get<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<T> {
     const response = await this.request<T>({ ...config, method: 'GET', url });
     return this.handleResponse(response);
   }
 
-  public async post<T = any, D = any>(url: string, data?: D, config?: AxiosRequestConfig): Promise<T> {
+  public async post<T = unknown, D = unknown>(url: string, data?: D, config?: AxiosRequestConfig): Promise<T> {
     const response = await this.request<T>({ ...config, method: 'POST', url, data });
     return this.handleResponse(response);
   }
 
-  public async put<T = any, D = any>(url: string, data?: D, config?: AxiosRequestConfig): Promise<T> {
+  public async put<T = unknown, D = unknown>(url: string, data?: D, config?: AxiosRequestConfig): Promise<T> {
     const response = await this.request<T>({ ...config, method: 'PUT', url, data });
     return this.handleResponse(response);
   }
 
-  public async delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
+  public async delete<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<T> {
     const response = await this.request<T>({ ...config, method: 'DELETE', url });
     return this.handleResponse(response);
   }
@@ -193,9 +272,12 @@ class PythonHttpBridge {
       return response.data.data as T;
     }
     
-    const error = new Error(response.data?.error?.message || 'Request failed');
-    (error as any).code = response.data?.error?.code || 500;
-    (error as any).details = response.data?.error?.details || {};
+    const error = new Error(response.data?.error?.message || 'Request failed') as Error & {
+      code?: number | string;
+      details?: Record<string, unknown>;
+    };
+    error.code = response.data?.error?.code || 500;
+    error.details = response.data?.error?.details || {};
     throw error;
   }
 

@@ -1,5 +1,4 @@
 import { Router, Request, Response } from 'express';
-import { supabaseAuth } from '../middleware/supabase-auth';
 import { logger } from '../config/logger';
 
 const router = Router();
@@ -59,7 +58,7 @@ const availableModels = [
 ];
 
 // GET /api/v2/models - Get available analysis models
-router.get('/', supabaseAuth, async (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
   try {
     const { type, activeOnly, limit = 20, offset = 0 } = req.query;
 
@@ -101,7 +100,7 @@ router.get('/', supabaseAuth, async (req: Request, res: Response) => {
 });
 
 // GET /api/v2/models/:id - Get specific model information
-router.get('/:id', supabaseAuth, async (req: Request, res: Response) => {
+router.get('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     
@@ -123,6 +122,37 @@ router.get('/:id', supabaseAuth, async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'Internal server error'
+    });
+  }
+});
+
+// GET /api/v2/models/status - Proxy to Python backend
+router.get('/status', async (req: Request, res: Response) => {
+  try {
+    const pythonUrl = process.env.PYTHON_API_URL || 'http://localhost:8000';
+    const response = await fetch(`${pythonUrl}/models/status`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Python backend responded with ${response.status}`);
+    }
+
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    logger.error('Error proxying models status:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch model status',
+      models: {
+        image: { available: false, weights: 'error', device: 'cpu' },
+        audio: { available: false, weights: 'error', device: 'cpu' },
+        video: { available: false, weights: 'error', device: 'cpu' }
+      }
     });
   }
 });

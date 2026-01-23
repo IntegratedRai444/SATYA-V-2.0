@@ -62,23 +62,8 @@ authRouter.post(
           });
         }
 
-        // Create user profile in custom users table
-        if (data.user) {
-          const { error: profileError } = await supabase
-            .from('users')
-            .insert({
-              id: data.user.id,
-              email: data.user.email,
-              role: user_metadata?.role || 'user',
-              is_active: true,
-              created_at: new Date().toISOString(),
-              last_login: new Date().toISOString()
-            });
-
-          if (profileError) {
-            logger.error('Failed to create user profile', profileError);
-          }
-        }
+        // User profile is created automatically by database trigger
+        // No need for manual insertion here
 
         res.status(201).json({
           success: true,
@@ -152,9 +137,10 @@ authRouter.post(
       });
 
       // Set refresh token cookie (longer-lived)
+      // Path MUST match v2 refresh endpoint
       res.cookie('sb-refresh-token', data.session?.refresh_token, {
         ...baseCookieOptions,
-        path: '/api/auth/refresh',
+        path: '/api/v2/auth/refresh',
         maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
       });
       
@@ -310,7 +296,7 @@ authRouter.post(
         res.clearCookie('sb-access-token', cookieOptions);
         res.clearCookie('sb-refresh-token', {
           ...cookieOptions,
-          path: '/api/auth/refresh'
+          path: '/api/v2/auth/refresh'
         });
         
         res.json({

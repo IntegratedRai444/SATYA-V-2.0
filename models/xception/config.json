@@ -1,0 +1,10 @@
+{
+  "model_name": "xception",
+  "pretrained": true,
+  "num_classes": 1000,
+  "input_size": [
+    3,
+    299,
+    299
+  ]
+}

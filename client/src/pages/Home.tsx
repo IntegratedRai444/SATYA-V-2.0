@@ -1,8 +1,20 @@
+import React from 'react';
 import ParticleBackground from '@/components/home/ParticleBackground';
 import AuthenticityScoreCard from '@/components/home/AuthenticityScoreCard';
 
-
-const Home = () => {
+/**
+ * Home Component
+ * 
+ * Landing page displaying:
+ * - Welcome message and platform introduction
+ * - Particle background animation
+ * - Authenticity score demonstration card
+ * - Call-to-action for getting started
+ * 
+ * @component
+ * @returns {JSX.Element} Home page interface
+ */
+const Home: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#0a0a0a] relative">
       {/* Particle Background */}

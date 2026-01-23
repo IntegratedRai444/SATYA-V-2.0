@@ -1,7 +1,6 @@
 """
 Authentication Middleware
-Enforces authentication on all routes by default.
-Public routes must be explicitly marked with @public_endpoint decorator.
+Verifies Supabase JWT tokens from Node.js gateway.
 """
 import logging
 import re
@@ -9,30 +8,32 @@ from functools import wraps
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
-from fastapi.security import (HTTPAuthorizationCredentials, HTTPBearer,
-                              OAuth2PasswordBearer)
-from jose import JWTError, jwt
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from starlette.middleware.base import (BaseHTTPMiddleware,
                                        RequestResponseEndpoint)
 from starlette.requests import Request
 from starlette.responses import Response
+import httpx
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 
-class AuthMiddleware(BaseHTTPMiddleware):
+class SupabaseAuthMiddleware(BaseHTTPMiddleware):
     def __init__(
         self,
         app: FastAPI,
-        secret_key: str,
-        algorithm: str = "HS256",
+        supabase_url: str,
+        supabase_anon_key: str,
         public_paths: List[str] = None,
     ):
         super().__init__(app)
-        self.secret_key = secret_key
-        self.algorithm = algorithm
-        self.security = HTTPBearer(auto_error=False)
+        self.supabase_url = supabase_url
+        self.supabase_anon_key = supabase_anon_key
+        self.supabase_client = httpx.AsyncClient(
+            base_url=f"{supabase_url}/auth/v1",
+            headers={"Authorization": f"Bearer {supabase_anon_key}"}
+        )
 
         # Define default public paths (can be overridden)
         self.public_paths = set(public_paths) if public_paths else set()
@@ -44,12 +45,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 "/api/v2/redoc",
                 "/api/v2/openapi.json",
                 "/api/v2/health",
-                "/api/v2/auth/login",
-                "/api/v2/auth/register",
-                "/api/v2/auth/refresh",
-                "/api/v2/auth/verify-email",
-                "/api/v2/auth/forgot-password",
-                "/api/v2/auth/reset-password",
+                "/health",
+                "/",
             }
         )
 
@@ -65,7 +62,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         self._path_cache: Dict[str, bool] = {}
 
     def is_public_path(self, path: str) -> bool:
-        """Check if the given path is public."""
+        """Check if a given path is public."""
         # Check cache first
         if path in self._path_cache:
             return self._path_cache[path]
@@ -98,17 +95,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if self.is_public_path(request.url.path):
             return await call_next(request)
 
-        # Get the token from the Authorization header
-        credentials: Optional[HTTPAuthorizationCredentials] = None
-        try:
-            credentials = await self.security(request)
-        except Exception as e:
-            logger.warning(f"Error extracting credentials: {str(e)}")
-
-        # If no credentials provided, reject the request
-        if not credentials or not credentials.credentials:
+        # Get token from Authorization header
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
             logger.warning(
-                f"No credentials provided for protected path: {request.url.path}"
+                f"No valid Authorization header for protected path: {request.url.path}"
             )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -116,40 +107,40 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        token = credentials.credentials
+        token = auth_header.split(" ")[1]
 
-        # Verify the token
+        # Verify token with Supabase
         try:
-            payload = jwt.decode(
-                token,
-                self.secret_key,
-                algorithms=[self.algorithm],
-                options={"verify_aud": False},
+            response = await self.supabase_client.get(
+                "/user",
+                headers={"Authorization": f"Bearer {token}"}
             )
-
-            # Add user info to request state
-            request.state.user = {
-                "id": payload.get("sub"),
-                "email": payload.get("email"),
-                "permissions": payload.get("permissions", []),
-                "is_active": payload.get("is_active", True),
-                "is_verified": payload.get("is_verified", False),
-            }
-
-            # Check if user is active
-            if not request.state.user.get("is_active", False):
-                logger.warning(f"Inactive user attempted access: {request.state.user}")
+            
+            if response.status_code != 200:
+                logger.warning(f"Invalid Supabase token: {response.status_code}")
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="User account is inactive",
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or expired token",
+                    headers={"WWW-Authenticate": "Bearer"},
                 )
 
-        except JWTError as e:
-            logger.error(f"Invalid token: {str(e)}")
+            user_data = response.json()
+            
+            # Add user info to request state
+            request.state.user = {
+                "id": user_data.get("id"),
+                "email": user_data.get("email"),
+                "email_confirmed_at": user_data.get("email_confirmed_at"),
+                "user_metadata": user_data.get("user_metadata", {}),
+                "is_active": True,
+                "is_verified": user_data.get("email_confirmed_at") is not None,
+            }
+
+        except httpx.HTTPError as e:
+            logger.error(f"Supabase verification error: {str(e)}")
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token",
-                headers={"WWW-Authenticate": "Bearer"},
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Authentication service unavailable",
             )
         except Exception as e:
             logger.error(f"Unexpected authentication error: {str(e)}", exc_info=True)

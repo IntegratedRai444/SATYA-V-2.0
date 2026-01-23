@@ -167,21 +167,24 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, State> {
 
   private getErrorMessage() {
     if (!this.state.error) return 'An unexpected error occurred. Please try again.';
-
     const { error } = this.state;
-
+    if (!error) return 'An unexpected error occurred. Please try again.';
+    
+    // Safe property access with optional chaining
+    const hasIncludes = error && typeof error === 'object' && 'includes' in error;
+    
     if (error.name === 'ChunkLoadError') {
       return 'A new version of the application is available. Please refresh your browser to update.';
     }
-
-    if (error.message.includes('NetworkError')) {
+    
+    if (error.message && hasIncludes && error.message.includes('NetworkError')) {
       return 'Unable to connect to the server. Please check your internet connection and try again.';
     }
-
-    if (error.message.includes('timeout') || error.message.includes('Timeout')) {
+    
+    if (error.message && hasIncludes && (error.message.includes('timeout') || error.message.includes('Timeout'))) {
       return 'The request took too long to complete. Please check your connection and try again.';
     }
-
+    
     return error.message || 'An unexpected error occurred. Please try again.';
   }
 

@@ -8,7 +8,7 @@ import type {
   NextFunction, 
   RequestHandler
 } from 'express';
-import process from 'process';
+import { URL } from 'url';
 
 // Type-safe Python bridge import
 // import { pythonBridge } from './services/python-http-bridge';
@@ -426,9 +426,8 @@ app.get('/health', async (_req, res) => {
   }
 });
 
-// Authentication middleware
-import { authenticate } from './middleware/auth.middleware';
-app.use(authenticate);
+// Authentication middleware - REMOVED GLOBAL APPLICATION
+// authenticate is now imported and used in routes/index.ts for protected routes only
 
 // Trust first proxy (if behind a reverse proxy like nginx)
 app.set('trust proxy', 1);
@@ -774,10 +773,31 @@ async function startServer() {
 
     // Validate configuration
     try {
-      // Add configuration validation logic here
-      if (!config.PORT) {
-        throw new Error('Port configuration is missing');
+      // Validate critical configuration
+      const requiredVars = [
+        'PORT',
+        'SUPABASE_URL',
+        'SUPABASE_ANON_KEY',
+        'JWT_SECRET'
+      ];
+      
+      const missingVars = requiredVars.filter(varName => !process.env[varName]);
+      
+      if (missingVars.length > 0) {
+        logger.error('❌ Missing required environment variables:', missingVars);
+        logger.error('Please check your .env file and add these variables');
+        process.exit(1);
       }
+      
+      // Validate Supabase URL format
+      try {
+        new URL(process.env.SUPABASE_URL!);
+      } catch (error) {
+        logger.error('❌ Invalid SUPABASE_URL format:', process.env.SUPABASE_URL);
+        process.exit(1);
+      }
+      
+      logger.info('✅ Configuration validation passed');
     } catch (error) {
       logger.error('Configuration validation failed', { error });
       process.exit(1);

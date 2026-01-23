@@ -1,7 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
-import { supabaseAuth } from '../middleware/supabase-auth';
 import { supabase } from '../config/supabase';
 import { auditLogger } from '../middleware/audit-logger';
 
@@ -108,7 +107,7 @@ const getUserConversations = async (userId: string): Promise<DatabaseConversatio
 };
 
 // POST /api/chat/message - Send message to AI assistant
-router.post('/message', chatRateLimit, supabaseAuth, auditLogger('chat_message_send', 'chat_message'), async (req: AuthenticatedRequest, res: Response) => {
+router.post('/message', chatRateLimit, auditLogger('chat_message_send', 'chat_message'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     // Check if chat is enabled
     if (!isChatEnabled) {
@@ -274,7 +273,7 @@ You are Satya Sentinel.`
 });
 
 // GET /api/chat/history - Get chat history
-router.get('/history', supabaseAuth, auditLogger('sensitive_data_access', 'chat_conversations'), async (req: AuthenticatedRequest, res: Response) => {
+router.get('/history', auditLogger('sensitive_data_access', 'chat_conversations'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     // Check if chat is enabled
     if (!isChatEnabled) {
@@ -321,7 +320,7 @@ router.get('/history', supabaseAuth, auditLogger('sensitive_data_access', 'chat_
 });
 
 // GET /api/chat/conversation/:id - Get specific conversation
-router.get('/conversation/:id', supabaseAuth, auditLogger('sensitive_data_access', 'chat_conversation'), async (req: AuthenticatedRequest, res: Response) => {
+router.get('/conversation/:id', auditLogger('sensitive_data_access', 'chat_conversations'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const userId = req.user?.id;
@@ -372,7 +371,7 @@ router.get('/conversation/:id', supabaseAuth, auditLogger('sensitive_data_access
 });
 
 // DELETE /api/chat/conversation/:id - Delete conversation
-router.delete('/history/:id', supabaseAuth, auditLogger('admin_action', 'chat_conversation'), async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/history/:id', auditLogger('admin_action', 'chat_conversation'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const userId = req.user?.id;
@@ -416,7 +415,7 @@ router.delete('/history/:id', supabaseAuth, auditLogger('admin_action', 'chat_co
 });
 
 // POST /api/chat/suggestions - Get suggested responses
-router.post('/suggestions', supabaseAuth, auditLogger('sensitive_data_access', 'chat_suggestions'), async (req: AuthenticatedRequest, res: Response) => {
+router.post('/suggestions', auditLogger('sensitive_data_access', 'chat_suggestions'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     // Generate contextual suggestions based on common deepfake detection queries
     const suggestions = [

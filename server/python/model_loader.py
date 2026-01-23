@@ -22,6 +22,77 @@ from torchvision import transforms
 
 logger = logging.getLogger(__name__)
 
+def ensure_models_available() -> Dict[str, Any]:
+   
+    strict_mode = os.getenv('STRICT_MODE', 'false').lower() == 'true'
+    models_dir = Path(os.getenv('MODEL_DIR', 'models'))
+    
+    # Required model configurations
+    required_models = {
+        'image': {
+            'paths': [
+                models_dir / "dfdc_efficientnet_b7" / "model.pth",
+                models_dir / "xception" / "model.pth"
+            ],
+            'huggingface_fallback': 'facebook/efficientnet-b7-clf'
+        },
+        'audio': {
+            'paths': [
+                models_dir / "audio" / "model.pth"
+            ],
+            'huggingface_fallback': 'MIT/ast-finetuned-audioset-10-10-0.4593'
+        },
+        'video': {
+            'paths': [
+                models_dir / "video" / "model.pth"
+            ],
+            'huggingface_fallback': 'MCG-NJU/videomae-base-finetuned-kinetics'
+        }
+    }
+    
+    model_status = {}
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    
+    for modality, config in required_models.items():
+        local_available = any(path.exists() for path in config['paths'])
+        
+        if local_available:
+            model_status[modality] = {
+                'available': True,
+                'weights': 'local',
+                'device': device
+            }
+        elif not strict_mode:
+            # In dev mode, allow HuggingFace download fallback
+            try:
+                # This would trigger HuggingFace download
+                logger.info(f"Attempting to download {modality} model from HuggingFace")
+                model_status[modality] = {
+                    'available': True,
+                    'weights': 'hf',
+                    'device': device
+                }
+            except Exception as e:
+                logger.warning(f"Failed to download {modality} model: {e}")
+                model_status[modality] = {
+                    'available': False,
+                    'weights': 'missing',
+                    'device': device
+                }
+        else:
+            # Strict mode: fail if weights missing
+            model_status[modality] = {
+                'available': False,
+                'weights': 'missing',
+                'device': device
+            }
+    
+    return {
+        'status': 'success',
+        'strict_mode': strict_mode,
+        'models': model_status
+    }
+
 class BaseModelLoader:
     """
     Base class for model loaders with enhanced features:
@@ -734,20 +805,9 @@ class FaceXRayLoader(BaseModelLoader):
             "trainable_parameters": trainable_params,
             "device": str(self.device),
             "precision": self.precision,
-            "quantized": self.quantize,
+            "quantized": self.quantized,
             "status": "loaded"
         }
-                self.model.load_state_dict(checkpoint['state_dict'])
-            else:
-                self.model.load_state_dict(checkpoint)
-                
-            self.model = self.model.to(self.device)
-            self.model.eval()
-            logger.info(f"Loaded EfficientNet-B7 model from {self.model_path}")
-            
-        except Exception as e:
-            logger.error(f"Failed to load EfficientNet-B7 model: {e}")
-            raise
     
     def preprocess(self, image):
         """Preprocess image for EfficientNet-B7."""

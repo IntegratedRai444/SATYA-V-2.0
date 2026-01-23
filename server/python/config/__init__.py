@@ -41,9 +41,9 @@ class Settings(BaseSettings):
 
     # File Uploads
     UPLOAD_DIR: str = "./uploads"
-    MAX_FILE_SIZE: int = 104857600  # 100MB
+    MAX_FILE_SIZE: int = 52428800  # 50MB (match Node.js backend)
     ALLOWED_FILE_TYPES: str = (
-        "image/jpeg,image/png,image/webp,video/mp4,video/webm,audio/mpeg,audio/wav"
+        "image/jpeg,image/png,image/webp,video/mp4,video/webm,video/avi,video/mov,video/mkv,audio/mp3,audio/wav,audio/mpeg,audio/ogg"
     )
 
     # JWT Configuration
@@ -212,11 +212,17 @@ logging.basicConfig(
 
 # Validate required settings in production
 if settings.APP_ENV == "production":
-    required_vars = ["DATABASE_URL", "SECRET_KEY"]
+    required_vars = [
+        "DATABASE_URL", 
+        "SECRET_KEY", 
+        "SUPABASE_URL", 
+        "SUPABASE_ANON_KEY",
+        "SUPABASE_SERVICE_ROLE_KEY"
+    ]
     missing_vars = [var for var in required_vars if not getattr(settings, var, None)]
     if missing_vars:
         raise ValueError(
-            f"Missing required environment variables: {', '.join(missing_vars)}"
+            f"Missing required environment variables for production: {missing_vars}"
         )
 
 # Export settings

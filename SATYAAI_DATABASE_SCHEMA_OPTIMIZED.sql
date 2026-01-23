@@ -1,22 +1,69 @@
 -- ============================================================
--- SatyaAI Schema v2.3 (Production-Ready Schema)
+-- SatyaAI Schema v2.6 (Production-Ready | Tasks Single Source)
 -- For: Supabase PostgreSQL
 -- Author: Rishabh Kapoor (Founder)
--- Project: SatyaAI
--- 
--- CHANGES v2.3:
--- - Fixed all circular references and duplicate policies
--- - Corrected type mismatches (UUID vs integer)
--- - Reorganized table creation order
--- - Added missing indexes for performance
--- - Enhanced security with proper service role policies
--- - Added soft delete support
--- - Improved data integrity constraints
--- - Fixed batch_jobs table definition order
--- - Consolidated and cleaned all RLS policies
--- - Added email validation
--- - Enhanced audit logging
+-- Project: SatyaAI / HyperSatya X
+--
+-- KEY PRINCIPLE:
+-- ✅ tasks is the ONLY source of truth for analysis jobs + results
+-- ❌ analysis_history removed to prevent duplication
 -- ============================================================
+
+-- ============================================================
+-- FULL RESET / DROP EXISTING OBJECTS (SAFE ORDER)
+-- ============================================================
+
+-- Drop views first
+DROP VIEW IF EXISTS public.analysis_jobs_view CASCADE;
+DROP VIEW IF EXISTS public.scans_view CASCADE;
+
+-- Drop triggers
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+DROP TRIGGER IF EXISTS set_default_task_report_code_trigger ON public.tasks;
+
+-- Drop functions
+DROP FUNCTION IF EXISTS public.cleanup_old_notifications(integer) CASCADE;
+DROP FUNCTION IF EXISTS public.cleanup_expired_files() CASCADE;
+DROP FUNCTION IF EXISTS public.get_user_stats(uuid) CASCADE;
+DROP FUNCTION IF EXISTS public.handle_new_user() CASCADE;
+DROP FUNCTION IF EXISTS public.handle_updated_at() CASCADE;
+DROP FUNCTION IF EXISTS public.set_default_task_report_code() CASCADE;
+DROP FUNCTION IF EXISTS public.generate_report_code(text) CASCADE;
+DROP FUNCTION IF EXISTS public.hash_api_key(text) CASCADE;
+DROP FUNCTION IF EXISTS public.verify_api_key(text, text) CASCADE;
+
+-- Drop legacy / duplicates if exist
+DROP TABLE IF EXISTS public.analysis_results CASCADE;
+DROP TABLE IF EXISTS public.analysis_jobs CASCADE;
+DROP TABLE IF EXISTS public.analysis_history CASCADE;
+DROP TABLE IF EXISTS public.analysis_history_legacy CASCADE;
+DROP TABLE IF EXISTS public.scans CASCADE;
+DROP TABLE IF EXISTS public.schema_migrations CASCADE;
+
+-- Optional legacy sequences
+DROP SEQUENCE IF EXISTS public.scans_id_seq CASCADE;
+DROP SEQUENCE IF EXISTS public.schema_migrations_id_seq CASCADE;
+
+-- Drop core tables (children first)
+DROP TABLE IF EXISTS public.audit_logs CASCADE;
+DROP TABLE IF EXISTS public.api_keys CASCADE;
+DROP TABLE IF EXISTS public.notifications CASCADE;
+DROP TABLE IF EXISTS public.batch_jobs CASCADE;
+DROP TABLE IF EXISTS public.file_uploads CASCADE;
+DROP TABLE IF EXISTS public.chat_messages CASCADE;
+DROP TABLE IF EXISTS public.chat_conversations CASCADE;
+DROP TABLE IF EXISTS public.tasks CASCADE;
+DROP TABLE IF EXISTS public.user_preferences CASCADE;
+DROP TABLE IF EXISTS public.users CASCADE;
+
+-- Drop enum types
+DO $$ BEGIN
+  DROP TYPE IF EXISTS public.notification_type CASCADE;
+  DROP TYPE IF EXISTS public.media_type CASCADE;
+  DROP TYPE IF EXISTS public.analysis_status CASCADE;
+  DROP TYPE IF EXISTS public.user_role CASCADE;
+EXCEPTION WHEN undefined_object THEN NULL;
+END $$;
 
 -- ============================================================
 -- EXTENSIONS
@@ -87,13 +134,14 @@ CREATE TABLE IF NOT EXISTS public.user_preferences (
   chat_enabled BOOLEAN DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  deleted_at TIMESTAMPTZ,
   CONSTRAINT theme_check CHECK (theme IN ('light', 'dark', 'auto')),
-  CONSTRAINT confidence_check CHECK (confidence_threshold BETWEEN 1 AND 100),
+  CONSTRAINT confidence_check CHECK (confidence_threshold BETWEEN 0 AND 100),
   CONSTRAINT sensitivity_check CHECK (sensitivity_level IN ('low', 'medium', 'high'))
 );
 
 -- ============================================================
--- TASKS TABLE (for task management)
+-- TASKS TABLE (Single Source of Truth)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.tasks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -102,7 +150,7 @@ CREATE TABLE IF NOT EXISTS public.tasks (
   status public.analysis_status NOT NULL DEFAULT 'pending',
   progress INTEGER NOT NULL DEFAULT 0 CHECK (progress BETWEEN 0 AND 100),
   file_name TEXT NOT NULL,
-  file_size BIGINT NOT NULL CHECK (file_size > 0 AND file_size < 10737418240), -- 10GB max
+  file_size BIGINT NOT NULL CHECK (file_size > 0 AND file_size < 10737418240),
   file_type VARCHAR(100) NOT NULL,
   file_path TEXT NOT NULL,
   report_code TEXT NOT NULL UNIQUE,
@@ -115,7 +163,6 @@ CREATE TABLE IF NOT EXISTS public.tasks (
   deleted_at TIMESTAMPTZ,
   metadata JSONB NOT NULL DEFAULT '{}'::jsonb
 );
-
 
 -- ============================================================
 -- CHAT CONVERSATIONS
@@ -160,25 +207,6 @@ CREATE TABLE IF NOT EXISTS public.file_uploads (
 );
 
 -- ============================================================
--- ANALYSIS HISTORY TABLE (for persistent analysis history)
--- ============================================================
-CREATE TABLE IF NOT EXISTS public.analysis_history (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-  task_id UUID NOT NULL REFERENCES public.tasks(id) ON DELETE CASCADE,
-  report_code TEXT NOT NULL,
-  file_name TEXT NOT NULL,
-  file_type TEXT NOT NULL,
-  file_size BIGINT NOT NULL,
-  result JSONB NOT NULL,
-  confidence_score FLOAT CHECK (confidence_score BETWEEN 0 AND 1),
-  is_deepfake BOOLEAN,
-  analysis_duration_ms INTEGER,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  deleted_at TIMESTAMPTZ
-);
-
--- ============================================================
 -- BATCH JOBS
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.batch_jobs (
@@ -207,7 +235,8 @@ CREATE TABLE IF NOT EXISTS public.notifications (
   is_read BOOLEAN NOT NULL DEFAULT FALSE,
   action_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  read_at TIMESTAMPTZ
+  read_at TIMESTAMPTZ,
+  deleted_at TIMESTAMPTZ
 );
 
 -- ============================================================
@@ -218,13 +247,14 @@ CREATE TABLE IF NOT EXISTS public.api_keys (
   user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   key_hash TEXT NOT NULL UNIQUE,
-  key_algorithm TEXT NOT NULL DEFAULT 'sha256',
+  key_algorithm TEXT NOT NULL DEFAULT 'bcrypt',
   permissions JSONB NOT NULL DEFAULT '{"read": true, "write": false, "admin": false}'::jsonb,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   last_used_at TIMESTAMPTZ,
   expires_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   revoked_at TIMESTAMPTZ,
+  deleted_at TIMESTAMPTZ,
   CONSTRAINT name_length_check CHECK (length(name) >= 3 AND length(name) <= 100)
 );
 
@@ -244,91 +274,68 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
 );
 
 -- ============================================================
--- INDEXES FOR PERFORMANCE
+-- INDEXES FOR PERFORMANCE (soft delete aware)
 -- ============================================================
 
--- Users table indexes
-CREATE INDEX IF NOT EXISTS idx_users_email ON public.users(email);
-CREATE INDEX IF NOT EXISTS idx_users_username ON public.users(username);
-CREATE INDEX IF NOT EXISTS idx_users_role ON public.users(role) WHERE is_active = TRUE;
+-- Users
+CREATE INDEX IF NOT EXISTS idx_users_email ON public.users(email) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_users_username ON public.users(username) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_users_role ON public.users(role) WHERE is_active = TRUE AND deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_users_created_at ON public.users(created_at DESC);
 
--- User preferences indexes
-CREATE INDEX IF NOT EXISTS idx_user_preferences_user_id ON public.user_preferences(user_id);
+-- Preferences
+CREATE INDEX IF NOT EXISTS idx_user_preferences_user_id ON public.user_preferences(user_id) WHERE deleted_at IS NULL;
 
--- Tasks indexes
-CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON public.tasks(user_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_status ON public.tasks(status);
+-- Tasks
+CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON public.tasks(user_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON public.tasks(status) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_tasks_report_code ON public.tasks(report_code);
 CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON public.tasks(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_tasks_status_user ON public.tasks(user_id, status);
-CREATE INDEX IF NOT EXISTS idx_tasks_user_status_created ON public.tasks(user_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tasks_user_status_created ON public.tasks(user_id, status, created_at DESC) WHERE deleted_at IS NULL;
 
--- Chat conversations indexes
+-- Chat conversations/messages
 CREATE INDEX IF NOT EXISTS idx_chat_conversations_user_id ON public.chat_conversations(user_id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_chat_conversations_updated_at ON public.chat_conversations(updated_at DESC);
-CREATE INDEX IF NOT EXISTS idx_chat_conversations_created_at ON public.chat_conversations(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_chat_conversations_archived ON public.chat_conversations(user_id, is_archived, updated_at DESC);
-
--- Chat messages indexes
 CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation_id ON public.chat_messages(conversation_id) WHERE deleted_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_chat_messages_created_at ON public.chat_messages(created_at);
-CREATE INDEX IF NOT EXISTS idx_chat_messages_role ON public.chat_messages(role);
-CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation_created ON public.chat_messages(conversation_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_created_at ON public.chat_messages(created_at DESC);
 
--- File uploads indexes
+-- File uploads
 CREATE INDEX IF NOT EXISTS idx_file_uploads_user_id ON public.file_uploads(user_id) WHERE deleted_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_file_uploads_created_at ON public.file_uploads(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_file_uploads_expires_at ON public.file_uploads(expires_at) WHERE expires_at IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_file_uploads_processed ON public.file_uploads(is_processed) WHERE NOT is_processed;
+CREATE INDEX IF NOT EXISTS idx_file_uploads_processed ON public.file_uploads(is_processed) WHERE NOT is_processed AND deleted_at IS NULL;
 
--- Analysis history indexes
-CREATE INDEX IF NOT EXISTS idx_analysis_history_user_id ON public.analysis_history(user_id) WHERE deleted_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_analysis_history_task_id ON public.analysis_history(task_id);
-CREATE INDEX IF NOT EXISTS idx_analysis_history_report_code ON public.analysis_history(report_code);
-CREATE INDEX IF NOT EXISTS idx_analysis_history_created_at ON public.analysis_history(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_analysis_history_user_created ON public.analysis_history(user_id, created_at DESC);
-
--- Batch jobs indexes
+-- Batch jobs
 CREATE INDEX IF NOT EXISTS idx_batch_jobs_user_id ON public.batch_jobs(user_id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_batch_jobs_status ON public.batch_jobs(status) WHERE deleted_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_batch_jobs_created_at ON public.batch_jobs(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_batch_jobs_completed_at ON public.batch_jobs(completed_at DESC) WHERE completed_at IS NOT NULL;
 
--- Notifications indexes
-CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON public.notifications(user_id);
+-- Notifications
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON public.notifications(user_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON public.notifications(user_id, is_read) WHERE NOT is_read AND deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON public.notifications(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON public.notifications(user_id, is_read) WHERE NOT is_read;
-CREATE INDEX IF NOT EXISTS idx_notifications_type ON public.notifications(type);
-CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON public.notifications(user_id, created_at DESC);
 
--- API keys indexes
-CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON public.api_keys(user_id);
-CREATE INDEX IF NOT EXISTS idx_api_keys_is_active ON public.api_keys(is_active) WHERE is_active = TRUE;
-CREATE INDEX IF NOT EXISTS idx_api_keys_expires_at ON public.api_keys(expires_at) WHERE expires_at IS NOT NULL;
+-- API keys
+CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON public.api_keys(user_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_api_keys_is_active ON public.api_keys(is_active) WHERE is_active = TRUE AND deleted_at IS NULL;
 
--- Audit logs indexes
+-- Audit logs
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON public.audit_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.audit_logs(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON public.audit_logs(action);
 
 -- ============================================================
 -- HELPER FUNCTIONS
 -- ============================================================
 
--- Function to generate a unique report code with media type prefix
+-- Generate report codes
 CREATE OR REPLACE FUNCTION public.generate_report_code(p_media_type TEXT DEFAULT 'multimodal')
 RETURNS TEXT AS $$
 DECLARE
   chars TEXT := 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   result TEXT := '';
   prefix TEXT := '';
-  i INT := 0;
   rand_int INT;
   max_attempts INT := 10;
   attempt INT := 0;
 BEGIN
-  -- Set prefix based on media type
   CASE p_media_type
     WHEN 'image' THEN prefix := 'IMG';
     WHEN 'video' THEN prefix := 'VID';
@@ -337,21 +344,18 @@ BEGIN
     WHEN 'batch' THEN prefix := 'BAT';
     ELSE prefix := 'MLT';
   END CASE;
-  
+
   LOOP
     result := prefix || '-';
     FOR i IN 1..8 LOOP
       rand_int := floor(random() * length(chars) + 1)::int;
       result := result || substr(chars, rand_int, 1);
     END LOOP;
-    
-    -- Check if code already exists
-    IF NOT EXISTS (
-      SELECT 1 FROM public.tasks WHERE report_code = result
-    ) THEN
+
+    IF NOT EXISTS (SELECT 1 FROM public.tasks WHERE report_code = result) THEN
       RETURN result;
     END IF;
-    
+
     attempt := attempt + 1;
     IF attempt >= max_attempts THEN
       RAISE EXCEPTION 'Could not generate unique report code after % attempts', max_attempts;
@@ -360,38 +364,30 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Function to set default report code for analysis_jobs (removed as table will be dropped)
-
--- Function to set default report code for tasks
+-- Trigger: auto set report_code for tasks
 CREATE OR REPLACE FUNCTION public.set_default_task_report_code()
 RETURNS TRIGGER AS $$
+DECLARE
+  media_type TEXT;
 BEGIN
   IF NEW.report_code IS NULL OR NEW.report_code = '' THEN
-    DECLARE
-      media_type TEXT;
-    BEGIN
-      -- Derive media type from MIME type
-      CASE
-        WHEN NEW.file_type LIKE 'image%' THEN media_type := 'image';
-        WHEN NEW.file_type LIKE 'video%' THEN media_type := 'video';
-        WHEN NEW.file_type LIKE 'audio%' THEN media_type := 'audio';
-        WHEN NEW.file_type LIKE 'webcam%' THEN media_type := 'webcam';
-        WHEN NEW.file_type LIKE 'batch%' THEN media_type := 'batch';
-        ELSE media_type := 'multimodal';
-      END CASE;
-      
-      NEW.report_code := public.generate_report_code(media_type);
-    END;
+    CASE
+      WHEN NEW.file_type LIKE 'image%' THEN media_type := 'image';
+      WHEN NEW.file_type LIKE 'video%' THEN media_type := 'video';
+      WHEN NEW.file_type LIKE 'audio%' THEN media_type := 'audio';
+      WHEN NEW.file_type LIKE 'webcam%' THEN media_type := 'webcam';
+      WHEN NEW.file_type LIKE 'batch%' THEN media_type := 'batch';
+      ELSE media_type := 'multimodal';
+    END CASE;
+    NEW.report_code := public.generate_report_code(media_type);
   END IF;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
 -- ============================================================
--- AUTH TRIGGERS
+-- AUTH TRIGGER: Create user profile + preferences
 -- ============================================================
-
--- Function to handle new user registration
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -401,86 +397,72 @@ DECLARE
   counter INT := 1;
   user_email TEXT;
 BEGIN
-  -- Handle potential NULL email (e.g., phone auth)
   user_email := COALESCE(NEW.email, 'user');
-  
-  -- Generate base username from email
+
   base_username := LOWER(REGEXP_REPLACE(split_part(user_email, '@', 1), '[^a-z0-9_]', '', 'g'));
-  
-  -- Ensure username meets requirements
+
   IF length(base_username) < 3 THEN
     base_username := 'user' || substr(md5(random()::text), 1, 8);
   END IF;
-  
-  -- Handle username collisions
+
   new_username := base_username;
   WHILE EXISTS (SELECT 1 FROM public.users WHERE username = new_username) AND counter < 100 LOOP
     suffix := substr(md5(random()::text), 1, 4);
     new_username := base_username || '_' || suffix;
     counter := counter + 1;
   END LOOP;
-  
-  -- Create user profile
+
   INSERT INTO public.users (id, username, email, role)
   VALUES (NEW.id, new_username, NEW.email, 'user');
-  
-  -- Create default preferences
+
   INSERT INTO public.user_preferences (user_id)
   VALUES (NEW.id);
-  
+
   RETURN NEW;
 EXCEPTION WHEN OTHERS THEN
-  -- Log error but don't fail the auth flow
   RAISE WARNING 'Error creating user profile: %', SQLERRM;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Trigger for new user registration
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- ============================================================
--- UPDATE TIMESTAMP TRIGGERS
+-- UPDATED_AT TRIGGERS
 -- ============================================================
-
--- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
-  NEW.updated_at = NOW();
+  NEW.updated_at := NOW();
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
--- Apply updated_at trigger to all tables with updated_at column
 DO $$
 DECLARE
   t record;
 BEGIN
-  FOR t IN 
-    SELECT table_name 
-    FROM information_schema.columns 
-    WHERE column_name = 'updated_at' 
+  FOR t IN
+    SELECT table_name
+    FROM information_schema.columns
+    WHERE column_name = 'updated_at'
       AND table_schema = 'public'
       AND table_name NOT IN ('audit_logs')
   LOOP
-    EXECUTE format('DROP TRIGGER IF EXISTS handle_%s_updated_at ON public.%I', 
-                  t.table_name, t.table_name);
+    EXECUTE format('DROP TRIGGER IF EXISTS handle_%s_updated_at ON public.%I', t.table_name, t.table_name);
     EXECUTE format('CREATE TRIGGER handle_%s_updated_at
-                   BEFORE UPDATE ON public.%I
-                   FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at()',
-                  t.table_name, t.table_name);
+                    BEFORE UPDATE ON public.%I
+                    FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at()', t.table_name, t.table_name);
   END LOOP;
 END;
 $$;
 
 -- ============================================================
--- REPORT CODE TRIGGERS
+-- REPORT CODE TRIGGER ON TASKS
 -- ============================================================
-
 DROP TRIGGER IF EXISTS set_default_task_report_code_trigger ON public.tasks;
 CREATE TRIGGER set_default_task_report_code_trigger
 BEFORE INSERT ON public.tasks
@@ -488,14 +470,11 @@ FOR EACH ROW
 EXECUTE FUNCTION public.set_default_task_report_code();
 
 -- ============================================================
--- ROW LEVEL SECURITY (RLS) POLICIES
+-- RLS ENABLE
 -- ============================================================
-
--- Enable RLS on all tables (only once)
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_preferences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.analysis_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.file_uploads ENABLE ROW LEVEL SECURITY;
@@ -505,8 +484,10 @@ ALTER TABLE public.api_keys ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================
--- USERS POLICIES
+-- RLS POLICIES
 -- ============================================================
+
+-- USERS
 DROP POLICY IF EXISTS "Users can view their own profile" ON public.users;
 CREATE POLICY "Users can view their own profile"
 ON public.users FOR SELECT
@@ -520,87 +501,60 @@ WITH CHECK (id = auth.uid());
 
 DROP POLICY IF EXISTS "Service role can manage all users" ON public.users;
 CREATE POLICY "Service role can manage all users"
-ON public.users FOR ALL
-TO service_role
+ON public.users FOR ALL TO service_role
 USING (true)
 WITH CHECK (true);
 
--- ============================================================
--- USER PREFERENCES POLICIES
--- ============================================================
+-- USER PREFERENCES
 DROP POLICY IF EXISTS "Users can manage their own preferences" ON public.user_preferences;
 CREATE POLICY "Users can manage their own preferences"
 ON public.user_preferences FOR ALL
-USING (user_id = auth.uid())
+USING (user_id = auth.uid() AND deleted_at IS NULL)
 WITH CHECK (user_id = auth.uid());
 
 DROP POLICY IF EXISTS "Service role can manage all preferences" ON public.user_preferences;
 CREATE POLICY "Service role can manage all preferences"
-ON public.user_preferences FOR ALL
-TO service_role
+ON public.user_preferences FOR ALL TO service_role
 USING (true)
 WITH CHECK (true);
 
--- ============================================================
--- TASKS POLICIES
--- ============================================================
+-- TASKS
 DROP POLICY IF EXISTS "Users can manage their own tasks" ON public.tasks;
 CREATE POLICY "Users can manage their own tasks"
 ON public.tasks FOR ALL
-USING (user_id = auth.uid())
+USING (user_id = auth.uid() AND deleted_at IS NULL)
 WITH CHECK (user_id = auth.uid());
 
 DROP POLICY IF EXISTS "Service role can manage all tasks" ON public.tasks;
 CREATE POLICY "Service role can manage all tasks"
-ON public.tasks FOR ALL
-TO service_role
+ON public.tasks FOR ALL TO service_role
 USING (true)
 WITH CHECK (true);
 
-
--- ============================================================
--- ANALYSIS HISTORY POLICIES
--- ============================================================
-DROP POLICY IF EXISTS "Users can manage their analysis history" ON public.analysis_history;
-CREATE POLICY "Users can manage their analysis history"
-ON public.analysis_history FOR ALL
-USING (user_id = auth.uid())
-WITH CHECK (user_id = auth.uid());
-
-DROP POLICY IF EXISTS "Service role can manage all analysis history" ON public.analysis_history;
-CREATE POLICY "Service role can manage all analysis history"
-ON public.analysis_history FOR ALL
-TO service_role
-USING (true)
-WITH CHECK (true);
-
--- ============================================================
--- CHAT CONVERSATIONS POLICIES
--- ============================================================
+-- CHAT CONVERSATIONS
 DROP POLICY IF EXISTS "Users can manage their chat conversations" ON public.chat_conversations;
 CREATE POLICY "Users can manage their chat conversations"
 ON public.chat_conversations FOR ALL
-USING (user_id = auth.uid())
+USING (user_id = auth.uid() AND deleted_at IS NULL)
 WITH CHECK (user_id = auth.uid());
 
 DROP POLICY IF EXISTS "Service role can manage all conversations" ON public.chat_conversations;
 CREATE POLICY "Service role can manage all conversations"
-ON public.chat_conversations FOR ALL
-TO service_role
+ON public.chat_conversations FOR ALL TO service_role
 USING (true)
 WITH CHECK (true);
 
--- ============================================================
--- CHAT MESSAGES POLICIES
--- ============================================================
+-- CHAT MESSAGES
 DROP POLICY IF EXISTS "Users can view their chat messages" ON public.chat_messages;
 CREATE POLICY "Users can view their chat messages"
 ON public.chat_messages FOR SELECT
 USING (
+  deleted_at IS NULL AND
   EXISTS (
-    SELECT 1 FROM public.chat_conversations c 
-    WHERE c.id = chat_messages.conversation_id 
-    AND c.user_id = auth.uid()
+    SELECT 1 FROM public.chat_conversations c
+    WHERE c.id = chat_messages.conversation_id
+      AND c.user_id = auth.uid()
+      AND c.deleted_at IS NULL
   )
 );
 
@@ -608,88 +562,74 @@ DROP POLICY IF EXISTS "Users can insert user messages" ON public.chat_messages;
 CREATE POLICY "Users can insert user messages"
 ON public.chat_messages FOR INSERT
 WITH CHECK (
-  role = 'user' AND
-  EXISTS (
-    SELECT 1 FROM public.chat_conversations c 
-    WHERE c.id = chat_messages.conversation_id 
-    AND c.user_id = auth.uid()
+  role = 'user'
+  AND EXISTS (
+    SELECT 1 FROM public.chat_conversations c
+    WHERE c.id = chat_messages.conversation_id
+      AND c.user_id = auth.uid()
+      AND c.deleted_at IS NULL
   )
 );
 
 DROP POLICY IF EXISTS "Service role can manage all messages" ON public.chat_messages;
 CREATE POLICY "Service role can manage all messages"
-ON public.chat_messages FOR ALL
-TO service_role
+ON public.chat_messages FOR ALL TO service_role
 USING (true)
 WITH CHECK (true);
 
--- ============================================================
--- FILE UPLOADS POLICIES
--- ============================================================
+-- FILE UPLOADS
 DROP POLICY IF EXISTS "Users can manage their file uploads" ON public.file_uploads;
 CREATE POLICY "Users can manage their file uploads"
 ON public.file_uploads FOR ALL
-USING (user_id = auth.uid())
+USING (user_id = auth.uid() AND deleted_at IS NULL)
 WITH CHECK (user_id = auth.uid());
 
 DROP POLICY IF EXISTS "Service role can manage all file uploads" ON public.file_uploads;
 CREATE POLICY "Service role can manage all file uploads"
-ON public.file_uploads FOR ALL
-TO service_role
+ON public.file_uploads FOR ALL TO service_role
 USING (true)
 WITH CHECK (true);
 
--- ============================================================
--- BATCH JOBS POLICIES
--- ============================================================
+-- BATCH JOBS
 DROP POLICY IF EXISTS "Users can manage their batch jobs" ON public.batch_jobs;
 CREATE POLICY "Users can manage their batch jobs"
 ON public.batch_jobs FOR ALL
-USING (user_id = auth.uid())
+USING (user_id = auth.uid() AND deleted_at IS NULL)
 WITH CHECK (user_id = auth.uid());
 
 DROP POLICY IF EXISTS "Service role can manage all batch jobs" ON public.batch_jobs;
 CREATE POLICY "Service role can manage all batch jobs"
-ON public.batch_jobs FOR ALL
-TO service_role
+ON public.batch_jobs FOR ALL TO service_role
 USING (true)
 WITH CHECK (true);
 
--- ============================================================
--- NOTIFICATIONS POLICIES
--- ============================================================
+-- NOTIFICATIONS
 DROP POLICY IF EXISTS "Users can manage their notifications" ON public.notifications;
 CREATE POLICY "Users can manage their notifications"
 ON public.notifications FOR ALL
-USING (user_id = auth.uid())
+USING (user_id = auth.uid() AND deleted_at IS NULL)
 WITH CHECK (user_id = auth.uid());
 
 DROP POLICY IF EXISTS "Service role can manage all notifications" ON public.notifications;
 CREATE POLICY "Service role can manage all notifications"
-ON public.notifications FOR ALL
-TO service_role
+ON public.notifications FOR ALL TO service_role
 USING (true)
 WITH CHECK (true);
 
--- ============================================================
--- API KEYS POLICIES
--- ============================================================
+-- API KEYS
 DROP POLICY IF EXISTS "Users can manage their API keys" ON public.api_keys;
 CREATE POLICY "Users can manage their API keys"
 ON public.api_keys FOR ALL
-USING (user_id = auth.uid())
+USING (user_id = auth.uid() AND deleted_at IS NULL)
 WITH CHECK (user_id = auth.uid());
 
 DROP POLICY IF EXISTS "Service role can manage all api keys" ON public.api_keys;
 CREATE POLICY "Service role can manage all api keys"
-ON public.api_keys FOR ALL
-TO service_role
+ON public.api_keys FOR ALL TO service_role
 USING (true)
 WITH CHECK (true);
 
--- ============================================================
--- AUDIT LOGS POLICIES
--- ============================================================
+-- AUDIT LOGS
 DROP POLICY IF EXISTS "Users can view their own audit logs" ON public.audit_logs;
 CREATE POLICY "Users can view their own audit logs"
 ON public.audit_logs FOR SELECT
@@ -697,8 +637,7 @@ USING (user_id = auth.uid());
 
 DROP POLICY IF EXISTS "Service role can manage all audit logs" ON public.audit_logs;
 CREATE POLICY "Service role can manage all audit logs"
-ON public.audit_logs FOR ALL
-TO service_role
+ON public.audit_logs FOR ALL TO service_role
 USING (true)
 WITH CHECK (true);
 
@@ -706,42 +645,25 @@ WITH CHECK (true);
 -- UTILITY FUNCTIONS
 -- ============================================================
 
--- Function to securely hash API keys
-CREATE OR REPLACE FUNCTION public.hash_api_key(api_key TEXT)
-RETURNS TEXT AS $$
-BEGIN
-  RETURN crypt(api_key, gen_salt('bf', 12));
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Function to verify API key
-CREATE OR REPLACE FUNCTION public.verify_api_key(api_key TEXT, stored_hash TEXT)
-RETURNS BOOLEAN AS $$
-BEGIN
-  RETURN (api_key IS NOT NULL) AND (stored_hash = crypt(api_key, stored_hash));
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Function to cleanup expired files
 CREATE OR REPLACE FUNCTION public.cleanup_expired_files()
 RETURNS INTEGER AS $$
 DECLARE
   deleted_count INTEGER;
 BEGIN
   WITH deleted AS (
-    DELETE FROM public.file_uploads
-    WHERE expires_at IS NOT NULL 
+    UPDATE public.file_uploads
+    SET deleted_at = NOW()
+    WHERE expires_at IS NOT NULL
       AND expires_at < NOW()
       AND deleted_at IS NULL
     RETURNING id
   )
   SELECT COUNT(*) INTO deleted_count FROM deleted;
-  
+
   RETURN deleted_count;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Function to cleanup old notifications
 CREATE OR REPLACE FUNCTION public.cleanup_old_notifications(days_old INTEGER DEFAULT 90)
 RETURNS INTEGER AS $$
 DECLARE
@@ -756,12 +678,11 @@ BEGIN
     RETURNING id
   )
   SELECT COUNT(*) INTO deleted_count FROM deleted;
-  
+
   RETURN deleted_count;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Function to get user statistics
 CREATE OR REPLACE FUNCTION public.get_user_stats(target_user_id UUID)
 RETURNS TABLE(
   total_analyses BIGINT,
@@ -785,13 +706,12 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- BACKWARD COMPATIBILITY VIEWS
 -- ============================================================
 
--- View for backward compatibility with existing code expecting analysis_jobs
 CREATE OR REPLACE VIEW public.analysis_jobs_view AS
-SELECT 
+SELECT
   id,
   user_id,
   status::public.analysis_status as status,
-  CASE 
+  CASE
     WHEN file_type LIKE 'image%' THEN 'image'::public.media_type
     WHEN file_type LIKE 'video%' THEN 'video'::public.media_type
     WHEN file_type LIKE 'audio%' THEN 'audio'::public.media_type
@@ -802,12 +722,9 @@ SELECT
   file_name,
   file_path,
   file_size,
-  NULL as file_hash,
   progress,
   metadata,
   error::text as error_message,
-  5 as priority,
-  0 as retry_count,
   report_code,
   started_at,
   completed_at,
@@ -817,15 +734,14 @@ SELECT
 FROM public.tasks
 WHERE type = 'analysis';
 
--- View for backward compatibility with existing code expecting scans
 CREATE OR REPLACE VIEW public.scans_view AS
-SELECT 
+SELECT
   id::text as id,
   user_id,
   file_name as filename,
   file_type as type,
-  CASE 
-    WHEN result->>'is_deepfake' IS NOT NULL THEN 
+  CASE
+    WHEN result->>'is_deepfake' IS NOT NULL THEN
       CASE WHEN (result->>'is_deepfake')::boolean THEN 'Deepfake detected' ELSE 'Authentic' END
     ELSE 'Analysis complete'
   END as result,
@@ -841,18 +757,4 @@ WHERE type = 'analysis';
 -- ============================================================
 -- FINAL COMMENT
 -- ============================================================
-COMMENT ON SCHEMA public IS 'SatyaAI Schema v2.5 - Production-Ready Schema with tasks as source of truth';
-
--- Table comments for documentation
-COMMENT ON TABLE public.users IS 'User profiles extending auth.users';
-COMMENT ON TABLE public.user_preferences IS 'User-specific settings and preferences';
-COMMENT ON TABLE public.tasks IS 'Main task tracking table for all operations';
-COMMENT ON TABLE public.analysis_history IS 'Persistent analysis history for users';
-COMMENT ON TABLE public.chat_conversations IS 'Chat conversation sessions';
-COMMENT ON TABLE public.chat_messages IS 'Individual chat messages within conversations';
-COMMENT ON TABLE public.file_uploads IS 'Temporary file upload tracking';
-COMMENT ON TABLE public.batch_jobs IS 'Batch processing job tracking';
-COMMENT ON TABLE public.notifications IS 'User notifications and alerts';
-COMMENT ON TABLE public.api_keys IS 'API key management for external access';
-COMMENT ON TABLE public.audit_logs IS 'Audit trail for sensitive operations';
-
+COMMENT ON SCHEMA public IS 'SatyaAI Schema v2.6 - Tasks as Single Source of Truth';

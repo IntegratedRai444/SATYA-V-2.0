@@ -3,9 +3,6 @@ import { supabase } from '../config/supabase';
 import { logger } from '../config/logger';
 import { validatePassword } from '../../shared/utils/password';
 
-// Node.js globals
-declare const process: typeof globalThis.process;
-
 interface AuthRequest extends ExpressRequest {
   user?: {
     id: string;
@@ -253,9 +250,10 @@ export const authController = {
       });
 
       // Set refresh token cookie (longer-lived, httpOnly, secure)
+      // Path MUST match v2 refresh endpoint
       res.cookie('sb-refresh-token', session.refresh_token, {
         ...baseCookieOptions,
-        path: '/api/auth/refresh',
+        path: '/api/v2/auth/refresh',
         maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
       });
 

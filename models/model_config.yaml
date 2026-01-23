@@ -1,0 +1,84 @@
+# SatyaAI Model Configuration
+# This file contains settings for all AI models used in deepfake detection
+
+models:
+  image:
+    efficientnet:
+      name: "timm/efficientnet_b4"
+      type: "classification"
+      input_size: [380, 380]
+      confidence_threshold: 0.7
+      enabled: true
+    
+    facenet:
+      name: "facenet-pytorch"
+      type: "embedding"
+      input_size: [160, 160]
+      enabled: true
+  
+  video:
+    slowfast:
+      name: "facebookresearch/slowfast"
+      type: "temporal"
+      frames_per_clip: 32
+      confidence_threshold: 0.65
+      enabled: true
+    
+    wav2lip:
+      name: "Rudrabha/Wav2Lip"
+      type: "lipsync"
+      confidence_threshold: 0.75
+      enabled: true
+  
+  audio:
+    ecapa_tdnn:
+      name: "speechbrain/spkrec-ecapa-voxceleb"
+      type: "speaker_verification"
+      sample_rate: 16000
+      confidence_threshold: 0.6
+      enabled: true
+
+# Ensemble settings
+ensemble:
+  enabled: true
+  voting_strategy: "weighted"
+  weights:
+    image: 0.4
+    video: 0.35
+    audio: 0.25
+  
+  min_confidence: 0.5
+  require_majority: true
+
+# Performance settings
+performance:
+  batch_size: 8
+  num_workers: 4
+  use_gpu: true
+  gpu_memory_fraction: 0.8
+  enable_caching: true
+  cache_ttl: 3600  # seconds
+
+# Detection thresholds
+thresholds:
+  authentic: 0.7      # Above this = authentic
+  suspicious: 0.4     # Between this and authentic = suspicious
+  deepfake: 0.4       # Below this = deepfake
+
+# Preprocessing
+preprocessing:
+  image:
+    resize: [380, 380]
+    normalize: true
+    mean: [0.485, 0.456, 0.406]
+    std: [0.229, 0.224, 0.225]
+  
+  video:
+    fps: 30
+    max_frames: 300
+    resize: [224, 224]
+  
+  audio:
+    sample_rate: 16000
+    duration: 10  # seconds
+    n_mfcc: 40

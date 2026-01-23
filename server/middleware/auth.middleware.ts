@@ -9,10 +9,6 @@ import RedisStore from 'rate-limit-redis';
 import { createClient } from 'redis';
 import crypto from 'crypto';
 
-// Node.js globals
-declare const Buffer: typeof globalThis.Buffer;
-declare const process: typeof globalThis.process;
-
 declare module 'express-serve-static-core' {
   interface Request {
     user?: {
@@ -418,9 +414,14 @@ export const requireRole = (roles: UserRole | UserRole[]) => {
 };
 
 // CSRF token generation and validation
-const CSRF_TOKEN_SECRET = process.env.CSRF_TOKEN_SECRET || 'dev_csrf_secret_for_development_only';
-if (process.env.NODE_ENV !== 'development' && CSRF_TOKEN_SECRET.length < 32) {
-  throw new Error('CSRF_TOKEN_SECRET must be at least 32 characters long');
+const CSRF_TOKEN_SECRET = process.env.CSRF_TOKEN_SECRET;
+
+if (!CSRF_TOKEN_SECRET) {
+  throw new Error('CSRF_TOKEN_SECRET environment variable is required');
+}
+
+if (CSRF_TOKEN_SECRET.length < 32) {
+  throw new Error('CSRF_TOKEN_SECRET must be at least 32 characters long for security');
 }
 
 const CSRF_TOKEN_AGE = 60 * 60 * 1000; // 1 hour (reduced from 24h)

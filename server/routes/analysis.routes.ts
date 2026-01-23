@@ -1,18 +1,25 @@
-import { Router, Request, Response, NextFunction } from 'express';
-import { body, type ValidationChain } from 'express-validator';
+import { Router, Request, Response } from 'express';
 import multer from 'multer';
+import type { Express } from 'express';
 import path from 'path';
-import { v4 as uuidv4 } from 'uuid';
-import fs from 'fs';
-import { promisify } from 'util';
 import { validateRequest } from '../middleware/validate-request';
-import { supabaseAuth } from '../middleware/supabase-auth';
 import { pythonBridge } from '../services/python-http-bridge';
 import { logger } from '../config/logger';
 import { createAnalysisJob, updateAnalysisJobWithResults } from './history';
 
+// Type definition for analysis result
+interface AnalysisResult {
+  status: string;
+  confidence?: number;
+  is_deepfake?: boolean;
+  model_name?: string;
+  model_version?: string;
+  summary?: Record<string, unknown>;
+  proof?: Record<string, unknown>;
+  error?: string;
+}
+
 const router = Router();
-const writeFile = promisify(fs.writeFile);
 
 // Configure multer for secure file uploads with memory storage
 const storage = multer.memoryStorage();
@@ -21,6 +28,11 @@ const storage = multer.memoryStorage();
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const ALLOWED_FILE_TYPES = {
   'image/jpeg': { 
+    ext: '.jpg', 
+    magic: [0xFF, 0xD8, 0xFF],
+    maxSize: 10 * 1024 * 1024 // 10MB for JPEG
+  },
+  'image/jpg': { 
     ext: '.jpg', 
     magic: [0xFF, 0xD8, 0xFF],
     maxSize: 10 * 1024 * 1024 // 10MB for JPEG
@@ -43,6 +55,41 @@ const ALLOWED_FILE_TYPES = {
   'video/webm': { 
     ext: '.webm', 
     magic: [0x1A, 0x45, 0xDF, 0xA3],
+    maxSize: MAX_FILE_SIZE
+  },
+  'video/avi': { 
+    ext: '.avi', 
+    magic: [0x52, 0x49, 0x46, 0x46],
+    maxSize: MAX_FILE_SIZE
+  },
+  'video/mov': { 
+    ext: '.mov', 
+    magic: [0x6D, 0x6F, 0x6F, 0x76],
+    maxSize: MAX_FILE_SIZE
+  },
+  'video/mkv': { 
+    ext: '.mkv', 
+    magic: [0x1A, 0x45, 0xDF, 0xA3],
+    maxSize: MAX_FILE_SIZE
+  },
+  'audio/mp3': { 
+    ext: '.mp3', 
+    magic: [0x49, 0x44, 0x33],
+    maxSize: MAX_FILE_SIZE
+  },
+  'audio/wav': { 
+    ext: '.wav', 
+    magic: [0x52, 0x49, 0x46, 0x46],
+    maxSize: MAX_FILE_SIZE
+  },
+  'audio/mpeg': { 
+    ext: '.mp3', 
+    magic: [0x49, 0x44, 0x33],
+    maxSize: MAX_FILE_SIZE
+  },
+  'audio/ogg': { 
+    ext: '.ogg', 
+    magic: [0x4F, 0x67, 0x67, 0x53],
     maxSize: MAX_FILE_SIZE
   },
 } as const;
@@ -156,7 +203,7 @@ function formatBytes(bytes: number, decimals = 2): string {
 }
 
 // Helper function to handle analysis errors with proper typing and security
-const handleAnalysisError = (error: unknown, res: Response, context: Record<string, any> = {}) => {
+const handleAnalysisError = async (error: unknown, res: Response, jobId?: string, context: Record<string, unknown> = {}) => {
   // Create a safe error object
   const safeError = error instanceof Error 
     ? { 
@@ -166,10 +213,67 @@ const handleAnalysisError = (error: unknown, res: Response, context: Record<stri
       }
     : { message: 'An unknown error occurred' };
   
+  // Extract Python bridge error details if available
+  const pythonError = error && typeof error === 'object' && 'details' in error ? error.details as {
+    code?: string;
+    message?: string;
+    status?: number;
+    timestamp?: string;
+  } : undefined;
+  
+  // Determine appropriate status code and message
+  let statusCode = 500;
+  let errorCode = 'ANALYSIS_ERROR';
+  let message = 'Analysis failed. Please try again.';
+  
+  if (pythonError?.code) {
+    switch (pythonError.code) {
+      case 'PYTHON_DOWN':
+        statusCode = 503;
+        errorCode = 'AI_ENGINE_UNAVAILABLE';
+        message = 'AI engine temporarily unavailable. Please try again later.';
+        break;
+      case 'ANALYSIS_TIMEOUT':
+        statusCode = 504;
+        errorCode = 'ANALYSIS_TIMEOUT';
+        message = 'Analysis took too long. Please try with a smaller file.';
+        break;
+      case 'INVALID_REQUEST':
+      case 'VALIDATION_ERROR':
+        statusCode = 400;
+        errorCode = 'INVALID_FILE';
+        message = 'Invalid file format or corrupted file.';
+        break;
+      case 'NETWORK_ERROR':
+        statusCode = 503;
+        errorCode = 'NETWORK_ERROR';
+        message = 'Network connection to AI service failed.';
+        break;
+      default:
+        statusCode = 502;
+        errorCode = 'AI_SERVICE_ERROR';
+        message = 'AI service error occurred.';
+    }
+  }
+  
+  // If we have a jobId, update it with failed status
+  if (jobId) {
+    try {
+      await updateAnalysisJobWithResults(jobId, {
+        status: 'failed',
+        error_message: pythonError?.message || safeError.message
+      });
+    } catch (dbError) {
+      logger.error('Failed to update job status:', dbError);
+    }
+  }
+  
   // Log the error with context (redacting sensitive data)
   logger.error('Analysis error', {
     ...safeError,
     ...context,
+    pythonError,
+    jobId,
     // Redact sensitive data from context
     headers: undefined,
     body: undefined,
@@ -177,18 +281,24 @@ const handleAnalysisError = (error: unknown, res: Response, context: Record<stri
   });
 
   // Return a sanitized error response
-  return res.status(400).json({
+  return res.status(statusCode).json({
     success: false,
-    code: 'ANALYSIS_ERROR',
-    message: 'Analysis failed. Please try again with a different file.',
+    code: errorCode,
+    message,
+    details: pythonError || undefined,
     // Only include error details in development
-    ...(process.env.NODE_ENV === 'development' && { error: safeError.message }),
+    ...(process.env.NODE_ENV === 'development' && { 
+      error: safeError.message,
+      pythonError 
+    }),
     // Include a request ID for support
     requestId: res.locals.requestId,
+    ...(jobId && { jobId })
   });
 };
 
-// Input validation middleware for analysis requests
+// Input validation middleware for analysis requests (defined but not used - available for future use)
+/*
 const validateAnalysisRequest = [
   // Check if file exists
   (req: Request, res: Response, next: NextFunction) => {
@@ -230,13 +340,15 @@ const validateAnalysisRequest = [
     next();
   }
 ];
+*/
 
 // Analyze image
 router.post(
   '/image',
-  supabaseAuth,
   upload.single('image'),
-  async (req: Request, res: Response, next: NextFunction) => {
+  async (req: Request, res: Response) => {
+    let job: { id: string; report_code: string } | null = null;
+    
     try {
       if (!req.file) {
         return res.status(400).json({ error: 'No file uploaded' });
@@ -248,7 +360,7 @@ router.post(
       }
 
       // Create analysis job in Supabase
-      const job = await createAnalysisJob(userId, {
+      job = await createAnalysisJob(userId, {
         modality: 'image',
         filename: req.file.originalname,
         mime_type: req.file.mimetype,
@@ -260,7 +372,7 @@ router.post(
       });
 
       // Process the image using Python service
-      const result = await (pythonBridge as any).request({
+      const result = await (pythonBridge as unknown as { request: (options: unknown) => Promise<unknown> }).request({
         method: 'POST',
         url: '/analysis/image',  // Fixed: Remove /api/v2 prefix
         data: {
@@ -269,7 +381,7 @@ router.post(
           jobId: job.id,
           filename: req.file.originalname,
         },
-      });
+      }) as { data: { status: string; confidence?: number; is_deepfake?: boolean; model_name?: string; model_version?: string; summary?: Record<string, unknown>; proof?: Record<string, unknown>; error?: string } };
 
       // Save results to Supabase
       if (result.data && result.data.status === 'success') {
@@ -305,7 +417,7 @@ router.post(
         });
       }
     } catch (error) {
-      handleAnalysisError(error, res);
+      await handleAnalysisError(error, res, job?.id);
     }
   }
 );
@@ -313,9 +425,10 @@ router.post(
 // Analyze audio
 router.post(
   '/audio',
-  supabaseAuth,
   upload.single('audio'),
-  async (req: Request, res: Response, next: NextFunction) => {
+  async (req: Request, res: Response) => {
+    let job: { id: string; report_code: string } | null = null;
+    
     try {
       if (!req.file) {
         return res.status(400).json({ error: 'No file uploaded' });
@@ -327,7 +440,7 @@ router.post(
       }
 
       // Create analysis job in Supabase
-      const job = await createAnalysisJob(userId, {
+      job = await createAnalysisJob(userId, {
         modality: 'audio',
         filename: req.file.originalname,
         mime_type: req.file.mimetype,
@@ -339,7 +452,7 @@ router.post(
       });
 
       // Process the audio using Python service
-      const result = await (pythonBridge as any).request({
+      const result = await (pythonBridge as unknown as { request: (options: unknown) => Promise<unknown> }).request({
         method: 'POST',
         url: '/analysis/audio',
         data: {
@@ -348,7 +461,7 @@ router.post(
           jobId: job.id,
           filename: req.file.originalname,
         },
-      });
+      }) as { data: { status: string; confidence?: number; is_deepfake?: boolean; model_name?: string; model_version?: string; summary?: Record<string, unknown>; proof?: Record<string, unknown>; error?: string } };
 
       // Save results to Supabase
       if (result.data && result.data.status === 'success') {
@@ -384,7 +497,7 @@ router.post(
         });
       }
     } catch (error) {
-      handleAnalysisError(error, res);
+      await handleAnalysisError(error, res, job?.id);
     }
   }
 );
@@ -392,7 +505,6 @@ router.post(
 // Batch analysis
 router.post(
   '/batch',
-  supabaseAuth,
   upload.array('files', 10), // Max 10 files
   async (req: Request, res: Response) => {
     try {
@@ -404,7 +516,7 @@ router.post(
       const results = await Promise.all(
         (req.files as Express.Multer.File[]).map(async (file) => {
           try {
-            const result = await pythonBridge.post('/analyze/batch', {
+            const result = await (pythonBridge as unknown as { post: (url: string, data: unknown) => Promise<unknown> }).post('/analyze/batch', {
               file: file.buffer.toString('base64'),
               mimeType: file.mimetype,
               originalname: file.originalname,
@@ -412,7 +524,7 @@ router.post(
             return {
               filename: file.originalname,
               success: true,
-              data: result.data,
+              data: (result as { data: unknown }).data,
             };
           } catch (error) {
             return {
@@ -429,34 +541,46 @@ router.post(
         results,
       });
     } catch (error) {
-      handleAnalysisError(error, res);
+      await handleAnalysisError(error, res);
     }
   }
 );
 
 // Get analysis status
-router.get('/status/:id', supabaseAuth, async (req: Request, res: Response) => {
+router.get('/status/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     
-    const result = await pythonBridge.get(`/analyze/status/${id}`);
+    const result = await pythonBridge.get<{
+      success: boolean;
+      data: {
+        status: string;
+        progress?: number;
+        message?: string;
+        created_at?: string;
+        updated_at?: string;
+        completed_at?: string;
+        error?: string;
+      };
+    }>(`/analyze/status/${id}`);
 
     res.json({
       success: true,
       data: result.data,
     });
   } catch (error) {
-    handleAnalysisError(error, res);
+    await handleAnalysisError(error, res);
   }
 });
 
 // Analyze video
 router.post(
   '/video',
-  supabaseAuth,
   upload.single('video'),
   validateRequest,
   async (req: Request, res: Response) => {
+    let job: { id: string; report_code: string } | null = null;
+    
     try {
       if (!req.file) {
         return res.status(400).json({
@@ -474,7 +598,7 @@ router.post(
       }
 
       // Create analysis job
-      const job = await createAnalysisJob(userId, {
+      job = await createAnalysisJob(userId, {
         modality: 'video',
         filename: req.file.originalname,
         mime_type: req.file.mimetype,
@@ -483,7 +607,7 @@ router.post(
       });
 
       // Process the video using Python service
-      const result = await (pythonBridge as any).request({
+      const result = await (pythonBridge as unknown as { request: (options: unknown) => Promise<unknown> }).request({
         method: 'POST',
         url: '/analysis/video',
         data: {
@@ -492,19 +616,19 @@ router.post(
           jobId: job.id,
           filename: req.file.originalname,
         },
-      });
+      }) as { data: { status: string; confidence?: number; is_deepfake?: boolean; model_name?: string; model_version?: string; summary?: Record<string, unknown>; proof?: Record<string, unknown>; error?: string } };
 
       // Save results to Supabase
-      if (result.data && result.data.status === 'success') {
+      if (result.data && (result.data as AnalysisResult).status === 'success') {
         await updateAnalysisJobWithResults(job.id, {
           status: 'completed',
-          confidence: result.data.confidence || 0,
-          is_deepfake: result.data.is_deepfake || false,
-          model_name: result.data.model_name || 'SatyaAI-Video',
-          model_version: result.data.model_version || '1.0.0',
-          summary: result.data.summary || {},
+          confidence: (result.data as AnalysisResult).confidence || 0,
+          is_deepfake: (result.data as AnalysisResult).is_deepfake || false,
+          model_name: (result.data as AnalysisResult).model_name || 'SatyaAI-Video',
+          model_version: (result.data as AnalysisResult).model_version || '1.0.0',
+          summary: (result.data as AnalysisResult).summary || {},
           analysis_data: result.data,
-          proof_json: result.data.proof || {}
+          proof_json: (result.data as AnalysisResult).proof || {}
         });
 
         res.json({
@@ -519,16 +643,16 @@ router.post(
         // Mark job as failed
         await updateAnalysisJobWithResults(job.id, {
           status: 'failed',
-          error_message: result.data?.error || 'Analysis failed'
+          error_message: (result.data as AnalysisResult)?.error || 'Analysis failed'
         });
 
         res.status(500).json({
           success: false,
-          error: result.data?.error || 'Analysis failed'
+          error: (result.data as AnalysisResult)?.error || 'Analysis failed'
         });
       }
     } catch (error) {
-      handleAnalysisError(error, res);
+      await handleAnalysisError(error, res, job?.id);
     }
   }
 );
@@ -536,10 +660,11 @@ router.post(
 // Analyze multimodal
 router.post(
   '/multimodal',
-  supabaseAuth,
   upload.array('files', 5), // Max 5 files for multimodal
   validateRequest,
   async (req: Request, res: Response) => {
+    let job: { id: string; report_code: string } | null = null;
+    
     try {
       if (!req.files || req.files.length === 0) {
         return res.status(400).json({
@@ -557,7 +682,7 @@ router.post(
       }
 
       // Create analysis job
-      const job = await createAnalysisJob(userId, {
+      job = await createAnalysisJob(userId, {
         modality: 'multimodal',
         filename: `${req.files.length} files`,
         mime_type: 'multimodal',
@@ -574,26 +699,26 @@ router.post(
       }));
 
       // Process using Python service
-      const result = await (pythonBridge as any).request({
+      const result = await (pythonBridge as unknown as { request: (options: unknown) => Promise<unknown> }).request({
         method: 'POST',
         url: '/analysis/multimodal',
         data: {
           files,
           jobId: job.id,
         },
-      });
+      }) as { data: { status: string; confidence?: number; is_deepfake?: boolean; model_name?: string; model_version?: string; summary?: Record<string, unknown>; proof?: Record<string, unknown>; error?: string } };
 
       // Save results to Supabase
-      if (result.data && result.data.status === 'success') {
+      if (result.data && (result.data as AnalysisResult).status === 'success') {
         await updateAnalysisJobWithResults(job.id, {
           status: 'completed',
-          confidence: result.data.confidence || 0,
-          is_deepfake: result.data.is_deepfake || false,
-          model_name: result.data.model_name || 'SatyaAI-Multimodal',
-          model_version: result.data.model_version || '1.0.0',
-          summary: result.data.summary || {},
+          confidence: (result.data as AnalysisResult).confidence || 0,
+          is_deepfake: (result.data as AnalysisResult).is_deepfake || false,
+          model_name: (result.data as AnalysisResult).model_name || 'SatyaAI-Multimodal',
+          model_version: (result.data as AnalysisResult).model_version || '1.0.0',
+          summary: (result.data as AnalysisResult).summary || {},
           analysis_data: result.data,
-          proof_json: result.data.proof || {}
+          proof_json: (result.data as AnalysisResult).proof || {}
         });
 
         res.json({
@@ -608,16 +733,16 @@ router.post(
         // Mark job as failed
         await updateAnalysisJobWithResults(job.id, {
           status: 'failed',
-          error_message: result.data?.error || 'Analysis failed'
+          error_message: (result.data as AnalysisResult)?.error || 'Analysis failed'
         });
 
         res.status(500).json({
           success: false,
-          error: result.data?.error || 'Analysis failed'
+          error: (result.data as AnalysisResult)?.error || 'Analysis failed'
         });
       }
     } catch (error) {
-      handleAnalysisError(error, res);
+      await handleAnalysisError(error, res, job?.id);
     }
   }
 );
@@ -625,10 +750,11 @@ router.post(
 // Analyze webcam capture
 router.post(
   '/webcam',
-  supabaseAuth,
   upload.single('image'),
   validateRequest,
   async (req: Request, res: Response) => {
+    let job: { id: string; report_code: string } | null = null;
+    
     try {
       if (!req.file) {
         return res.status(400).json({
@@ -646,7 +772,7 @@ router.post(
       }
 
       // Create analysis job
-      const job = await createAnalysisJob(userId, {
+      job = await createAnalysisJob(userId, {
         modality: 'webcam',
         filename: `webcam-${Date.now()}.jpg`,
         mime_type: req.file.mimetype,
@@ -655,7 +781,7 @@ router.post(
       });
 
       // Process the webcam image using Python service
-      const result = await (pythonBridge as any).request({
+      const result = await (pythonBridge as unknown as { request: (options: unknown) => Promise<unknown> }).request({
         method: 'POST',
         url: '/analysis/webcam',
         data: {
@@ -664,19 +790,19 @@ router.post(
           jobId: job.id,
           filename: req.file.originalname,
         },
-      });
+      }) as { data: { status: string; confidence?: number; is_deepfake?: boolean; model_name?: string; model_version?: string; summary?: Record<string, unknown>; proof?: Record<string, unknown>; error?: string } };
 
       // Save results to Supabase
-      if (result.data && result.data.status === 'success') {
+      if (result.data && (result.data as AnalysisResult).status === 'success') {
         await updateAnalysisJobWithResults(job.id, {
           status: 'completed',
-          confidence: result.data.confidence || 0,
-          is_deepfake: result.data.is_deepfake || false,
-          model_name: result.data.model_name || 'SatyaAI-Webcam',
-          model_version: result.data.model_version || '1.0.0',
-          summary: result.data.summary || {},
+          confidence: (result.data as AnalysisResult).confidence || 0,
+          is_deepfake: (result.data as AnalysisResult).is_deepfake || false,
+          model_name: (result.data as AnalysisResult).model_name || 'SatyaAI-Webcam',
+          model_version: (result.data as AnalysisResult).model_version || '1.0.0',
+          summary: (result.data as AnalysisResult).summary || {},
           analysis_data: result.data,
-          proof_json: result.data.proof || {}
+          proof_json: (result.data as AnalysisResult).proof || {}
         });
 
         res.json({
@@ -691,16 +817,16 @@ router.post(
         // Mark job as failed
         await updateAnalysisJobWithResults(job.id, {
           status: 'failed',
-          error_message: result.data?.error || 'Analysis failed'
+          error_message: (result.data as AnalysisResult)?.error || 'Analysis failed'
         });
 
         res.status(500).json({
           success: false,
-          error: result.data?.error || 'Analysis failed'
+          error: (result.data as AnalysisResult)?.error || 'Analysis failed'
         });
       }
     } catch (error) {
-      handleAnalysisError(error, res);
+      await handleAnalysisError(error, res, job?.id);
     }
   }
 );

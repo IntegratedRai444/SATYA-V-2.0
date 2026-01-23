@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { healthRouter } from './health.routes';
 import { authRouter } from './auth.routes';
 import { analysisRouter } from './analysis.routes';
+import { dashboardRouter } from './dashboard.routes';
 import historyRouter from './history';
 import { chatRouter } from './chat';
 import { notificationsRouter } from './notifications';
@@ -9,6 +10,7 @@ import { userRouter } from './user';
 import { resultsRouter } from './results.routes';
 import { modelsRouter } from './models.routes';
 import { createApiError } from '../middleware/api-version';
+import { authenticate } from '../middleware/auth.middleware';
 
 const router = Router();
 
@@ -21,25 +23,28 @@ const v2Router = Router();
 // Authentication routes
 v2Router.use('/auth', authRouter);
 
-// History routes
-v2Router.use('/history', historyRouter);
+// Dashboard routes (PROTECTED)
+v2Router.use('/dashboard', authenticate, dashboardRouter);
 
-// Analysis routes
-v2Router.use('/analysis', analysisRouter);
+// History routes (PROTECTED)
+v2Router.use('/history', authenticate, historyRouter);
 
-// Chat routes
-v2Router.use('/chat', chatRouter);
+// Analysis routes (PROTECTED)
+v2Router.use('/analysis', authenticate, analysisRouter);
 
-// Notifications routes
-v2Router.use('/notifications', notificationsRouter);
+// Chat routes (PROTECTED)
+v2Router.use('/chat', authenticate, chatRouter);
 
-// User routes
-v2Router.use('/user', userRouter);
+// Notifications routes (PROTECTED)
+v2Router.use('/notifications', authenticate, notificationsRouter);
 
-// Results routes
-v2Router.use('/results', resultsRouter);
+// User routes (PROTECTED)
+v2Router.use('/user', authenticate, userRouter);
 
-// Models routes
+// Results routes (PROTECTED)
+v2Router.use('/results', authenticate, resultsRouter);
+
+// Models routes (PUBLIC - for model info)
 v2Router.use('/models', modelsRouter);
 
 // Versioned API routes

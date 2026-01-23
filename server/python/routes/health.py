@@ -3,6 +3,7 @@ Health Check Routes
 Comprehensive health monitoring for all system components
 """
 
+import os
 import time
 from datetime import datetime
 
@@ -11,6 +12,21 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 router = APIRouter()
+
+# Import model status function
+try:
+    from ..model_loader import ensure_models_available
+except ImportError:
+    def ensure_models_available():
+        return {
+            'status': 'error',
+            'strict_mode': False,
+            'models': {
+                'image': {'available': False, 'weights': 'missing', 'device': 'cpu'},
+                'audio': {'available': False, 'weights': 'missing', 'device': 'cpu'},
+                'video': {'available': False, 'weights': 'missing', 'device': 'cpu'}
+            }
+        }
 
 
 @router.get("/health")
@@ -87,3 +103,25 @@ async def detailed_health_check(request: Request):
             "database_details": database_status,
         },
     }
+
+
+@router.get("/models/status")
+async def get_models_status():
+    """Get ML model weights status and availability"""
+    try:
+        model_status = ensure_models_available()
+        return model_status
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "error": str(e),
+                "strict_mode": os.getenv('STRICT_MODE', 'false').lower() == 'true',
+                "models": {
+                    "image": {"available": False, "weights": "error", "device": "cpu"},
+                    "audio": {"available": False, "weights": "error", "device": "cpu"},
+                    "video": {"available": False, "weights": "error", "device": "cpu"}
+                }
+            }
+        )
