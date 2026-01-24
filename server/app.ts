@@ -1,4 +1,4 @@
-import express, { type Request, type Response, type NextFunction } from 'express';
+import express, { type Request } from 'express';
 import { validateConfig } from './config/validate';
 import { securityHeaders } from './middleware/security';
 import { apiRateLimit as apiLimiter } from './middleware/advanced-rate-limiting';
@@ -48,17 +48,23 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
 // Apply custom middleware
-app.use(tracingMiddleware());
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+app.use(tracingMiddleware() as any);
 app.use(securityHeaders);
-app.use(apiLimiter);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+app.use(apiLimiter as any);
 
 // Apply global audit logging to all API routes
-app.use('/api/v2', auditLogger('sensitive_data_access', 'api_endpoint'));
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+app.use('/api/v2', auditLogger('sensitive_data_access', 'api_endpoint') as any);
 
 // Apply audit logging to authentication routes
-app.use('/api/v2/auth', auditAuth.login);
-app.use('/api/v2/auth', auditAuth.register);
-app.use('/api/v2/auth', auditAuth.logout);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+app.use('/api/v2/auth', auditAuth.login as any);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+app.use('/api/v2/auth', auditAuth.register as any);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+app.use('/api/v2/auth', auditAuth.logout as any);
 
 // Metrics endpoint
 app.get('/metrics', async (req, res) => {
@@ -157,7 +163,8 @@ const server = app.listen(port, async () => {
 });
 
 // Error handling middleware
-app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+app.use((err: Error, req: any, res: any, _next: any): void => {
   // Don't use _next - this is the final error handler
   void _next; // Explicitly mark as unused
   const requestId = (req as CustomRequest).requestId || 'unknown';

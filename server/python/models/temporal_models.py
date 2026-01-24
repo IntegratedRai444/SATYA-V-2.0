@@ -133,6 +133,17 @@ class TemporalConvNet(nn.Module):
             nn.Linear(512, num_classes),
         )
 
+    def _initialize_weights(self):
+        """Initialize weights using Kaiming initialization."""
+        for m in self.modules():
+            if isinstance(m, (nn.Conv3d, nn.Conv2d, nn.Linear)):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, (nn.BatchNorm3d, nn.BatchNorm2d, nn.BatchNorm1d)):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
     def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
         # x shape: (batch_size, channels, frames, height, width)
         batch_size = x.size(0)

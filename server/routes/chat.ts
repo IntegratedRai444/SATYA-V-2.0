@@ -1,20 +1,9 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type Response } from 'express';
 import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { supabase } from '../config/supabase';
 import { auditLogger } from '../middleware/audit-logger';
-
-// Extend the Express Request type to include user
-interface AuthenticatedRequest extends Request {
-  user?: {
-    id: string;
-    email: string;
-    role: string;
-    email_verified: boolean;
-    user_metadata?: Record<string, unknown>;
-    [key: string]: unknown; // Allow additional properties
-  };
-}
+import { AuthenticatedRequest } from '../types/auth';
 import { logger } from '../config';
 import rateLimit from 'express-rate-limit';
 

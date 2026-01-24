@@ -33,12 +33,12 @@ except:
 
 # Import temporal models for advanced video analysis
 try:
-    from ..models.temporal_models import TemporalConvNet, load_video_model
+    from ..models.temporal_models import TemporalConvNet, TemporalLSTM
 
     TEMPORAL_MODELS_AVAILABLE = True
 except:
     try:
-        from models.temporal_models import TemporalConvNet, load_video_model
+        from models.temporal_models import TemporalConvNet, TemporalLSTM
 
         TEMPORAL_MODELS_AVAILABLE = True
     except:
@@ -95,15 +95,33 @@ class VideoDetector:
                 "⚠️ Video detector will have limited functionality without image detector"
             )
 
-        # Initialize temporal model for advanced analysis
+        # Initialize temporal models for advanced analysis
         self.temporal_model = None
+        self.temporal_lstm = None
         if TEMPORAL_MODELS_AVAILABLE and self.config.get("use_temporal_model", True):
             try:
-                self.temporal_model = TemporalConvNet()
-                self.temporal_model.eval()
-                logger.info("✅ Temporal 3D CNN model loaded for advanced analysis")
+                models_dir = Path(__file__).resolve().parents[3] / "models"
+                
+                # Load 3D CNN model
+                convnet_path = models_dir / "video" / "temporal_3dcnn.pth"
+                if convnet_path.exists():
+                    self.temporal_model = TemporalConvNet()
+                    state_dict = torch.load(convnet_path, map_location='cpu')
+                    self.temporal_model.load_state_dict(state_dict)
+                    self.temporal_model.eval()
+                    logger.info("✅ Temporal 3D CNN model loaded for advanced analysis")
+                
+                # Load LSTM model
+                lstm_path = models_dir / "video" / "temporal_lstm.pth"
+                if lstm_path.exists():
+                    self.temporal_lstm = TemporalLSTM()
+                    state_dict = torch.load(lstm_path, map_location='cpu')
+                    self.temporal_lstm.load_state_dict(state_dict)
+                    self.temporal_lstm.eval()
+                    logger.info("✅ Temporal LSTM model loaded for advanced analysis")
+                    
             except Exception as e:
-                logger.warning(f"⚠️ Could not load temporal model: {e}")
+                logger.warning(f"⚠️ Could not load temporal models: {e}")
 
         # Initialize video optimization if requested
         self.frame_processor = None

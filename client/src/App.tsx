@@ -2,13 +2,13 @@ import { RouterProvider } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 import { ThemeProvider } from 'next-themes';
 import { Toaster } from '@/components/ui/toaster';
-import { SupabaseAuthProvider } from '@/contexts/SupabaseAuthProvider';
 import { AppProvider } from '@/contexts/AppContext';
 import { RealtimeProvider } from '@/contexts/RealtimeContext';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { useEffect } from 'react';
 import { router } from './utils/router';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import React from 'react';
 
 // Analytics wrapper component
 const AnalyticsWrapper = ({ children }: { children: React.ReactNode }) => {
@@ -31,16 +31,14 @@ function App() {
       <HelmetProvider>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} forcedTheme="dark">
           <TooltipProvider>
-            <SupabaseAuthProvider>
-              <AppProvider>
-                <RealtimeProvider>
-                  <AnalyticsWrapper>
-                    <RouterProvider router={router} />
-                    <Toaster />
-                  </AnalyticsWrapper>
-                </RealtimeProvider>
-              </AppProvider>
-            </SupabaseAuthProvider>
+            <AppProvider>
+              <RealtimeProvider>
+                <AnalyticsWrapper>
+                  <RouterProvider router={router} />
+                  <Toaster />
+                </AnalyticsWrapper>
+              </RealtimeProvider>
+            </AppProvider>
           </TooltipProvider>
         </ThemeProvider>
       </HelmetProvider>

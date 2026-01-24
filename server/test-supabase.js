@@ -15,7 +15,7 @@ const { createClient } = require('@supabase/supabase-js');
     if (authError) throw authError;
     
     console.log(' Successfully connected to Supabase Auth');
-    console.log( Session active: );
+    console.log('Session active:', session);
     
     // Test database
     const { data, error: dbError } = await supabase
@@ -25,7 +25,7 @@ const { createClient } = require('@supabase/supabase-js');
       
     if (dbError) throw dbError;
     
-    console.log( Found  profiles);
+    console.log('Found', data.length, 'profiles');
     
   } catch (error) {
     console.error(' Error:', error.message);

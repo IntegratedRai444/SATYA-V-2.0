@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Loader2, Upload, Eye, CheckCircle, AlertCircle, FileText, BarChart3, Camera } from 'lucide-react';
 import { useImageAnalysis } from '../hooks/useApi';
 
@@ -8,7 +8,7 @@ interface AnalysisResult {
     confidence: number;
     details: {
       isDeepfake: boolean;
-      modelInfo: Record<string, any>;
+      modelInfo: Record<string, unknown>;
     };
     metrics: {
       processingTime: number;
@@ -17,7 +17,7 @@ interface AnalysisResult {
   };
   error?: string;
   key_findings?: string[];
-  detailed_analysis?: any;
+  detailed_analysis?: Record<string, unknown>;
   case_id?: string;
   analysis_date?: string;
   technical_details?: {
@@ -30,7 +30,7 @@ const ImageAnalysis = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState('');
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
-  const { mutate: analyzeImage, isPending: isAnalyzing } = useImageAnalysis();
+  const { analyzeImage, isAnalyzing } = useImageAnalysis();
 
   // Handler functions
   const handleDrag = useCallback((e: React.DragEvent) => {
@@ -48,7 +48,8 @@ const ImageAnalysis = () => {
     e.stopPropagation();
     setDragActive(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFileChange({ target: { files: e.dataTransfer.files } } as any);
+      const fileInput = { target: { files: e.dataTransfer.files } } as React.ChangeEvent<HTMLInputElement>;
+      handleFileChange(fileInput);
     }
   }, []);
 
@@ -73,54 +74,51 @@ const ImageAnalysis = () => {
     setError('');
   };
 
-  const handleAnalyze = () => {
+  const handleAnalyze = async () => {
     if (!selectedFile) return;
     
     setError('');
     setAnalysisResult(null);
     
-    analyzeImage(selectedFile, {
-      onSuccess: (result) => {
-        if (!result?.result) {
-          throw new Error('Invalid response from server');
-        }
-
-        const analysisResult = {
-          result: {
-            isAuthentic: result.result.isAuthentic,
-            confidence: result.result.confidence,
-            details: {
-              isDeepfake: result.result.details.isDeepfake,
-              modelInfo: result.result.details.modelInfo || {}
-            },
-            metrics: {
-              processingTime: result.result.metrics?.processingTime || 0,
-              modelVersion: result.result.metrics?.modelVersion || '1.0.0'
-            }
-          },
-          key_findings: [
-            result.result.isAuthentic 
-              ? 'No signs of manipulation detected' 
-              : 'Potential signs of manipulation found',
-            `Confidence: ${(result.result.confidence * 100).toFixed(1)}%`,
-            'Analysis completed successfully'
-          ],
-          case_id: result.id || `CASE_${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
-          analysis_date: result.createdAt || new Date().toISOString(),
-          technical_details: {
-            model_version: result.result.metrics?.modelVersion || 'unknown',
-            processing_time_seconds: result.result.metrics?.processingTime || 0,
-            analysis_timestamp: result.createdAt || new Date().toISOString()
-          }
-        };
-
-        setAnalysisResult(analysisResult);
-      },
-      onError: (err) => {
-        console.error('Analysis failed:', err);
-        setError(err.message || 'Failed to analyze image. Please try again.');
+    try {
+      const result = await analyzeImage({ file: selectedFile, options: {} });
+      
+      if (!result?.result) {
+        throw new Error('Invalid response from server');
       }
-    });
+
+      const analysisResult: AnalysisResult = {
+        result: {
+          isAuthentic: result.result.isAuthentic,
+          confidence: result.result.confidence,
+          details: {
+            isDeepfake: result.result.details.isDeepfake as boolean,
+            modelInfo: (result.result.details.modelInfo as Record<string, unknown>) || {},
+          },
+          metrics: {
+            processingTime: result.result.metrics?.processingTime || 0,
+            modelVersion: result.result.metrics?.modelVersion || '1.0.0'
+          }
+        },
+        key_findings: [
+          result.result.isAuthentic 
+            ? 'No signs of manipulation detected' 
+            : 'Potential signs of manipulation found',
+          `Confidence: ${(result.result.confidence * 100).toFixed(1)}%`,
+          'Analysis completed successfully'
+        ],
+        case_id: result.id || `CASE_${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
+        analysis_date: result.createdAt || new Date().toISOString(),
+        technical_details: {
+          processing_time_seconds: result.result.metrics?.processingTime || 0
+        }
+      };
+
+      setAnalysisResult(analysisResult);
+    } catch (err) {
+      console.error('Analysis failed:', err);
+      setError(err instanceof Error ? err.message : 'Failed to analyze image. Please try again.');
+    }
   };
 
   return (
@@ -137,19 +135,9 @@ const ImageAnalysis = () => {
         </div>
 
         <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 bg-[#00bfff]/10 rounded-xl flex items-center justify-center border border-[#00bfff]/20">
-              <img src="/image-icon.svg" alt="Image Analysis" className="w-7 h-7 text-[#00bfff]" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold text-white">Image Analysis</h1>
-              <p className="text-gray-400 text-sm">Advanced deepfake detection for images with 98.2% accuracy</p>
-            </div>
-          </div>
-
           <div className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full bg-green-500 animate-pulse`}></div>
-            <span className="text-sm text-gray-400">Checking...</span>
+            <span className="text-sm text-gray-400">System Ready</span>
           </div>
         </div>
 

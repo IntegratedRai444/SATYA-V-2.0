@@ -1,37 +1,15 @@
 import { Outlet, useLocation } from 'react-router-dom';
 import { Toaster } from '@/components/ui/toaster';
-import Navbar from './Navbar';
-import Sidebar from './Sidebar';
-import Footer from './Footer';
-import { useState, useEffect } from 'react';
 
 const MainLayout = () => {
   const location = useLocation();
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   // Don't show layout wrapper on auth pages and landing page
   const isAuthPage = ['/login', '/register', '/forgot-password', '/reset-password'].includes(location.pathname);
 
-  // Load sidebar state from localStorage
-  useEffect(() => {
-    const savedState = localStorage.getItem('sidebar-open');
-    if (savedState !== null) {
-      setIsSidebarOpen(savedState === 'true');
-    }
-  }, []);
-
-  // Save sidebar state to localStorage
-  const toggleSidebar = () => {
-    setIsSidebarOpen(prev => {
-      const newState = !prev;
-      localStorage.setItem('sidebar-open', String(newState));
-      return newState;
-    });
-  };
-
   if (isAuthPage) {
     return (
-      <div className="min-h-screen bg-bg-primary">
+      <div className="min-h-screen bg-black">
         <Outlet />
         <Toaster />
       </div>
@@ -40,27 +18,32 @@ const MainLayout = () => {
 
   // Full layout with Navbar, Sidebar, and Footer for authenticated pages
   return (
-    <div className="h-screen bg-[#0a0a0a] flex flex-col overflow-hidden">
+    <div className="h-screen bg-black text-white flex flex-col overflow-hidden">
       {/* Top Navbar */}
-      <Navbar />
+      <div className="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center justify-between">
+        <div className="text-xl font-bold text-white">SatyaAI Dashboard</div>
+        <div className="text-sm text-gray-300">Logged in as: {location.pathname}</div>
+      </div>
       
       {/* Main Content Area with Sidebar */}
-      <div className="flex flex-1 pt-16 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden">
         {/* Left Sidebar */}
-        <Sidebar isOpen={isSidebarOpen} onToggle={toggleSidebar} />
+        <div className="w-64 bg-gray-900 border-r border-gray-800 p-4">
+          <div className="text-white mb-4">Navigation</div>
+          <div className="space-y-2">
+            <div className="text-gray-300 hover:text-white cursor-pointer p-2 rounded">Dashboard</div>
+            <div className="text-gray-300 hover:text-white cursor-pointer p-2 rounded">Analysis</div>
+            <div className="text-gray-300 hover:text-white cursor-pointer p-2 rounded">History</div>
+            <div className="text-gray-300 hover:text-white cursor-pointer p-2 rounded">Settings</div>
+          </div>
+        </div>
         
         {/* Main Content */}
-        <main 
-          className="flex-1 flex flex-col transition-all duration-300 overflow-y-auto"
-          style={{ marginLeft: isSidebarOpen ? '280px' : '0' }}
-        >
-          <div className="flex-1 p-8">
-            <Outlet />
-          </div>
-          
-          {/* Footer */}
-          <Footer />
-        </main>
+        <div className="flex-1 bg-black p-6 overflow-auto">
+          <div className="text-white text-2xl font-bold mb-4">Welcome to SatyaAI Dashboard</div>
+          <div className="text-gray-300 mb-4">This is a simplified version to test rendering.</div>
+          <Outlet />
+        </div>
       </div>
       
       <Toaster />

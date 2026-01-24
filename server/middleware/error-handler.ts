@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction, RequestHandler, Application } from 'express';
+import { Request, Response, NextFunction, RequestHandler } from 'express';
 import { Server } from 'http';
 import { logger } from '../config/logger';
 import { v4 as uuidv4 } from 'uuid';
@@ -13,6 +13,7 @@ export class ApiError extends Error {
     public statusCode: number,
     message: string,
     public isOperational: boolean = true,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     public errors?: any[]
   ) {
     super(message);
@@ -21,6 +22,7 @@ export class ApiError extends Error {
 }
 
 export class BadRequestError extends ApiError {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(message = 'Bad Request', errors?: any[]) {
     super(400, message, true, errors);
   }
@@ -51,6 +53,7 @@ export class ConflictError extends ApiError {
 }
 
 export class ValidationError extends ApiError {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(message = 'Validation Error', errors: any[] = []) {
     super(422, message, true, errors);
   }
@@ -72,6 +75,7 @@ export function errorHandler(
   err: Error,
   req: Request,
   res: Response,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   next: NextFunction
 ) {
   // Handle known error types
@@ -231,7 +235,7 @@ export function notFoundHandler(req: Request, res: Response) {
   return res.status(statusCode).json(response);
 }
 
-export const asyncHandler = (fn: Function) => {
+export const asyncHandler = (fn: (req: Request, res: Response, next: NextFunction) => Promise<void> | void) => {
   return (req: Request, res: Response, next: NextFunction) => {
     Promise.resolve(fn(req, res, next)).catch(next);
   };
@@ -240,7 +244,8 @@ export const asyncHandler = (fn: Function) => {
 /**
  * Middleware to add a unique request ID to each request
  */
-export const requestIdMiddleware: RequestHandler = (req: RequestWithId, res: Response, next: NextFunction) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const requestIdMiddleware: RequestHandler = (req: any, res: Response, next: NextFunction) => {
   req.id = uuidv4();
   req.startTime = Date.now();
   next();
@@ -305,6 +310,7 @@ export const setupGracefulShutdown = (
   });
 
   // Handle unhandled promise rejections
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   process.on('unhandledRejection', (reason: Error | any, promise: Promise<any>) => {
     logger.error('Unhandled Rejection at:', { 
       promise, 
@@ -315,6 +321,7 @@ export const setupGracefulShutdown = (
 };
 
 // Global error handler for unhandled rejections
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 process.on('unhandledRejection', (reason: Error | any, promise: Promise<any>) => {
   logger.error('Unhandled Rejection at:', { 
     promise, 

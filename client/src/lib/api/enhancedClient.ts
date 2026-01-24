@@ -34,23 +34,23 @@ export interface EnhancedRequestConfig extends AxiosRequestConfig {
   cache?: CacheConfig | boolean;
   metadata?: {
     startTime?: number;
-    [key: string]: any;
+    [key: string]: unknown;
   };
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface PendingRequest {
   id: string;
   url: string;
   method: string;
-  params: any;
-  data: any;
+  params: unknown;
+  data: unknown;
   controller: AbortController;
   timestamp: number;
   cacheKey: string;
   promise: Promise<AxiosResponse>;
   resolve: (value: AxiosResponse) => void;
-  reject: (reason?: any) => void;
+  reject: (reason?: unknown) => void;
 }
 
 // Removed unused QueuedRequest type
@@ -165,9 +165,9 @@ class EnhancedApiClient {
           return this.client.request(config);
         }
       } catch (refreshError) {
-        // Clear auth tokens and redirect to login on refresh failure
+        // TODO: Re-implement auth redirect after reset
         this.clearAuthTokens();
-        window.location.href = '/login';
+        // window.location.href = '/login';
         return Promise.reject(refreshError);
       } finally {
         this.isRefreshing = false;
@@ -193,7 +193,7 @@ class EnhancedApiClient {
     }
 
     return Promise.reject(error);
-  };
+  }
 
   private removePendingRequest(requestId: string): void {
     // Find and remove the pending request
@@ -236,7 +236,7 @@ class EnhancedApiClient {
     }
   };
 
-  private request<T = any>(config: EnhancedRequestConfig): AxiosPromise<T> {
+  private request<T = unknown>(config: EnhancedRequestConfig): AxiosPromise<T> {
     return this.client.request<T>(config);
   }
   private client: AxiosInstance;
@@ -247,7 +247,7 @@ class EnhancedApiClient {
     reject: (error: AxiosError) => void;
   }> = [];
   private isRefreshing = false;
-  private cache: Map<string, { data: any; timestamp: number; ttl: number }> = new Map();
+  private cache: Map<string, { data: unknown; timestamp: number; ttl: number }> = new Map();
   private maxCacheSize: number = 100;
   
   private defaultCacheConfig: Required<CacheConfig> = {
@@ -339,7 +339,7 @@ class EnhancedApiClient {
   /**
    * Add response to cache
    */
-  private setCache<T = any>(key: string | undefined, data: T, ttl: number = this.defaultCacheConfig.ttl): void {
+  private setCache<T = unknown>(key: string | undefined, data: T, ttl: number = this.defaultCacheConfig.ttl): void {
     if (!key) return;
     // Clean up if cache is too large
     if (this.cache.size >= this.maxCacheSize) {
@@ -418,7 +418,7 @@ class EnhancedApiClient {
   /**
    * Update user profile
    */
-  public updateProfile<T = any, D = any>(
+  public updateProfile<T = unknown, D = unknown>(
     data?: D,
     config?: EnhancedRequestConfig
   ): AxiosPromise<T> {
@@ -428,7 +428,7 @@ class EnhancedApiClient {
   /**
    * Change user password
    */
-  public changePassword<T = any>(
+  public changePassword<T = unknown>(
     currentPassword: string,
     newPassword: string,
     config?: EnhancedRequestConfig
@@ -444,7 +444,7 @@ class EnhancedApiClient {
   /**
    * Delete user account
    */
-  public deleteAccount<T = any>(
+  public deleteAccount<T = unknown>(
     config?: EnhancedRequestConfig
   ): AxiosPromise<T> {
     return this.request<T>({ ...config, method: 'DELETE', url: '/user/account' });

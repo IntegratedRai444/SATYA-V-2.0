@@ -132,6 +132,7 @@ try:
     from routes.feedback import router as feedback_router
     from routes.health import router as health_router
     from routes.image import router as image_router
+    from routes.models import router as models_router
     from routes.multimodal import router as multimodal_router
     from routes.system import router as system_router
     from routes.upload import router as upload_router
@@ -553,6 +554,7 @@ if ROUTES_AVAILABLE:
         (video_router, "/api/v2/analysis/video", ["Video"], "Video Analysis"),
         (audio_router, "/api/v2/analysis/audio", ["Audio"], "Audio Analysis"),
         (face_router, "/api/v2/face", ["Face Detection"], "Face Detection"),
+        (models_router, "/api/v2/models", ["Models"], "Model Status"),
         (system_router, "/api/v2/system", ["System"], "System"),
         (webcam_router, "/api/v2/analysis/webcam", ["Webcam"], "Webcam"),
         (feedback_router, "/api/v2/feedback", ["Feedback"], "Feedback"),
@@ -626,6 +628,81 @@ async def health_check():
 
 
 # ===========================================================================
+@app.get("/api/v2/models/status")
+async def models_status():
+    """Get status of all ML models"""
+    try:
+        model_info = {}
+        
+        if ML_AVAILABLE and hasattr(app.state, 'sentinel_agent') and app.state.sentinel_agent:
+            try:
+                # Get model info from SentinelAgent
+                sentinel = app.state.sentinel_agent
+                model_info = {
+                    "image": {
+                        "available": hasattr(sentinel, 'image_detector') and sentinel.image_detector is not None,
+                        "weights": "efficientnet_b7" if hasattr(sentinel, 'image_detector') and sentinel.image_detector else None,
+                        "device": "cuda" if torch.cuda.is_available() else "cpu"
+                    },
+                    "video": {
+                        "available": hasattr(sentinel, 'video_detector') and sentinel.video_detector is not None,
+                        "weights": "xception" if hasattr(sentinel, 'video_detector') and sentinel.video_detector else None,
+                        "device": "cuda" if torch.cuda.is_available() else "cpu"
+                    },
+                    "audio": {
+                        "available": hasattr(sentinel, 'audio_detector') and sentinel.audio_detector is not None,
+                        "weights": "custom_audio" if hasattr(sentinel, 'audio_detector') and sentinel.audio_detector else None,
+                        "device": "cpu"
+                    },
+                    "text": {
+                        "available": hasattr(sentinel, 'text_nlp_detector') and sentinel.text_nlp_detector is not None,
+                        "weights": "bert" if hasattr(sentinel, 'text_nlp_detector') and sentinel.text_nlp_detector else None,
+                        "device": "cpu"
+                    },
+                    "multimodal": {
+                        "available": hasattr(sentinel, 'multimodal_fusion_detector') and sentinel.multimodal_fusion_detector is not None,
+                        "weights": "fusion" if hasattr(sentinel, 'multimodal_fusion_detector') and sentinel.multimodal_fusion_detector else None,
+                        "device": "cuda" if torch.cuda.is_available() else "cpu"
+                    }
+                }
+            except Exception as e:
+                logger.error(f"Error getting model info from SentinelAgent: {e}")
+                model_info = {
+                    "image": {"available": False, "weights": "error", "device": "cpu"},
+                    "video": {"available": False, "weights": "error", "device": "cpu"},
+                    "audio": {"available": False, "weights": "error", "device": "cpu"},
+                    "text": {"available": False, "weights": "error", "device": "cpu"},
+                    "multimodal": {"available": False, "weights": "error", "device": "cpu"}
+                }
+        else:
+            model_info = {
+                "image": {"available": False, "weights": None, "device": "cpu"},
+                "video": {"available": False, "weights": None, "device": "cpu"},
+                "audio": {"available": False, "weights": None, "device": "cpu"},
+                "text": {"available": False, "weights": None, "device": "cpu"},
+                "multimodal": {"available": False, "weights": None, "device": "cpu"}
+            }
+        
+        return {
+            "success": True,
+            "models": model_info,
+            "ml_available": ML_AVAILABLE,
+            "torch_version": torch.__version__ if ML_AVAILABLE else None,
+            "cuda_available": torch.cuda.is_available() if ML_AVAILABLE else False
+        }
+    except Exception as e:
+        logger.error(f"Models status endpoint failed: {e}")
+        return {
+            "success": False,
+            "error": "Failed to get model status",
+            "models": {
+                "image": {"available": False, "weights": "error", "device": "cpu"},
+                "video": {"available": False, "weights": "error", "device": "cpu"},
+                "audio": {"available": False, "weights": "error", "device": "cpu"}
+            }
+        }
+
+
 @app.get("/health/wiring")
 async def wiring_check():
     """Return a list of all user‑exposed routes for wiring verification.

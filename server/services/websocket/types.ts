@@ -27,13 +27,7 @@ export interface AuthenticatedWebSocket extends WebSocket {
   flushTimeout?: NodeJS.Timeout;
 }
 
-export interface AuthenticatedRequest extends IncomingMessage {
-  userId: string;
-  username?: string;
-  sessionId: string;
-  ipAddress: string;
-  token?: string;
-}
+import { WebSocketAuthenticatedRequest } from '../../types/auth';
 
 export interface WebSocketStats {
   totalConnections: number;

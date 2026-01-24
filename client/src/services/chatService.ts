@@ -68,13 +68,8 @@ export const sendMessage = async (
     }
 
     const response = await api.post<ChatResponse>(
-      '/chat/message',
-      formData,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      }
+      '/api/v2/chat/message',
+      formData
     );
 
     if (!response.response) {
@@ -83,7 +78,7 @@ export const sendMessage = async (
 
     return {
       response: response.response || '',
-      conversationId: (response as any)?.conversationId || conversationId || uuidv4(),
+      conversationId: (response as { conversationId?: string })?.conversationId || conversationId || uuidv4(),
       messageId: uuidv4(),
       sources: response.sources,
       suggestions: response.suggestions,
@@ -101,7 +96,7 @@ export const getChatHistory = async (): Promise<ChatHistoryItem[]> => {
   try {
     const response = await api.get<{
       data: ChatHistoryItem[];
-    }>('/chat/history');
+    }>('/api/v2/chat/history');
 
     return response.data;
   } catch (error) {
@@ -159,7 +154,7 @@ export const getSuggestedResponses = async (
   try {
     const response = await api.post<{
       data: string[];
-    }>('/chat/suggestions', {
+    }>('/api/v2/chat/suggestions', {
       message,
       conversationContext,
     });

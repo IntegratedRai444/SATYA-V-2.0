@@ -223,13 +223,7 @@ interface WebSocketClient extends WebSocket {
   [key: string]: any; // Index signature for dynamic properties
 }
 
-interface AuthenticatedRequest extends IncomingMessage {
-  userId: string;
-  username?: string;
-  sessionId: string;
-  ipAddress: string;
-  token?: string;
-}
+import { WebSocketAuthenticatedRequest } from '../types/auth';
 
 // WebSocket message type is defined by webSocketMessageSchema
 
@@ -455,7 +449,14 @@ export class WebSocketManager {
           .then(result => {
             if (result.valid) {
               // Attach user info to request for later use
-              const authReq = info.req as AuthenticatedRequest;
+              const authReq: WebSocketAuthenticatedRequest = {
+                userId: result.userId,
+                username: result.username || '',
+                sessionId: '',
+                ipAddress: info.req.socket.remoteAddress || 'unknown',
+                token: undefined,
+                ...info.req as any
+              };
               if (result.userId) {
                 authReq.userId = result.userId;
                 authReq.username = result.username || ''; // Provide default empty string
@@ -703,7 +704,13 @@ export class WebSocketManager {
   private handleConnection(ws: WebSocketClient, req: IncomingMessage): void {
     try {
       const clientId = this.generateClientId();
-      const authReq = req as AuthenticatedRequest;
+      const authReq: WebSocketAuthenticatedRequest = {
+        userId: '',
+        username: '',
+        sessionId: '',
+        ipAddress: req.socket.remoteAddress || 'unknown',
+        ...req as any
+      };
       
       // Initialize client properties
       ws.clientId = clientId;

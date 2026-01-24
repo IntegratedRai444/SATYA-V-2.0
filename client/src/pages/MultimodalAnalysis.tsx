@@ -15,7 +15,8 @@ import {
   Brain,
   Layers
 } from 'lucide-react';
-import apiClient, { AnalysisResult } from '@/lib/api';
+import { useMultimodalAnalysis } from '../hooks/useApi';
+import { AnalysisResult } from '../hooks/useApi';
 
 interface AnalysisStateItem {
   id: string;
@@ -30,19 +31,23 @@ const MultimodalAnalysis: React.FC = () => {
   const [activeMode, setActiveMode] = useState<'single' | 'multimodal' | 'webcam'>('single');
   const [selectedType, setSelectedType] = useState<'image' | 'video' | 'audio'>('image');
   const [results, setResults] = useState<AnalysisStateItem[]>([]);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  
+  // Use the proper hook for multimodal analysis
+  const { analyzeMultimodal, isAnalyzing } = useMultimodalAnalysis();
+  
   const [webcamActive, setWebcamActive] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // File upload handlers
   const handleFileUpload = useCallback(async (files: FileList | null) => {
-    setIsAnalyzing(true);
+    if (!files || files.length === 0) return;
+    
     const resultId = `multimodal-${Date.now()}`;
     
     const result: AnalysisStateItem = {
       id: resultId,
-      filename: `Multimodal Analysis (${Object.keys(files || {}).length} files)`,
+      filename: `Multimodal Analysis (${files.length} files)`,
       type: 'multimodal',
       status: 'analyzing'
     };
@@ -50,22 +55,21 @@ const MultimodalAnalysis: React.FC = () => {
     setResults(prev => [...prev, result]);
 
     try {
-      const formData = new FormData();
-      Object.entries(files || {}).forEach(([key, file]) => {
-        formData.append(key, file);
-      });
-
-      const response = await apiClient.post<AnalysisResult>('/api/analysis/multimodal', formData);
+      // Convert FileList to array for the hook
+      const filesArray = Array.from(files);
+      
+      // Use the hook for analysis
+      const response = await analyzeMultimodal({ files: filesArray });
 
       setResults(prev => prev.map(r =>
         r.id === resultId
-          ? { ...r, status: 'completed', result: response }
+          ? { ...r, status: 'completed', result: response as AnalysisResult }
           : r
       ));
       
       logger.info('Multimodal analysis completed successfully', {
-        isDeepfake: !response?.result?.isAuthentic,
-        confidence: response?.result?.confidence
+        isDeepfake: !(response as AnalysisResult)?.result?.isAuthentic,
+        confidence: (response as AnalysisResult)?.result?.confidence
       });
       
     } catch (error: unknown) {
@@ -79,14 +83,11 @@ const MultimodalAnalysis: React.FC = () => {
           ? { ...r, status: 'error', error: errorMessage }
           : r
       ));
-    } finally {
-      setIsAnalyzing(false);
     }
-  }, []);
+  }, [analyzeMultimodal]);
 
   // Multimodal analysis
   const handleMultimodalUpload = useCallback(async (files: { [key: string]: File }) => {
-    setIsAnalyzing(true);
     const resultId = `multimodal-${Date.now()}`;
 
     const result: AnalysisStateItem = {
@@ -99,28 +100,26 @@ const MultimodalAnalysis: React.FC = () => {
     setResults(prev => [...prev, result]);
 
     try {
-      const formData = new FormData();
-      Object.entries(files).forEach(([key, file]) => {
-        formData.append(key, file);
-      });
-
-      const response = await apiClient.post<AnalysisResult>('/api/analysis/multimodal', formData);
+      // Convert object to array for the hook
+      const filesArray = Object.values(files);
+      
+      // Use the hook for analysis
+      const response = await analyzeMultimodal({ files: filesArray });
 
       setResults(prev => prev.map(r =>
         r.id === resultId
-          ? { ...r, status: 'completed', result: response }
+          ? { ...r, status: 'completed', result: response as AnalysisResult }
           : r
       ));
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       setResults(prev => prev.map(r =>
         r.id === resultId
-          ? { ...r, status: 'error', error: error.message }
+          ? { ...r, status: 'error', error: errorMessage }
           : r
       ));
     }
-
-    setIsAnalyzing(false);
-  }, []);
+  }, [analyzeMultimodal]);
 
   // Webcam functions
   const startWebcam = useCallback(async () => {
@@ -162,7 +161,6 @@ const MultimodalAnalysis: React.FC = () => {
     canvas.toBlob(async (blob) => {
       if (!blob) return;
 
-      setIsAnalyzing(true);
       const resultId = `webcam-${Date.now()}`;
 
       const result: AnalysisStateItem = {
@@ -175,14 +173,15 @@ const MultimodalAnalysis: React.FC = () => {
       setResults(prev => [...prev, result]);
 
       try {
-        const formData = new FormData();
-        formData.append('file', blob, 'webcam-capture.jpg');
-
-        const response = await apiClient.post<AnalysisResult>('/api/analysis/webcam', formData);
+        // Convert blob to File for the hook
+        const file = new File([blob], 'webcam-capture.jpg', { type: 'image/jpeg' });
+        
+        // Use the hook for analysis (image analysis for webcam capture)
+        const response = await analyzeMultimodal({ files: [file] });
 
         setResults(prev => prev.map(r =>
           r.id === resultId
-            ? { ...r, status: 'completed', result: response }
+            ? { ...r, status: 'completed', result: response as AnalysisResult }
             : r
         ));
       } catch (error: any) {
@@ -192,10 +191,8 @@ const MultimodalAnalysis: React.FC = () => {
             : r
         ));
       }
-
-      setIsAnalyzing(false);
     }, 'image/jpeg', 0.8);
-  }, []);
+  }, [analyzeMultimodal]);
 
   const getResultIcon = (result: AnalysisStateItem) => {
     if (result.status === 'analyzing') return <Loader2 className="w-5 h-5 animate-spin text-blue-500" />;

@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { Video, Upload, Film, CheckCircle, AlertCircle, Loader2, Eye } from 'lucide-react';
-import { analysisService } from '../lib/api';
+import { useVideoAnalysis, type AnalysisResult } from '../hooks/useApi';
 import { formatFileSize } from '../lib/file-utils';
 import logger from '../lib/logger';
 
@@ -8,7 +8,9 @@ export default function VideoAnalysis() {
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState<string>('');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  
+  // Use the proper hook for video analysis
+  const { analyzeVideo, isAnalyzing } = useVideoAnalysis();
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
@@ -63,85 +65,11 @@ export default function VideoAnalysis() {
     }
   };
 
-  // Validate the proof of analysis from the server
-  interface AnalysisProof {
-    analysis_id: string;
-    model_version: string;
-    frames_analyzed: number;
-    inference_time: number;
-    timestamp: string;
-    confidence: number;
-  }
+  
+  
 
-  interface AnalysisResult {
-    analysis: {
-      is_deepfake: boolean;
-      confidence: number;
-      proof: AnalysisProof;
-      details?: {
-        processing_time_seconds: number;
-        frames_analyzed: number;
-        model_version: string;
-      };
-    };
-    request_id: string;
-    error?: string;
-    timestamp: string;
-  }
-
-  const validateProof = (result: unknown): result is AnalysisResult => {
-    if (!result || typeof result !== 'object') return false;
-    
-    const res = result as Record<string, any>;
-    if (!res.analysis || !res.analysis.proof) {
-      logger.error('Invalid analysis result: Missing proof');
-      return false;
-    }
-
-    const proof = res.analysis.proof as Partial<AnalysisProof>;
-    
-    // Type guard to check all required fields exist
-    const hasAllFields = [
-      'analysis_id', 'model_version', 'frames_analyzed',
-      'inference_time', 'timestamp', 'confidence'
-    ].every(field => field in proof);
-    
-    if (!hasAllFields) {
-      logger.error('Invalid proof: Missing required fields');
-      return false;
-    }
-
-    // Type assertion since we've checked all fields exist
-    const validProof = proof as AnalysisProof;
-
-    // Validate inference time is positive
-    if (validProof.inference_time <= 0) {
-      logger.error('Invalid proof: Invalid inference time');
-      return false;
-    }
-
-    // Validate model version is non-empty
-    if (!validProof.model_version) {
-      logger.error('Invalid proof: Missing model version');
-      return false;
-    }
-
-    // Validate frames analyzed is a positive integer
-    if (!Number.isInteger(validProof.frames_analyzed) || validProof.frames_analyzed <= 0) {
-      logger.error('Invalid proof: Invalid frames_analyzed');
-      return false;
-    }
-
-    return true;
-  };
-
-  const analyzeVideo = async () => {
+  const handleAnalyzeVideo = async () => {
     if (!selectedFile) return;
-
-    // Reset state before starting new analysis
-    setIsAnalyzing(true);
-    setError('');
-    setAnalysisResult(null);
 
     try {
       logger.info('Starting video analysis', {
@@ -149,39 +77,23 @@ export default function VideoAnalysis() {
         size: selectedFile.size
       });
 
-      // Make the API call
-      const result = await analysisService.analyzeVideo(selectedFile, {
-        includeDetails: true
-      }) as unknown;
-      logger.info('Analysis API response received');
-
-      // Validate the response structure and proof
-      if (!validateProof(result)) {
-        throw new Error('Analysis failed: Invalid response from server');
-      }
-
-          // At this point, TypeScript knows result is AnalysisResult
-      const analysisResult = result as AnalysisResult;
-
-      // Only update state if we have valid results and proof
-      logger.info('Analysis completed successfully', {
-        isDeepfake: analysisResult.analysis?.is_deepfake,
-        confidence: analysisResult.analysis?.confidence
+      // Use the hook for analysis
+      const result = await analyzeVideo({ 
+        file: selectedFile, 
+        options: { includeDetails: true } 
       });
-
-      // Set the analysis result - this will trigger re-render with results
-      setAnalysisResult(analysisResult);
+      
+      // Set the analysis result
+      setAnalysisResult(result as unknown as AnalysisResult);
+      setError('');
       
     } catch (error: unknown) {
       const errorMessage = error instanceof Error 
         ? error.message 
-        : 'Analysis failed. Please try again.';
+        : 'Video analysis failed. Please try again.';
       
-      logger.error('Analysis failed: ' + errorMessage);
+      logger.error('Video analysis failed: ' + errorMessage);
       setError(errorMessage);
-      setAnalysisResult(null);
-    } finally {
-      setIsAnalyzing(false);
     }
   };
 
@@ -245,7 +157,7 @@ export default function VideoAnalysis() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        analyzeVideo();
+                        handleAnalyzeVideo();
                       }}
                       disabled={isAnalyzing}
                       className="bg-purple-500 hover:bg-purple-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-8 py-3 rounded-lg font-medium transition-all duration-200 flex items-center gap-2"
@@ -320,11 +232,11 @@ export default function VideoAnalysis() {
           <div className="bg-[#2a2e39] border border-gray-700/50 rounded-xl p-8 mb-6">
             <div className="flex items-center gap-4 mb-6">
               <div className={`w-16 h-16 rounded-full flex items-center justify-center ${
-                analysisResult.analysis.is_deepfake 
+                !analysisResult.result?.isAuthentic 
                   ? 'bg-red-500/10 border-2 border-red-500/30'
                   : 'bg-green-500/10 border-2 border-green-500/30'
               }`}>
-                {analysisResult.analysis.is_deepfake ? (
+                {!analysisResult.result?.isAuthentic ? (
                   <AlertCircle className="w-8 h-8 text-red-500" />
                 ) : (
                   <CheckCircle className="w-8 h-8 text-green-500" />
@@ -332,11 +244,11 @@ export default function VideoAnalysis() {
               </div>
               <div>
                 <h2 className="text-2xl font-bold text-white mb-1">
-                  {analysisResult.analysis.is_deepfake ? 'Potential Deepfake Detected' : 'Authentic Media'}
+                  {!analysisResult.result?.isAuthentic ? 'Potential Deepfake Detected' : 'Authentic Media'}
                 </h2>
                 <p className="text-gray-400">
                   Confidence: <span className="text-white font-semibold">
-                    {(analysisResult.analysis.confidence * 100).toFixed(1)}%
+                    {((analysisResult.result?.confidence || 0) * 100).toFixed(1)}%
                   </span>
                 </p>
               </div>
@@ -347,32 +259,32 @@ export default function VideoAnalysis() {
               <div className="flex justify-between items-center">
                 <span className="text-gray-300 text-sm">Analysis ID</span>
                 <span className="text-white font-mono text-sm">
-                  {analysisResult.analysis.proof.analysis_id}
+                  {analysisResult.id}
                 </span>
               </div>
               
               <div className="flex justify-between items-center">
                 <span className="text-gray-300 text-sm">Model Version</span>
-                <span className="text-white">{analysisResult.analysis.proof.model_version}</span>
+                <span className="text-white">{analysisResult.result?.metrics?.modelVersion || 'Unknown'}</span>
               </div>
               
               <div className="flex justify-between items-center">
                 <span className="text-gray-300 text-sm">Frames Analyzed</span>
-                <span className="text-white">{analysisResult.analysis.proof.frames_analyzed}</span>
+                <span className="text-white">{analysisResult.proof?.frames_analyzed || 0}</span>
               </div>
               
               <div className="flex justify-between items-center">
                 <span className="text-gray-300 text-sm">Processing Time</span>
                 <span className="text-white">
-                  {analysisResult.analysis.proof.inference_time.toFixed(2)}s
+                  {((analysisResult.result?.metrics?.processingTime || 0) / 1000).toFixed(2)}s
                 </span>
               </div>
             </div>
 
             <div className="mt-6 pt-6 border-t border-gray-700">
               <div className="flex justify-between items-center text-sm text-gray-400">
-                <span>Request ID: {analysisResult.request_id}</span>
-                <span>Analyzed: {new Date(analysisResult.analysis.proof.timestamp).toLocaleString()}</span>
+                <span>Request ID: {analysisResult.requestId || 'Unknown'}</span>
+                <span>Analyzed: {new Date(analysisResult.createdAt || Date.now()).toLocaleString()}</span>
               </div>
             </div>
           </div>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   FiCloud,
   FiHelpCircle,
@@ -28,29 +28,18 @@ import RecentActivity from '@/components/analysis/RecentActivity';
 import AnalysisProgress from '@/components/analysis/AnalysisProgress';
 import AnalysisResults from '@/components/analysis/AnalysisResults';
 import ErrorBoundary from '@/components/ui/ErrorBoundary';
-import { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/SupabaseAuthProvider';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
 import { useDashboardStats } from '@/hooks/useDashboardStats';
 import { useDashboardWebSocket } from '@/hooks/useDashboardWebSocket';
 
 /**
- * Dashboard Component
- * 
- * Main dashboard page displaying:
- * - System statistics and metrics
- * - Recent analysis activity
- * - Progress tracking for ongoing analyses
- * - Quick access to analysis tools
- * - Connection status indicators
- * 
- * @component
- * @returns {JSX.Element} Dashboard interface
+ * Dashboard Component - Full Featured Version
  */
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  // TODO: Re-implement auth after reset
+  const logout = () => {};
   
   // State management
   const [error, setError] = useState<string | null>(null);
@@ -75,10 +64,8 @@ const Dashboard: React.FC = () => {
     keyFindings: string[];
     timestamp: Date;
   }>>([]);
-  
+
   // Dashboard hooks with error handling
-  // Use dashboard settings if needed
-  // const { timeRange, setTimeRange, analysisType, setAnalysisType } = useDashboard();
   const statsQuery = useDashboardStats();
   const { isConnected } = useDashboardWebSocket({
     autoConnect: true,
@@ -130,12 +117,12 @@ const Dashboard: React.FC = () => {
     }
   };
   
-  // Handle logout on authentication error
+  // TODO: Re-implement auth error handling after reset
   useEffect(() => {
     if (error?.includes('401') || error?.includes('403')) {
-      console.warn('Authentication error detected, logging out...');
-      logout();
-      navigate('/login');
+      console.warn('Authentication error detected, but auth is disabled for now');
+      // logout();
+      // navigate('/login');
     }
   }, [error, logout, navigate]);
 
@@ -181,6 +168,8 @@ const Dashboard: React.FC = () => {
       </div>
     );
   }
+
+  console.log('🎯 Dashboard component rendering');
 
   return (
     <div className="max-w-[1400px] mx-auto">

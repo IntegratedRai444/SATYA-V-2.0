@@ -1,17 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { supabase } from '../config/supabase';
-
-// Extend the Express Request type to include user
-interface AuthenticatedRequest extends Request {
-  user?: {
-    id: string;
-    email: string;
-    role: string;
-    email_verified: boolean;
-    user_metadata?: Record<string, unknown>;
-    [key: string]: unknown; // Allow additional properties
-  };
-}
+import { AuthenticatedRequest } from '../types/auth';
 
 // Types of actions to audit
 type AuditAction = 

@@ -39,7 +39,7 @@ export interface ChangePasswordData {
 
 export class UserService extends BaseService {
   constructor() {
-    super('/users');
+    super('/api/v2/user');
   }
 
   async getProfile(): Promise<UserProfile> {

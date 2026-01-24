@@ -3,19 +3,7 @@ import { supabase } from '../config/supabase';
 import { logger } from '../config/logger';
 
 const router = Router();
-
-// Extend Express Request type to include user
-declare module 'express-serve-static-core' {
-  interface Request {
-    user?: {
-      id: string;
-      email: string;
-      role: string;
-      email_verified: boolean;
-      user_metadata?: Record<string, unknown> | undefined;
-    };
-  }
-}
+import { AuthenticatedRequest } from '../types/auth';
 
 
 // GET /api/v2/history - Get paginated list of user's analysis jobs
@@ -68,7 +56,8 @@ router.get('/',
         .from('tasks')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', userId)
-        .eq('type', 'analysis');
+        .eq('type', 'analysis')
+        .is('deleted_at', null);
 
       const totalPages = Math.ceil((count || 0) / limit);
 

@@ -97,7 +97,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, State> {
     console.groupEnd();
 
     // Example of sending to an error tracking endpoint
-    if (process.env.NODE_ENV === 'production') {
+    if (import.meta.env.MODE === 'production') {
       try {
         // Replace with your actual error tracking endpoint
         fetch('/api/error-report', {
@@ -125,7 +125,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, State> {
 
   private handleReportError = () => {
     if (this.state.error) {
-      const error = this.state.error as any; // Type assertion to access context
+      const error = this.state.error as Error & { context?: { timestamp?: string; componentStack?: string; path?: string; }; name: string; message: string };
       const subject = encodeURIComponent(`[SATYA-AI ${this.props.level || 'error'}] ${error.name}: ${error.message.substring(0, 50)}`);
 
       let body = `Error Details:\n\n`;
@@ -137,7 +137,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, State> {
       body += `Component Stack:\n${error.context?.componentStack || 'No component stack'}\n\n`;
       body += `Browser: ${navigator.userAgent}\n`;
       body += `URL: ${error.context?.path || window.location.href}\n`;
-      body += `Environment: ${process.env.NODE_ENV}\n`;
+      body += `Environment: ${import.meta.env.MODE || 'development'}\n`;
 
       const mailtoUrl = `mailto:support@satyaai.com?subject=${subject}&body=${encodeURIComponent(body)}`;
       window.open(mailtoUrl, '_blank');
@@ -154,11 +154,14 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, State> {
       return 'Update Required';
     }
 
-    if (error.message.includes('NetworkError')) {
+    // Safe check for error.message
+    const errorMessage = error?.message || '';
+
+    if (errorMessage.includes('NetworkError')) {
       return 'Connection Error';
     }
 
-    if (error.message.includes('timeout') || error.message.includes('Timeout')) {
+    if (errorMessage.includes('timeout') || errorMessage.includes('Timeout')) {
       return 'Request Timed Out';
     }
 
@@ -170,22 +173,41 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, State> {
     const { error } = this.state;
     if (!error) return 'An unexpected error occurred. Please try again.';
     
+    // Safe check for error.message
+    const errorMessage = error?.message || '';
+    
     // Safe property access with optional chaining
-    const hasIncludes = error && typeof error === 'object' && 'includes' in error;
+    // const hasIncludes = error && typeof error === 'object' && 'includes' in error;
     
     if (error.name === 'ChunkLoadError') {
       return 'A new version of the application is available. Please refresh your browser to update.';
     }
     
-    if (error.message && hasIncludes && error.message.includes('NetworkError')) {
+    if (errorMessage.includes('NetworkError')) {
       return 'Unable to connect to the server. Please check your internet connection and try again.';
     }
     
-    if (error.message && hasIncludes && (error.message.includes('timeout') || error.message.includes('Timeout'))) {
-      return 'The request took too long to complete. Please check your connection and try again.';
+    if (errorMessage.includes('timeout') || errorMessage.includes('Timeout')) {
+      return 'The request took too long to complete. Please try again.';
     }
     
-    return error.message || 'An unexpected error occurred. Please try again.';
+    if (errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {
+      return 'You are not authorized to access this resource. Please log in again.';
+    }
+    
+    if (errorMessage.includes('403') || errorMessage.includes('Forbidden')) {
+      return 'You do not have permission to access this resource.';
+    }
+    
+    if (errorMessage.includes('404') || errorMessage.includes('Not Found')) {
+      return 'The requested resource was not found.';
+    }
+    
+    if (errorMessage.includes('500') || errorMessage.includes('Internal Server Error')) {
+      return 'The server encountered an error. Please try again later.';
+    }
+    
+    return errorMessage || 'An unexpected error occurred. Please try again.';
   }
 
   public render() {
@@ -211,7 +233,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, State> {
             <h2 className="text-xl font-bold text-white mb-2">{errorTitle}</h2>
             <p className="text-gray-300 mb-6">{errorMessage}</p>
 
-            {process.env.NODE_ENV === 'development' && this.state.error && (
+            {import.meta.env.MODE === 'development' && this.state.error && (
               <div className="text-left p-3 bg-gray-900/50 rounded-md text-xs text-gray-400 font-mono overflow-auto max-h-32 mb-4">
                 <div className="font-bold text-red-400 mb-1">
                   {this.state.error.name || 'Error'}

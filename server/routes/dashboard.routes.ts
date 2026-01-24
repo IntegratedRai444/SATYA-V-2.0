@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { supabase } from '../config/supabase';
 import { logger } from '../config/logger';
 import rateLimit from 'express-rate-limit';
@@ -15,7 +15,8 @@ const dashboardRateLimit = rateLimit({
 });
 
 // GET /api/v2/dashboard/stats - Get dashboard statistics
-router.get('/stats', dashboardRateLimit, async (req: Request, res: Response) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+router.get('/stats', dashboardRateLimit, async (req: any, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -75,17 +76,15 @@ router.get('/stats', dashboardRateLimit, async (req: Request, res: Response) => 
     }
 
     const stats = {
-      total_analyses: totalAnalyses,
-      deepfake_detected: deepfakeDetected,
-      real_detected: realDetected,
-      avg_confidence: Math.round(avgConfidence * 100) / 100,
+      totalAnalyses: totalAnalyses,
+      authenticMedia: realDetected,
+      manipulatedMedia: deepfakeDetected,
+      uncertainScans: 0, // Calculate if needed
+      avgConfidence: Math.round(avgConfidence * 100) / 100,
       last_7_days: last7Days
     };
 
-    res.json({
-      success: true,
-      stats
-    });
+    res.json(stats);
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Failed to fetch dashboard statistics';
     logger.error('Dashboard stats error:', error);
@@ -97,7 +96,8 @@ router.get('/stats', dashboardRateLimit, async (req: Request, res: Response) => 
 });
 
 // GET /api/v2/dashboard/analytics - Get user analytics (alias for user/analytics)
-router.get('/analytics', dashboardRateLimit, async (req: Request, res: Response) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+router.get('/analytics', dashboardRateLimit, async (req: any, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -158,6 +158,48 @@ router.get('/analytics', dashboardRateLimit, async (req: Request, res: Response)
     res.status(500).json({
       success: false,
       error: errorMessage
+    });
+  }
+});
+
+// GET /api/v2/dashboard/recent-activity - Get recent user activity
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+router.get('/recent-activity', dashboardRateLimit, async (req: any, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'User not authenticated'
+      });
+    }
+
+    // Get recent analysis activities (last 10)
+    const { data: activities, error: activitiesError } = await supabase
+      .from('tasks')
+      .select('id, type, status, created_at, confidence, is_deepfake, file_name')
+      .eq('user_id', userId)
+      .eq('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (activitiesError) {
+      logger.error('Recent activity error:', activitiesError);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to fetch recent activity'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: activities || []
+    });
+  } catch (error) {
+    logger.error('Recent activity endpoint error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error'
     });
   }
 });

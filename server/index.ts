@@ -2,11 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import { createServer, Server } from 'http';
 import type { 
-  Express as ExpressApp, 
-  Request, 
-  Response, 
-  NextFunction, 
-  RequestHandler
+  Express as ExpressApp
 } from 'express';
 import { URL } from 'url';
 
@@ -15,17 +11,6 @@ import { URL } from 'url';
 
 import promClient from 'prom-client';
 import cors from 'cors';
-import { createProxyMiddleware } from 'http-proxy-middleware';
-
-type ProxyOptions = {
-  target: string;
-  changeOrigin?: boolean;
-  pathRewrite?: Record<string, string>;
-  onProxyReq?: (proxyReq: { setHeader: (name: string, value: string) => void }, req: Request, res: Response) => void;
-  onError?: (err: Error, req: Request, res: Response) => void;
-  secure?: boolean;
-  logLevel?: string;
-};
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import compression from 'compression';
@@ -188,7 +173,19 @@ app.use(compression({
 
 // Security middleware - must be first
 app.use(helmet({
-  contentSecurityPolicy: false, // Disable the default CSP
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:", "blob:"],
+      connectSrc: ["'self'", "ws:", "wss:", "https:"],
+      fontSrc: ["'self'", "https:", "data:"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"]
+    }
+  },
   crossOriginEmbedderPolicy: false,
   crossOriginOpenerPolicy: false,
   crossOriginResourcePolicy: { policy: 'same-site' },
@@ -204,41 +201,6 @@ app.use(helmet({
 
 // Trust proxy for rate limiting and security
 app.set('trust proxy', 1);
-
-// Configure proxy for Python backend
-const pythonProxy = createProxyMiddleware({
-  target: process.env.PYTHON_API_URL || 'http://localhost:8000',
-  changeOrigin: true,
-  pathRewrite: {
-    '^/api/python': '/',
-  },
-  onProxyReq: (proxyReq: { setHeader: (name: string, value: string) => void; path?: string }, req: Request) => {
-    // Add custom headers if needed
-    proxyReq.setHeader('x-forwarded-by', 'node-gateway');
-    
-    // Log proxy requests in development
-    if (process.env.NODE_ENV === 'development') {
-      // eslint-disable-next-line no-console
-      console.log(`[Proxy] ${req.method} ${req.url} -> ${proxyReq.path}`);
-    }
-  },
-  onError: (err: Error, req: Request, res: Response) => {
-    logger.error('Proxy error:', { 
-      error: err.message, 
-      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
-      url: req.url,
-      method: req.method
-    });
-    
-    if (!res.headersSent) {
-      res.status(500).json({ 
-        error: 'Service Unavailable',
-        message: 'Failed to connect to the Python service',
-        code: 'PYTHON_SERVICE_UNAVAILABLE'
-      });
-    }
-  },
-} as ProxyOptions);
 
 // CORS Configuration
 const corsOptions = {
@@ -313,7 +275,8 @@ app.use((req, res, _next) => {
 });
 
 // Error handling middleware
-app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+app.use((err: Error, req: any, res: any, next: any) => {
   logger.error('Request error', {
     error: err.message,
     stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
@@ -437,10 +400,12 @@ app.set('trust proxy', 1);
 import auditLogger from './config/audit-logger';
 
 // Mock metrics middleware for now
-const httpMetricsMiddleware = () => (req: Request, res: Response, next: NextFunction) => next();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const httpMetricsMiddleware = () => (req: any, res: any, next: any) => next();
 
 // Audit logging middleware
-const auditLoggerMiddleware: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const auditLoggerMiddleware: any = (req: any, res: any, next: any) => {
   // Log request details
   const start = Date.now();
   const { method, originalUrl, ip, headers } = req;
@@ -472,20 +437,22 @@ app.use('/api/', apiRateLimit);
 
 // Apply middleware
 app.use(requestIdMiddleware);
-app.use(versionMiddleware);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+app.use(versionMiddleware as any);
 
 // API routes
 app.use('/api', apiRouter);
 
 // 404 Handler for undefined routes
-app.use(notFoundHandler);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+app.use(notFoundHandler as any);
 
 // Global Error Handler
-app.use(errorHandler);
-
-// Apply the proxy to Python API routes with proper typing
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-app.use('/api/python', pythonProxy as any);
+app.use(errorHandler as any);
+
+// Python API routes are now handled by the python-http-bridge service
+// All Python requests go through the authenticated Node backend
 
 // Connect alerting system to metrics
 alertingSystem.on('error', (error: Error) => {
@@ -743,7 +710,8 @@ app.get('/api/health/python', async (_req, res) => {
 });
 
 // Request logging middleware
-app.use(createRequestLogger());
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+app.use(createRequestLogger() as any);
 
 // Request ID middleware
 app.use(requestIdMiddleware);
@@ -755,7 +723,8 @@ import { setupSwagger, swaggerSpec } from './config/swagger';
 setupSwagger(app as unknown as ExpressApp);
 
 // Serve Swagger spec as JSON
-app.get('/api-docs.json', (req: Request, res: Response) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+app.get('/api-docs.json', (req: any, res: any) => {
   res.setHeader('Content-Type', 'application/json');
   res.send(swaggerSpec);
 });

@@ -1,32 +1,31 @@
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
-import rateLimit, { Options, RateLimitRequestHandler } from 'express-rate-limit';
-import { body, validationResult, ValidationChain, ValidationError } from 'express-validator';
+import rateLimit, { RateLimitRequestHandler } from 'express-rate-limit';
+import { validationResult, ValidationChain, ValidationError } from 'express-validator';
 import { defaultSecurityConfig } from '../config/security';
 import { logger } from '../config/logger';
 
 type RateLimitConfig = typeof defaultSecurityConfig.rateLimiting;
 type RateLimitRule = RateLimitConfig['default'];
 
-// Extend Express Request type
-declare global {
-  namespace Express {
-    interface Request {
-      rateLimit?: {
-        limit: number;
-        current: number;
-        remaining: number;
-        resetTime?: Date;
-      };
-      apiKey?: string;
-      [key: string]: any; // Allow additional properties
-    }
-  }
+// Extended Request interface for internal use
+interface ExtendedRequest extends Request {
+  rateLimit?: {
+    limit: number;
+    current: number;
+    remaining: number;
+    resetTime?: Date;
+  };
+  apiKey?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any; // Allow additional properties
 }
 
 // Custom validation error type
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface CustomValidationError {
   param?: string;
   msg: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   value?: any;
   location?: string;
   nestedErrors?: ValidationError[];
@@ -56,14 +55,16 @@ export const rateLimiter = (config = defaultSecurityConfig.rateLimiting) => {
         success: false,
         message: config.default.message || 'Too many requests, please try again later.',
         code: 'RATE_LIMIT_EXCEEDED',
-        retryAfter: req.rateLimit?.resetTime
-          ? Math.ceil((req.rateLimit.resetTime.getTime() - Date.now()) / 1000)
-          : undefined
+        retryAfter: (() => {
+          const rateLimitInfo = (req as ExtendedRequest).rateLimit;
+          return rateLimitInfo?.resetTime
+            ? Math.ceil((rateLimitInfo.resetTime.getTime() - Date.now()) / 1000)
+            : undefined;
+        })()
       });
     },
     standardHeaders: true,
     legacyHeaders: false,
-    // @ts-ignore - These are valid options but not in the type definition
     message: 'Too many requests, please try again later.',
     statusCode: 429
   });
@@ -92,14 +93,16 @@ export const rateLimiter = (config = defaultSecurityConfig.rateLimiting) => {
           success: false,
           message: rule.message || 'Too many requests, please try again later.',
           code: 'RATE_LIMIT_EXCEEDED',
-          retryAfter: req.rateLimit?.resetTime
-            ? Math.ceil((req.rateLimit.resetTime.getTime() - Date.now()) / 1000)
-            : undefined
+          retryAfter: (() => {
+            const rateLimitInfo = (req as ExtendedRequest).rateLimit;
+            return rateLimitInfo?.resetTime
+              ? Math.ceil((rateLimitInfo.resetTime.getTime() - Date.now()) / 1000)
+              : undefined;
+          })()
         });
       },
       standardHeaders: true,
       legacyHeaders: false,
-      // @ts-ignore - These are valid options but not in the type definition
       message: rule.message || 'Too many requests, please try again later.',
       statusCode: 429
     });
@@ -114,11 +117,13 @@ export const rateLimiter = (config = defaultSecurityConfig.rateLimiting) => {
     if (routeKey) {
       const limiter = limiters.get(routeKey);
       if (limiter) {
-        return limiter(req, res, next);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return limiter(req as any, res as any, next);
       }
     }
     // Use default rate limiter
-    return defaultLimiter(req, res, next);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return defaultLimiter(req as any, res as any, next);
   };
 };
 
@@ -135,6 +140,7 @@ export const validateRequest = (validations: ValidationChain[]) => {
       }
 
       // Format validation errors
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const errorMessages = errors.array().map((err: any) => ({
         field: err.param || 'unknown',
         message: err.msg || 'Validation error',
@@ -171,6 +177,7 @@ export const formatResponse: RequestHandler = (req, res, next) => {
   const originalJson = res.json;
 
   // Override res.json
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   res.json = function (data?: any): Response {
     // Skip formatting for error responses or if already formatted
     if (res.statusCode >= 400 || (data && typeof data === 'object' && 'success' in data)) {
@@ -179,6 +186,7 @@ export const formatResponse: RequestHandler = (req, res, next) => {
 
     // Handle different response types
     let responseData = data;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const meta: Record<string, any> = {
       timestamp: new Date().toISOString(),
       version: defaultSecurityConfig.api.version,
@@ -206,11 +214,12 @@ export const formatResponse: RequestHandler = (req, res, next) => {
     res.setHeader('X-Frame-Options', 'DENY');
     
     // Add rate limit headers if available
-    if (req.rateLimit) {
-      res.setHeader('X-RateLimit-Limit', req.rateLimit.limit.toString());
-      res.setHeader('X-RateLimit-Remaining', req.rateLimit.remaining.toString());
-      if (req.rateLimit.resetTime) {
-        res.setHeader('X-RateLimit-Reset', Math.ceil(req.rateLimit.resetTime.getTime() / 1000).toString());
+    const rateLimitInfo = (req as ExtendedRequest).rateLimit;
+    if (rateLimitInfo) {
+      res.setHeader('X-RateLimit-Limit', rateLimitInfo.limit.toString());
+      res.setHeader('X-RateLimit-Remaining', rateLimitInfo.remaining.toString());
+      if (rateLimitInfo.resetTime) {
+        res.setHeader('X-RateLimit-Reset', Math.ceil((rateLimitInfo.resetTime.getTime() / 1000)).toString());
       }
     }
 
@@ -266,7 +275,7 @@ export const apiKeyAuth: RequestHandler = async (req, res, next) => {
     }
 
     // Add API key info to request for later use
-    req.apiKey = apiKey;
+    (req as ExtendedRequest).apiKey = apiKey;
     next();
   } catch (error) {
     logger.error('API key validation error', { error });
@@ -294,7 +303,9 @@ function maskApiKey(key: string, visibleChars = 4): string {
 // Request logging middleware
 export const requestLogger: RequestHandler = (req, res, next) => {
   const start = Date.now();
-  const { method, originalUrl, ip, headers, body, query, params } = req;
+  const { method, originalUrl, ip, headers, body } = req;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { query, params } = req;
   
   // Skip logging for health checks
   if (originalUrl === '/health' || originalUrl === '/status') {
@@ -357,6 +368,7 @@ export const requestLogger: RequestHandler = (req, res, next) => {
 };
 
 // Helper function to redact sensitive data from logs
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function redactSensitiveData(obj: Record<string, any>): Record<string, any> {
   const sensitiveFields = [
     'password',
@@ -372,6 +384,7 @@ function redactSensitiveData(obj: Record<string, any>): Record<string, any> {
   
   if (!obj || typeof obj !== 'object') return obj;
   
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const result: Record<string, any> = Array.isArray(obj) ? [] : {};
   
   for (const [key, value] of Object.entries(obj)) {

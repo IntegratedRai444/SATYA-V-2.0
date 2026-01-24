@@ -11,12 +11,13 @@ import {
   FiHelpCircle
 } from 'react-icons/fi';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
-import { useAuth } from '@/contexts/SupabaseAuthProvider';
 
 const Navbar = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  // TODO: Re-implement auth after reset
+  const user = { username: 'Guest', email: 'guest@example.com', role: 'user' };
+  const logout = () => {};
   const [showUserMenu, setShowUserMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 

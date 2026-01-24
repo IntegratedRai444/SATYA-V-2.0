@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from '@/components/ui/use-toast';
-import { useAuth } from '@/contexts/SupabaseAuthProvider';
 import { webSocketService } from '@/services/websocket';
 import type { WebSocketMessage, ScanUpdateMessage, SystemAlertMessage } from '@/types/websocket';
 
@@ -13,7 +12,7 @@ export interface Notification {
   message: string;
   timestamp: Date;
   read: boolean;
-  data?: any;
+  data?: Record<string, unknown>;
   action?: {
     label: string;
     onClick: () => void;
@@ -38,7 +37,7 @@ interface RealtimeContextType {
   // WebSocket methods
   subscribeToScan: (scanId: string) => void;
   unsubscribeFromScan: (scanId: string) => void;
-  sendMessage: <T = any>(message: T) => void;
+  sendMessage: (message: WebSocketMessage) => void;
 
   // Scan progress tracking
   activeScans: Record<string, {
@@ -60,7 +59,8 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [reconnectAttempt, setReconnectAttempt] = useState<number>(0);
   const [maxReconnectAttempts] = useState<number>(5);
   const { toast } = useToast();
-  const { isAuthenticated } = useAuth();
+  // TODO: Re-implement auth after reset
+  const isAuthenticated = true;
   const subscriptions = useRef<Record<string, () => void>>({});
 
   // Add a new notification

@@ -4,7 +4,7 @@ export interface UploadProgress {
   progress: number;
   status: 'pending' | 'uploading' | 'completed' | 'error';
   error?: string;
-  result?: any;
+  result?: unknown;
 }
 
 export class FileUploadManager {
@@ -24,12 +24,12 @@ export class FileUploadManager {
     file: File,
     type: 'image' | 'video' | 'audio',
     onProgress?: (progress: UploadProgress) => void
-  ): Promise<{ success: boolean; data?: any; error?: string }> {
+  ): Promise<{ success: boolean; data?: unknown; error?: string }> {
     const fileId = Math.random().toString(36).substr(2, 9);
     const controller = new AbortController();
     this.uploads.set(fileId, controller);
 
-    const updateProgress = (progress: number, status: UploadProgress['status'], error?: string) => {
+    const updateProgress = (progress: number, status: UploadProgress['status'], error?: string, result?: unknown) => {
       if (onProgress) {
         onProgress({
           fileId,
@@ -37,6 +37,7 @@ export class FileUploadManager {
           progress,
           status,
           error,
+          result,
         });
       }
     };
@@ -47,7 +48,7 @@ export class FileUploadManager {
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/upload/${type}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/v2/upload/${type}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
@@ -62,10 +63,10 @@ export class FileUploadManager {
       }
 
       const data = await response.json();
-      updateProgress(100, 'completed');
+      updateProgress(100, 'completed', undefined, data);
       return { success: true, data };
-    } catch (error: any) {
-      const errorMessage = error.message || 'Failed to upload file';
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to upload file';
       updateProgress(0, 'error', errorMessage);
       return { success: false, error: errorMessage };
     } finally {
@@ -77,7 +78,7 @@ export class FileUploadManager {
     files: File[],
     type: 'image' | 'video' | 'audio',
     onFileProgress?: (progress: UploadProgress) => void
-  ): Promise<{ [key: string]: { success: boolean; data?: any; error?: string } }> {
+  ): Promise<{ [key: string]: { success: boolean; data?: unknown; error?: string } }> {
     const uploadPromises = files.map(file => 
       this.uploadFile(file, type, onFileProgress)
         .then(result => ({ fileId: file.name, result }))
@@ -87,7 +88,7 @@ export class FileUploadManager {
     return results.reduce((acc, { fileId, result }) => {
       acc[fileId] = result;
       return acc;
-    }, {} as { [key: string]: { success: boolean; data?: any; error?: string } });
+    }, {} as { [key: string]: { success: boolean; data?: unknown; error?: string } });
   }
 
   public cancelUpload(fileId: string): void {

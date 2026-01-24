@@ -25,7 +25,8 @@ logger = logging.getLogger(__name__)
 def ensure_models_available() -> Dict[str, Any]:
    
     strict_mode = os.getenv('STRICT_MODE', 'false').lower() == 'true'
-    models_dir = Path(os.getenv('MODEL_DIR', 'models'))
+    # Always use project root models directory
+    models_dir = Path(__file__).resolve().parents[2] / "models"
     
     # Required model configurations
     required_models = {
@@ -44,7 +45,10 @@ def ensure_models_available() -> Dict[str, Any]:
         },
         'video': {
             'paths': [
-                models_dir / "video" / "model.pth"
+                models_dir / "video" / "model.pth",
+                models_dir / "video" / "temporal_lstm.pth",
+                models_dir / "video" / "temporal_3dcnn.pth",
+                models_dir / "video_deepfake_detector.pth"
             ],
             'huggingface_fallback': 'MCG-NJU/videomae-base-finetuned-kinetics'
         }

@@ -296,7 +296,7 @@ class PythonHttpBridge {
         timeout: 5000,
       });
       
-      this.isAvailable = response.status === 200 && response.data?.success === true;
+      this.isAvailable = response.status === 200 && ((response.data as any)?.status === 'healthy' || response.data?.success === true);
     } catch (error) {
       logger.error('Python service health check failed', { 
         error: error instanceof Error ? error.message : 'Unknown error' 

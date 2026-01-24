@@ -1,6 +1,6 @@
 import swaggerJsdoc, { Options } from 'swagger-jsdoc';
 import { serve as swaggerUiServe, setup as swaggerUiSetup, SwaggerUiOptions } from 'swagger-ui-express';
-import { Express, Request, Response, NextFunction } from 'express';
+import { Express } from 'express';
 
 const API_VERSION = process.env.API_VERSION || '1.0.0';
 const NODE_ENV = process.env.NODE_ENV || 'development';
@@ -76,15 +76,18 @@ const swaggerUiOptions: SwaggerUiOptions = {
 // Function to setup Swagger UI
 export const setupSwagger = (app: Express): void => {
   // Serve Swagger UI at /api-docs
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   app.use('/api-docs', 
     swaggerUiServe,
-    (req: Request, res: Response, next: NextFunction) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (req: any, res: any, next: any) => {
       swaggerUiSetup(swaggerSpec, swaggerUiOptions)(req, res, next);
     }
   );
 
   // Serve Swagger JSON
-  app.get('/api-docs.json', (_req: Request, res: Response) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  app.get('/api-docs.json', (_req: any, res: any) => {
     res.setHeader('Content-Type', 'application/json');
     res.send(swaggerSpec);
   });

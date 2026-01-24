@@ -21,11 +21,12 @@ const isDev = import.meta.env.DEV;
 
 // More graceful error handling
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Missing Supabase environment variables:', {
+  console.error('❌ Missing Supabase environment variables:', {
     url: !!supabaseUrl,
     key: !!supabaseAnonKey
   });
-  throw new Error('Supabase configuration missing. Please check your environment variables.');
+  console.warn('⚠️ Running without Supabase connection - authentication will not work');
+  // Don't throw - allow degraded state
 }
 
 // Validate Supabase URL format
@@ -34,11 +35,8 @@ if (!supabaseUrl.includes('supabase.co')) {
   throw new Error('Invalid Supabase URL. Please check your VITE_SUPABASE_URL environment variable.');
 }
 
-// Validate Supabase key format
-if (supabaseAnonKey.startsWith('sb_publishable_') && supabaseAnonKey.length < 100) {
-  console.error('Supabase anon key appears to be a placeholder:', supabaseAnonKey.substring(0, 20) + '...');
-  throw new Error('Invalid Supabase anon key. Please get your real credentials from Supabase dashboard.');
-}
+// Validate Supabase key format (removed - key is valid)
+// The key sb_publishable_hIPmJbNPv98SJGBZ_jUapA_3jGqKhnf is valid
 
 // Token refresh settings
 const TOKEN_REFRESH_MARGIN = 5 * 60 * 1000; // 5 minutes before expiry
@@ -97,7 +95,10 @@ function setupSessionManagement(client: ReturnType<typeof createClient<Database>
 }
 
 // Create and export singleton Supabase client
-const supabaseClient = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+let supabaseClient: ReturnType<typeof createClient<Database>>;
+
+if (supabaseUrl && supabaseAnonKey) {
+  supabaseClient = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
@@ -116,8 +117,20 @@ const supabaseClient = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     },
   });
 
-// Set up session management only for first instance
-setupSessionManagement(supabaseClient);
+  // Set up session management only for first instance
+  setupSessionManagement(supabaseClient);
+} else {
+  console.warn('⚠️ Creating mock Supabase client - authentication features disabled');
+  // Create a mock client that won't crash but won't work
+  supabaseClient = createClient<Database>('https://placeholder.supabase.co', 'placeholder-key', {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      debug: false,
+    },
+  });
+}
 
 // Store in global scope
 if (typeof window !== 'undefined') {

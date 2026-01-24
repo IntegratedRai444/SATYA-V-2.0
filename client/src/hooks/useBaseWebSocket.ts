@@ -3,8 +3,8 @@ import logger from '../lib/logger';
 
 export interface WebSocketMessage {
     type: string;
-    data?: any;
-    payload?: any;
+    data?: unknown;
+    payload?: unknown;
     error?: string;
     timestamp?: string;
 }
@@ -42,7 +42,7 @@ export function useBaseWebSocket(options: BaseWebSocketOptions = {}) {
 
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectCountRef = useRef(0);
-    const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const messageHandlersRef = useRef<Set<(message: WebSocketMessage) => void>>(new Set());
     const isMountedRef = useRef(true);
 
@@ -51,8 +51,9 @@ export function useBaseWebSocket(options: BaseWebSocketOptions = {}) {
         if (url) return url;
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host;
-        return `${protocol}//${host}/ws`;
+        // Use backend server instead of frontend host
+        const wsHost = import.meta.env.VITE_WS_URL?.replace(/^ws:\/\//, '')?.replace(/^wss:\/\//, '') || 'localhost:5001';
+        return `${protocol}//${wsHost}/api/v2/dashboard/ws`;
     }, [url]);
 
     // Handle incoming messages
@@ -181,7 +182,7 @@ export function useBaseWebSocket(options: BaseWebSocketOptions = {}) {
     }, []);
 
     // Send message through WebSocket
-    const sendMessage = useCallback((message: any) => {
+    const sendMessage = useCallback((message: unknown) => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
             wsRef.current.send(JSON.stringify(message));
             return true;

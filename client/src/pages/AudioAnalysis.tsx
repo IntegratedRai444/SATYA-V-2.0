@@ -1,21 +1,25 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Mic, Upload, CheckCircle, AlertCircle, Loader2, Eye, FileText, BarChart3 } from 'lucide-react';
-import { apiClient } from '../lib/api';
+import { useAudioAnalysis } from '../hooks/useApi';
+import { AnalysisResult } from '../lib/api/services/analysisService';
 import logger from '../lib/logger';
 
 export default function AudioAnalysis() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [activeTab, setActiveTab] = useState<'upload' | 'live'>('upload');
+  
+  // Use the proper hook for audio analysis
+  const { analyzeAudio: analyzeAudioHook } = useAudioAnalysis();
+  
   const [analysisState, setAnalysisState] = useState<{
     status: 'idle' | 'analyzing' | 'success' | 'error';
-    result: any;
+    result: AnalysisResult | null;
     error: string | null;
   }>({
     status: 'idle',
     result: null,
     error: null
   });
-  const abortControllerRef = useRef<AbortController | null>(null);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -81,48 +85,9 @@ export default function AudioAnalysis() {
     }
   };
 
-  const validateProof = (result: any): boolean => {
-    if (!result?.proof) {
-      throw new Error('Missing proof of analysis');
-    }
 
-    const { proof } = result;
-    
-    if (typeof proof !== 'object' || proof === null) {
-      throw new Error('Invalid proof format');
-    }
-
-    if (typeof proof.model_identity !== 'string' || !proof.model_identity) {
-      throw new Error('Invalid model identity in proof');
-    }
-
-    if (typeof proof.inference_time !== 'number' || proof.inference_time <= 0) {
-      throw new Error('Invalid inference time in proof');
-    }
-
-    if (proof.authority !== 'SentinelAgent') {
-      throw new Error('Invalid analysis authority');
-    }
-
-    return true;
-  };
-
-  const analyzeAudio = useCallback(async () => {
+  const handleAnalyzeAudio = useCallback(async () => {
     if (!selectedFile) return;
-    
-    // Cancel any in-flight requests
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-
-    setAnalysisState({
-      status: 'analyzing',
-      result: null,
-      error: null
-    });
 
     try {
       logger.info('Starting audio analysis', {
@@ -130,62 +95,32 @@ export default function AudioAnalysis() {
         size: selectedFile.size
       });
 
-      // Use the correct method from apiClient
-      const result = await apiClient.post('/api/analyze/audio', {
-        file: selectedFile
-      }, {
-        signal: controller.signal,
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
+      // Use the hook for analysis
+      const result = await analyzeAudioHook({ 
+        file: selectedFile, 
+        options: { includeDetails: true } 
       });
-
-      if (controller.signal.aborted) return;
-
-      logger.info('Analysis completed', { success: result.data.success });
-
-      if (!result || !result.data) {
-        throw new Error('Invalid response from server');
-      }
-
-      // Strict proof validation
-      validateProof(result.data);
-
+      
       setAnalysisState({
         status: 'success',
-        result: result.data,
+        result: result,
         error: null
       });
-    } catch (error: any) {
-      if (error.name === 'AbortError' || error.message?.includes('aborted')) {
-        logger.info('Analysis was cancelled');
-        return;
-      }
-
-      logger.error('Analysis failed', error);
       
-      const errorMessage = error.response?.status === 401 
-        ? 'Authentication failed. Please log in again.'
-        : 'Analysis failed. Please try again.';
-
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'Audio analysis failed. Please try again.';
+      
+      logger.error('Audio analysis failed: ' + errorMessage);
       setAnalysisState(prev => ({
         ...prev,
         status: 'error',
         error: errorMessage
       }));
-    } finally {
-      abortControllerRef.current = null;
     }
-  }, [selectedFile]);
+  }, [selectedFile, analyzeAudioHook]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-  }, []);
 
   return (
     <div className="min-h-screen bg-[#1a1d24] text-white">
@@ -270,7 +205,7 @@ export default function AudioAnalysis() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            analyzeAudio();
+                            handleAnalyzeAudio();
                           }}
                           disabled={analysisState.status === 'analyzing'}
                           className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-8 py-3 rounded-lg font-medium transition-all duration-200 flex items-center gap-2"
@@ -365,11 +300,11 @@ export default function AudioAnalysis() {
             {analysisState.status === 'success' && analysisState.result && (
               <div className="bg-[#2a2e39] border border-gray-700/50 rounded-xl p-8 mb-6">
                 <div className="flex items-center gap-4 mb-6">
-                  <div className={`w-16 h-16 rounded-full flex items-center justify-center ${analysisState.result.authenticity === 'AUTHENTIC MEDIA'
+                  <div className={`w-16 h-16 rounded-full flex items-center justify-center ${analysisState.result?.result?.isAuthentic
                       ? 'bg-green-500/10 border-2 border-green-500/30'
                       : 'bg-red-500/10 border-2 border-red-500/30'
                     }`}>
-                    {analysisState.result.authenticity === 'AUTHENTIC MEDIA' ? (
+                    {analysisState.result?.result?.isAuthentic ? (
                       <CheckCircle className="w-8 h-8 text-green-500" />
                     ) : (
                       <AlertCircle className="w-8 h-8 text-red-500" />
@@ -377,15 +312,15 @@ export default function AudioAnalysis() {
                   </div>
                   <div>
                     <h2 className="text-2xl font-bold text-white mb-1">
-                      {analysisState.result.authenticity === 'AUTHENTIC MEDIA' ? 'Authentic Media' : 'Potential Deepfake'}
+                      {analysisState.result?.result?.isAuthentic ? 'Authentic Media' : 'Potential Deepfake'}
                     </h2>
                     <p className="text-gray-400">
-                      Confidence: <span className="text-white font-semibold">{analysisState.result.confidence.toFixed(1)}%</span>
+                      Confidence: <span className="text-white font-semibold">{((analysisState.result?.result?.confidence || 0) * 100).toFixed(1)}%</span>
                     </p>
-                    {analysisState.result.proof && (
+                    {analysisState.result?.proof && (
                       <div className="mt-2 text-xs text-gray-400">
-                        <p>Model: {analysisState.result.proof.model_identity}</p>
-                        <p>Inference: {analysisState.result.proof.inference_time.toFixed(2)}s</p>
+                        <p>Model: {analysisState.result.proof.model_name || 'Unknown'}</p>
+                        <p>Inference: {analysisState.result.proof.inference_duration?.toFixed(2) || '0.0'}s</p>
                       </div>
                     )}
                   </div>
@@ -400,12 +335,20 @@ export default function AudioAnalysis() {
                       Key Findings
                     </h3>
                     <div className="space-y-2">
-                      {analysisState.result.key_findings?.map((finding: string, index: number) => (
-                        <div key={index} className="flex items-start gap-2">
-                          <div className="w-2 h-2 bg-blue-400 rounded-full mt-2 flex-shrink-0"></div>
-                          <p className="text-gray-300 text-sm">{finding}</p>
+                      {analysisState.result?.result?.details ? (
+                        <div className="space-y-2">
+                          {Object.entries(analysisState.result.result.details as Record<string, unknown>).map(([key, value]) => (
+                            <div key={key} className="flex items-start gap-2">
+                              <div className="w-2 h-2 bg-blue-400 rounded-full mt-2 flex-shrink-0"></div>
+                              <p className="text-gray-300 text-sm">
+                                <span className="font-semibold">{key}:</span> {String(value)}
+                              </p>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      ) : (
+                        <div className="text-gray-400 text-sm">No detailed analysis available</div>
+                      )}
                     </div>
                   </div>
 
@@ -416,39 +359,19 @@ export default function AudioAnalysis() {
                       Analysis Scores
                     </h3>
                     <div className="space-y-3">
-                      {analysisState.result.detailed_analysis && (
-                        <>
-                          {analysisState.result.detailed_analysis.voice_analysis && (
-                            <div className="flex justify-between items-center">
-                              <span className="text-gray-300 text-sm">Voice Consistency</span>
-                              <span className="text-white font-semibold">
-                                {(analysisState.result.detailed_analysis.voice_analysis.consistency_score * 100).toFixed(1)}%
-                              </span>
-                            </div>
-                          )}
-                          {analysisState.result.detailed_analysis.spectral_analysis && (
-                            <div className="flex justify-between items-center">
-                              <span className="text-gray-300 text-sm">Spectral Analysis</span>
-                              <span className="text-white font-semibold">
-                                {(analysisState.result.detailed_analysis.spectral_analysis.spectral_score * 100).toFixed(1)}%
-                              </span>
-                            </div>
-                          )}
-                          {analysisState.result.detailed_analysis.background_analysis && (
-                            <div className="flex justify-between items-center">
-                              <span className="text-gray-300 text-sm">Background Noise</span>
-                              <span className="text-white font-semibold">
-                                {(analysisState.result.detailed_analysis.background_analysis.noise_score * 100).toFixed(1)}%
-                              </span>
-                            </div>
-                          )}
-                        </>
-                      )}
-                      <div className="flex justify-between items-center">
-                        <span className="text-gray-300 text-sm">Processing Time</span>
-                        <span className="text-white font-semibold">
-                          {analysisState.result.technical_details?.processing_time_seconds?.toFixed(2) || '0.0'}s
-                        </span>
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-300 text-sm">Processing Time</span>
+                          <span className="text-white font-semibold">
+                            {analysisState.result?.result?.metrics?.processingTime?.toFixed(2) || '0.0'}s
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-300 text-sm">Model Version</span>
+                          <span className="text-white font-semibold">
+                            {analysisState.result?.result?.metrics?.modelVersion || 'Unknown'}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -457,8 +380,8 @@ export default function AudioAnalysis() {
                 {/* Case ID and Timestamp */}
                 <div className="mt-6 pt-6 border-t border-gray-700">
                   <div className="flex justify-between items-center text-sm text-gray-400">
-                    <span>Case ID: {analysisState.result.case_id}</span>
-                    <span>Analyzed: {new Date(analysisState.result.analysis_date).toLocaleString()}</span>
+                    <span>Case ID: {analysisState.result?.id}</span>
+                    <span>Analyzed: {new Date(analysisState.result?.createdAt || Date.now()).toLocaleString()}</span>
                   </div>
                 </div>
               </div>
@@ -487,4 +410,4 @@ export default function AudioAnalysis() {
       </div>
     </div>
   );
-};
+}

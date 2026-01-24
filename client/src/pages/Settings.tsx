@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/SupabaseAuthProvider';
 import { useToast } from '@/components/ui/use-toast';
 import { FiUser, FiCamera, FiLock, FiTrash2, FiSave } from 'react-icons/fi';
 import { Card } from '@/components/ui/card';
@@ -7,7 +6,9 @@ import { Button } from '@/components/ui/button';
 import apiClient from '@/lib/api';
 
 export default function Settings() {
-  const { user, logout } = useAuth();
+  // TODO: Re-implement auth after reset
+  const user = { username: 'Guest', email: 'guest@example.com' };
+  const logout = () => {};
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -44,7 +45,7 @@ export default function Settings() {
         fullName: profileData.fullName,
         username: profileData.username,
         avatar_url: profileData.avatarUrl
-      });
+      }) as { success: boolean; message?: string };
 
       if (response.success) {
         toast({
@@ -96,7 +97,7 @@ export default function Settings() {
       const response = await apiClient.post('/auth/change-password', {
         currentPassword: passwordData.currentPassword,
         newPassword: passwordData.newPassword
-      });
+      }) as { success: boolean; message?: string };
 
       if (response.success) {
         toast({
@@ -132,7 +133,7 @@ export default function Settings() {
 
     setIsLoading(true);
     try {
-      const response = await apiClient.delete('/user/account');
+      const response = await apiClient.delete('/api/v2/user/account') as { success: boolean; message?: string };
 
       if (response.success) {
         toast({

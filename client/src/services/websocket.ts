@@ -4,7 +4,22 @@
  * message queuing, and automatic reconnection
  */
 
-import { getAuthToken } from './supabaseAuth';
+import { supabase } from '../lib/supabaseSingleton';
+
+// Get JWT token for WebSocket authentication
+const getAuthToken = async (): Promise<string | null> => {
+  try {
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (error) {
+      console.error('Failed to get auth session for WebSocket:', error);
+      return null;
+    }
+    return session?.access_token || null;
+  } catch (error) {
+    console.error('Error getting auth token for WebSocket:', error);
+    return null;
+  }
+};
 import logger from '../lib/logger';
 import type {
   WebSocketMessage,
@@ -38,7 +53,7 @@ class WebSocketService {
   private static instance: WebSocketService;
   private socket: WebSocket | null = null;
   private messageHandlers: Set<MessageHandler> = new Set();
-  private eventHandlers: Map<EventType, Set<Function>> = new Map();
+  private eventHandlers: Map<EventType, Set<(...args: unknown[]) => void>> = new Map();
   private isShuttingDown = false;
   // Reconnection with exponential backoff and jitter
   private reconnectAttempts = 0;
@@ -46,7 +61,7 @@ class WebSocketService {
   private initialReconnectDelay: number;
   private maxReconnectDelay: number;
   private backoffMultiplier: number;
-  private reconnectTimeout: NodeJS.Timeout | null = null;
+  private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 
   // Message queue for offline messages
   private messageQueue: QueuedMessage[] = [];
@@ -54,7 +69,7 @@ class WebSocketService {
 
   // Heartbeat mechanism
   private heartbeatInterval: number;
-  private heartbeatTimer: NodeJS.Timeout | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private lastHeartbeatTime: number | null = null;
   private missedHeartbeats = 0;
   private readonly MAX_MISSED_HEARTBEATS = 3;
@@ -135,8 +150,9 @@ class WebSocketService {
   private getWebSocketUrl(token: string): string {
     try {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = window.location.host;
-      return `${protocol}//${host}/api/ws?token=${encodeURIComponent(token)}`;
+      // Use backend server instead of frontend host
+      const wsHost = import.meta.env.VITE_WS_URL?.replace(/^ws:\/\//, '')?.replace(/^wss:\/\//, '') || 'localhost:5001';
+      return `${protocol}//${wsHost}/ws?token=${encodeURIComponent(token)}`;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       logger.error('Failed to construct WebSocket URL: ' + errorMessage);
@@ -230,11 +246,11 @@ class WebSocketService {
     const error = new Error(errorMessage);
     
     // Prepare error context
-    const errorContext: Record<string, any> = {
+    const errorContext: Record<string, unknown> = {
       name: 'WebSocketError',
       ...(event instanceof ErrorEvent && { originalError: event.error }),
-      ...('type' in event && { type: event.type }),
-      ...('code' in event && { code: (event as any).code })
+      ...('type' in event && { type: (event as { type: string }).type }),
+      ...('code' in event && { code: (event as { code: number }).code })
     };
     
     // Log the error with context
@@ -389,21 +405,21 @@ class WebSocketService {
     this.messageHandlers.delete(handler);
   }
 
-  public on(event: EventType, handler: Function): () => void {
+  public on(event: EventType, handler: (...args: unknown[]) => void): () => void {
     const handlers = this.eventHandlers.get(event) || new Set();
     handlers.add(handler);
     this.eventHandlers.set(event, handlers);
     return () => this.off(event, handler);
   }
 
-  public off(event: EventType, handler: Function): void {
+  public off(event: EventType, handler: (...args: unknown[]) => void): void {
     const handlers = this.eventHandlers.get(event);
     if (handlers) {
       handlers.delete(handler);
     }
   }
 
-  private emit(event: EventType, ...args: any[]): void {
+  private emit(event: EventType, ...args: unknown[]): void {
     const handlers = this.eventHandlers.get(event);
     if (handlers) {
       handlers.forEach(handler => {
@@ -456,12 +472,15 @@ class WebSocketService {
   /**
    * Send a message through the WebSocket with queuing support
    */
-  public send(data: WebSocketMessage | any): void {
+  public send(data: WebSocketMessage | Record<string, unknown>): void {
     const message: WebSocketMessage = typeof data === 'object' && data !== null && 'type' in data && 'payload' in data
       ? data as WebSocketMessage
       : {
         type: 'ping',
-        payload: data || {},
+        payload: { 
+          serverTime: new Date().toISOString(),
+          clientTime: new Date().toISOString()
+        },
         timestamp: new Date().toISOString(),
         id: crypto.randomUUID(),
       } as WebSocketMessage;

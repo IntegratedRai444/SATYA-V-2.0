@@ -108,9 +108,9 @@ export const fetchDashboardData = async (_params: {
   try {
     // Fetch all dashboard data in parallel using apiClient methods
     const [statsRes, analyticsRes, activityRes] = await Promise.all([
-      api.get('/dashboard/stats') as Promise<ApiResponse<ApiDashboardStats>>,
-      api.get('/user/analytics') as Promise<ApiResponse<any>>,
-      api.get('/analysis/history', { params: { limit: 5 } }) as Promise<ApiResponse<any>>
+      api.get('/api/v2/dashboard/stats') as Promise<ApiResponse<ApiDashboardStats>>,
+      api.get('/api/v2/dashboard/analytics') as Promise<ApiResponse<any>>,
+      api.get('/api/v2/history', { params: { limit: 5 } }) as Promise<ApiResponse<any>>
     ]);
 
     // Validate and transform responses

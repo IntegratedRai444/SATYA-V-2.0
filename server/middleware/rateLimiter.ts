@@ -1,18 +1,7 @@
-import { Request, Response, NextFunction, RequestHandler } from 'express';
+import type { RequestHandler, Request } from 'express';
 import { RateLimiterMemory, IRateLimiterOptions, RateLimiterRes } from 'rate-limiter-flexible';
 import { errorResponse } from '../utils/apiResponse';
 import { logger } from '../config/logger';
-import type { AuthUser } from './auth';
-
-// Extend Express Request type
-declare global {
-  namespace Express {
-    interface Request {
-      id?: string;
-      ip?: string;
-    }
-  }
-}
 
 type RateLimiterType = 'general' | 'auth' | 'sensitive' | 'api';
 type RateLimitScope = 'ip' | 'user' | 'global';
@@ -99,12 +88,12 @@ const getClientIp = (req: Request): string => {
   
   // Fall back to other IP sources
   return req.ip || 
-         (req.socket.remoteAddress ? req.socket.remoteAddress : 'unknown-ip');
+         (req.socket?.remoteAddress ? req.socket.remoteAddress : 'unknown-ip');
 };
 
 // Rate limiter middleware with IP and user-based limiting
 export const rateLimiter = (type: RateLimiterType = 'general'): RequestHandler => {
-  return async (req: Request, res: Response, next: NextFunction) => {
+  return async (req, res, next) => {
     const clientIp = getClientIp(req);
     const userId = req.user?.id?.toString() || 'anonymous';
     

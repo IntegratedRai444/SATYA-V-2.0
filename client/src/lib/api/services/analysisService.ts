@@ -176,6 +176,23 @@ export class AnalysisService extends BaseService {
       };
     } catch (error) {
       console.error('Image analysis failed:', error);
+      
+      // Provide more specific error messages
+      if (error instanceof Error) {
+        if (error.message.includes('Network Error') || error.message.includes('ERR_CONNECTION_REFUSED')) {
+          throw new Error('Backend services are not running. Please start the Node.js backend on port 5001.');
+        }
+        if (error.message.includes('timeout')) {
+          throw new Error('Analysis request timed out. Please try again with a smaller file.');
+        }
+        if (error.message.includes('413')) {
+          throw new Error('File too large. Please upload a file smaller than 50MB.');
+        }
+        if (error.message.includes('415')) {
+          throw new Error('Unsupported file format. Please upload a valid image file.');
+        }
+      }
+      
       throw new Error('Failed to analyze image. Please try again.');
     }
   }

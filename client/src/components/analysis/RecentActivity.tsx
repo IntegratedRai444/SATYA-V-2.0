@@ -150,7 +150,7 @@ const RecentActivity: React.FC<RecentActivityProps> = ({ loading = false }) => {
     // Fetch real recent activity from API
     const fetchRecentActivity = async () => {
       try {
-        const response = await fetch('/api/dashboard/recent-activity', {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/v2/dashboard/recent-activity`, {
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('satyaai_auth_token')}`,
             'Content-Type': 'application/json'
@@ -161,15 +161,24 @@ const RecentActivity: React.FC<RecentActivityProps> = ({ loading = false }) => {
           const data = await response.json();
           if (data.success && data.data.recentScans) {
             // Map API response to component format
-            const mappedResults: AnalysisResult[] = data.data.recentScans.map((scan: any) => ({
+            const mappedResults: AnalysisResult[] = data.data.recentScans.map((scan: {
+              id: string;
+              filename: string;
+              confidenceScore: number;
+              result: string;
+              createdAt: string;
+              type?: string;
+              processingTime?: number;
+              reportCode?: string;
+            }) => ({
               id: scan.id.toString(),
               filename: scan.filename,
               confidenceScore: Math.round(scan.confidenceScore * 100),
               status: scan.result === 'authentic' ? 'Authentic' : 
                       scan.result === 'deepfake' ? 'Deepfake' : 'Suspicious',
               timestamp: new Date(scan.createdAt),
-              type: scan.type,
-              processingTime: scan.processingTime || undefined,
+              type: scan.type || 'image',
+              processingTime: scan.processingTime,
               reportCode: scan.reportCode // Include Case ID
             }));
             setRecentResults(mappedResults);

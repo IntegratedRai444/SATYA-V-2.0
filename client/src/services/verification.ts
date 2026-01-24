@@ -15,7 +15,7 @@ export const testAuthFlow = async () => {
 
     try {
         // Check if user is already authenticated
-        const currentUser = await apiClient.get('/auth/me');
+        const currentUser = await apiClient.get('/auth/me') as { success: boolean; user?: unknown };
         if (currentUser && currentUser.success) {
             log('✅ User is already authenticated');
             return { success: true, logs, user: currentUser.user };
@@ -35,9 +35,9 @@ export const testAuthFlow = async () => {
 /**
  * Fetch backend routes for verification
  */
-export const fetchBackendRoutes = async (): Promise<any[]> => {
+export const fetchBackendRoutes = async (): Promise<unknown[]> => {
     try {
-        const response = await apiClient.get('/health/wiring');
+        const response = await apiClient.get('/api/v2/health/wiring') as { data?: unknown[] };
         return response.data || [];
     } catch (error) {
         logger.error('Failed to fetch backend routes', error as Error);

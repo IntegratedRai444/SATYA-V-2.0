@@ -1,25 +1,27 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/SupabaseAuthProvider';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Eye, EyeOff, Shield, AlertTriangle, User, Lock, Loader2, Mail } from 'lucide-react';
+import { Eye, EyeOff, Shield, AlertTriangle, User, Lock, Loader2 } from 'lucide-react';
 
 export default function Login() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const { login, error, isLoading, clearError, isAuthenticated } = useAuth();
+  // TODO: Re-implement auth after reset
+  const error = null;
+  const isLoading = false;
+  const clearError = () => {};
+  const isAuthenticated = false;
 
   useEffect(() => {
     console.log('Login component mounted');
     console.log('Auth state:', { error, isLoading });
 
-    // Redirect if already authenticated
-    if (isAuthenticated) {
+    // TODO: Re-implement auth redirect after reset
+    // Only redirect if auth is NOT loading AND user is authenticated
+    if (!isLoading && isAuthenticated) {
       navigate('/dashboard');
     }
-  }, [isAuthenticated, navigate, error, isLoading]);
+  }, [isAuthenticated, isLoading, navigate, error]);
 
   const [showPassword, setShowPassword] = useState(false);
   const [showRoleSelection, setShowRoleSelection] = useState(false);
@@ -31,18 +33,9 @@ export default function Login() {
     password: ''
   });
 
-  const validateReturnUrl = (url: string | null): string | null => {
-    if (!url) return null;
-    try {
-      const parsed = new URL(url, window.location.origin);
-      if (parsed.origin === window.location.origin) {
-        return parsed.pathname + parsed.search + parsed.hash;
-      }
-    } catch (e) {
-      console.warn('Invalid return URL:', url);
-    }
-    return null;
-  };
+  // Add refs for input fields to fix one-character input issue
+  const emailInputRef = useRef<HTMLInputElement>(null);
+  const passwordInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -74,22 +67,9 @@ export default function Login() {
 
       console.log('Attempting login with:', { email: formData.email, passwordLength: formData.password.length });
 
-      if (login) {
-        const result = await login({
-          email: formData.email,
-          password: formData.password
-        });
-
-        console.log('Login result:', result);
-
-        if (result.user) {
-          const returnUrl = validateReturnUrl(searchParams.get('returnUrl')) || '/dashboard';
-          console.log('Login successful, navigating to:', returnUrl);
-          navigate(returnUrl);
-        } else {
-          throw new Error('Login failed - no user returned');
-        }
-      }
+      // TODO: Re-implement login after reset
+      console.log('Login disabled during auth reset');
+      navigate('/dashboard');
     } catch (err: unknown) {
       console.error('Login error details:', {
         message: err instanceof Error ? err.message : 'Unknown error',
@@ -221,61 +201,55 @@ export default function Login() {
                   <div className="space-y-2">
                     <label htmlFor="email" className="block text-sm font-medium text-gray-300">
                       Email Address
-                      {formErrors.email && (
-                        <span className="text-red-400 text-xs ml-2">{formErrors.email}</span>
-                      )}
                     </label>
-                    <div className="mt-1 relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                      <Input
+                    <div className="relative">
+                      <input
                         id="email"
                         name="email"
                         type="email"
                         autoComplete="email"
                         required
+                        className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:border-cyan-400/50 transition-all duration-200"
+                        placeholder="Enter your email"
                         value={formData.email}
                         onChange={handleInputChange}
-                        className={`w-full pl-11 pr-4 py-3 bg-white/5 border ${formErrors.email ? 'border-red-400/50' : 'border-white/10'
-                          } rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:border-cyan-400/50 transition-all duration-200`}
-                        placeholder="Enter your email address"
-                        aria-invalid={!!formErrors.email}
-                        aria-describedby={formErrors.email ? 'email-error' : undefined}
+                        ref={emailInputRef}
                       />
                     </div>
+                    {formErrors.email && (
+                      <p className="text-red-400 text-sm mt-1">{formErrors.email}</p>
+                    )}
                   </div>
 
                   {/* Password */}
                   <div className="space-y-2">
                     <label htmlFor="password" className="block text-sm font-medium text-gray-300">
                       Password
-                      {formErrors.password && (
-                        <span className="text-red-400 text-xs ml-2">{formErrors.password}</span>
-                      )}
                     </label>
-                    <div className="mt-1 relative">
-                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                      <Input
+                    <div className="relative">
+                      <input
                         id="password"
                         name="password"
                         type={showPassword ? 'text' : 'password'}
                         autoComplete="current-password"
                         required
+                        className="w-full pl-11 pr-12 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:border-cyan-400/50 transition-all duration-200"
+                        placeholder="Enter your password"
                         value={formData.password}
                         onChange={handleInputChange}
-                        className={`w-full pl-11 pr-12 py-3 bg-white/5 border ${formErrors.password ? 'border-red-400/50' : 'border-white/10'
-                          } rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:border-cyan-400/50 transition-all duration-200`}
-                        placeholder="Enter your password"
-                        aria-invalid={!!formErrors.password}
-                        aria-describedby={formErrors.password ? 'password-error' : undefined}
+                        ref={passwordInputRef}
                       />
                       <button
                         type="button"
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center"
                         onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-cyan-400 transition-colors"
                       >
-                        {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                        {showPassword ? <EyeOff className="w-5 h-5 text-gray-400" /> : <Eye className="w-5 h-5 text-gray-400" />}
                       </button>
                     </div>
+                    {formErrors.password && (
+                      <p className="text-red-400 text-sm mt-1">{formErrors.password}</p>
+                    )}
                   </div>
                 </>
               ) : (

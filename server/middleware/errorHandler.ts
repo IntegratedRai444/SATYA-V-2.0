@@ -7,7 +7,8 @@ import { logger } from '../config/logger';
  * Validates the request using express-validator
  */
 export const validateRequest = (validations: ValidationChain[]): RequestHandler => {
-  return async (req: Request, res: Response, next: NextFunction) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return async (req: any, res: Response, next: NextFunction) => {
     await Promise.all(validations.map(validation => validation.run(req)));
 
     const errors = validationResult(req);
@@ -17,6 +18,7 @@ export const validateRequest = (validations: ValidationChain[]): RequestHandler 
 
     const errorMessages = errors.array().map(err => {
       // Handle both standard and alternative validation errors
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const errorObj: any = {
         message: err.msg,
       };
@@ -26,7 +28,9 @@ export const validateRequest = (validations: ValidationChain[]): RequestHandler 
         errorObj.field = err.param;
       }
       
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if ('value' in (err as any) && (err as any).value !== undefined) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         errorObj.value = (err as any).value;
       }
       
@@ -52,6 +56,7 @@ interface ErrorWithStatus extends Error {
   status?: number;
   statusCode?: number;
   code?: string; // Ensure code is always a string for API responses
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   details?: any;
   expose?: boolean;
   retryAfter?: number;
@@ -62,6 +67,7 @@ export const errorHandler = (
   err: ErrorWithStatus,
   req: Request,
   res: Response,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   next: NextFunction
 ) => {
   // Log the error
@@ -78,7 +84,9 @@ export const errorHandler = (
       query: req.query,
       body: req.body,
     },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     requestId: (req as any).requestId,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     traceId: (req as any).traceId,
   });
 
@@ -192,7 +200,8 @@ export const errorHandler = (
 export const asyncHandler = <T extends RequestHandler>(
   fn: T
 ): RequestHandler => {
-  return (req: Request, res: Response, next: NextFunction) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (req: any, res: Response, next: NextFunction) => {
     Promise.resolve(fn(req, res, next)).catch((error) => {
       // Log the error with request context
       logger.error('Async handler error', {

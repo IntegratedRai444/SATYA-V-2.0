@@ -264,7 +264,7 @@ def predict_video_deepfake(
             from pathlib import Path
 
             model_path = (
-                Path(__file__).parent.parent / "models" / "video_deepfake_detector.pth"
+                Path(__file__).resolve().parents[3] / "models" / "video_deepfake_detector.pth"
             )
 
             if model_path.exists():

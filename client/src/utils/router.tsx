@@ -1,13 +1,12 @@
-import { createBrowserRouter, Navigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../contexts/SupabaseAuthProvider';
-import { Suspense, lazy, useEffect } from 'react';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { Suspense, lazy } from 'react';
 import LoadingState from '@/components/ui/LoadingState';
 import ErrorBoundary from '@/components/ui/ErrorBoundary';
-import logger from './logger';
-import { PageTransition } from '@/components/ui/PageTransition';
+import React from 'react';
+import AppLayout from '@/components/layout/AppLayout';
 
 // Lazy load page components with custom loading
-const lazyWithRetry = (componentImport: any) =>
+const lazyWithRetry = (componentImport: () => Promise<{ default: React.ComponentType }>) =>
   lazy(async () => {
     const pageHasAlreadyBeenForceRefreshed = JSON.parse(
       localStorage.getItem('page-has-been-force-refreshed') || 'false'
@@ -22,7 +21,9 @@ const lazyWithRetry = (componentImport: any) =>
         // Assuming that the user is not on the latest version of the application.
         // Let's refresh the page immediately.
         window.localStorage.setItem('page-has-been-force-refreshed', 'true');
-        return window.location.reload();
+        window.location.reload();
+        // This will never resolve because the page reloads
+        return new Promise<{ default: React.ComponentType }>(() => {});
       }
 
       // The page has already been reloaded
@@ -51,112 +52,11 @@ const WiringVerification = lazyWithRetry(() => import('@/pages/dev/WiringVerific
 const NotFound = lazyWithRetry(() => import('@/pages/NotFound'));
 
 // Layout components
-import MainLayout from '@/components/layout/MainLayout';
-
 // Shared components (these will be used within their respective pages)
 // These are imported directly in the components that use them
 
 // UI Components
-import { Toaster } from '@/components/ui/toaster';
 
-// Scroll to top on route change
-const ScrollToTop = () => {
-  const { pathname } = useLocation();
-
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [pathname]);
-
-  return null;
-};
-
-// Main app layout wrapper with transitions and error boundaries
-const AppLayout = () => {
-  return (
-    <>
-      <ScrollToTop />
-      <ErrorBoundary>
-        <PageTransition>
-          <Suspense
-            fallback={
-              <div className="flex-1 flex items-center justify-center">
-                <LoadingState variant="section" message="Loading application..." />
-              </div>
-            }
-          >
-            <MainLayout />
-          </Suspense>
-        </PageTransition>
-        <Toaster />
-      </ErrorBoundary>
-    </>
-  );
-};
-
-/**
- * ProtectedRoute - A component that protects routes from unauthenticated access
- * 
- * @param children - Child components to render if authenticated
- * @param redirectPath - Optional custom redirect path (default: '/login')
- */
-const ProtectedRoute = ({ 
-  children, 
-  redirectPath = '/login',
-  level = 'page' as const
-}: { 
-  children: React.ReactNode;
-  redirectPath?: string;
-  level?: 'app' | 'page' | 'component';
-}) => {
-  const { isAuthenticated, isLoading } = useAuth();
-  const location = useLocation();
-
-  // Show loading state while checking authentication
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <LoadingState variant="page" message="Checking authentication..." />
-      </div>
-    );
-  }
-
-  // If not authenticated, redirect to login with return URL
-  if (!isAuthenticated) {
-    const searchParams = new URLSearchParams();
-    searchParams.set('returnTo', location.pathname + location.search);
-    return <Navigate to={`${redirectPath}?${searchParams.toString()}`} replace />;
-  }
-
-  // If authenticated, wrap with error boundary
-  return (
-    <ErrorBoundary 
-      level={level}
-      onError={(error, errorInfo) => {
-        logger.error(`Error in protected route (${level}):`, error, { errorInfo });
-      }}
-    >
-      {children}
-    </ErrorBoundary>
-  );
-};
-
-// Public route component with redirect
-const PublicRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, isLoading } = useAuth();
-  const location = useLocation();
-
-  if (isLoading) {
-    return <LoadingState variant="inline" message="Loading..." />;
-  }
-
-  // If user is authenticated and trying to access auth pages, redirect to dashboard
-  if (isAuthenticated && ['/login', '/register', '/forgot-password', '/reset-password'].some(path => location.pathname.startsWith(path))) {
-    const from = location.state?.from?.pathname || '/dashboard';
-    return <Navigate to={from} replace />;
-  }
-
-  return <>{children}</>;
-};
 
 // Create and export the router
 export const router = createBrowserRouter([
@@ -165,62 +65,48 @@ export const router = createBrowserRouter([
   {
     path: '/register',
     element: (
-      <PublicRoute>
-        <Suspense fallback={<LoadingState variant="page" message="Loading registration..." />}>
-          <Register />
-        </Suspense>
-      </PublicRoute>
+      <Suspense fallback={<LoadingState variant="page" message="Loading registration..." />}>
+        <Register />
+      </Suspense>
     ),
   },
   {
     path: '/login',
     element: (
-      <PublicRoute>
-        <Suspense fallback={<LoadingState variant="page" message="Loading login..." />}>
-          <Login />
-        </Suspense>
-      </PublicRoute>
+      <Suspense fallback={<LoadingState variant="page" message="Loading login..." />}>
+        <Login />
+      </Suspense>
     ),
   },
   {
     path: '/forgot-password',
     element: (
-      <PublicRoute>
-        <Suspense fallback={<LoadingState variant="page" message="Loading password reset..." />}>
-          <div>Forgot Password Page</div>
-        </Suspense>
-      </PublicRoute>
+      <Suspense fallback={<LoadingState variant="page" message="Loading password reset..." />}>
+        <div>Forgot Password Page</div>
+      </Suspense>
     ),
   },
   {
     path: '/reset-password/:token',
     element: (
-      <PublicRoute>
-        <Suspense fallback={<LoadingState variant="page" message="Loading password reset..." />}>
-          <div>Reset Password Page</div>
-        </Suspense>
-      </PublicRoute>
+      <Suspense fallback={<LoadingState variant="page" message="Loading password reset..." />}>
+        <div>Reset Password Page</div>
+      </Suspense>
     ),
   },
   {
     path: '/about',
     element: (
-      <PublicRoute>
-        <Suspense fallback={<LoadingState message="Loading..." isLoading={true} />}>
-          <div>About Page</div>
-        </Suspense>
-      </PublicRoute>
+      <Suspense fallback={<LoadingState message="Loading..." isLoading={true} />}>
+        <div>About Page</div>
+      </Suspense>
     ),
   },
 
   // Protected routes with MainLayout
   {
     path: '/',
-    element: (
-      <ProtectedRoute>
-        <AppLayout />
-      </ProtectedRoute>
-    ),
+    element: <AppLayout />,
     children: [
       // Redirect root to dashboard
       {
@@ -381,11 +267,9 @@ export const router = createBrowserRouter([
   {
     path: '/dev-wiring',
     element: (
-      <PublicRoute>
-        <Suspense fallback={<LoadingState variant="page" message="Loading verification..." />}>
-          <WiringVerification />
-        </Suspense>
-      </PublicRoute>
+      <Suspense fallback={<LoadingState variant="page" message="Loading verification..." />}>
+        <WiringVerification />
+      </Suspense>
     ),
   },
 

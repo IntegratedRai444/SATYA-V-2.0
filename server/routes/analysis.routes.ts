@@ -6,6 +6,7 @@ import { validateRequest } from '../middleware/validate-request';
 import { pythonBridge } from '../services/python-http-bridge';
 import { logger } from '../config/logger';
 import { createAnalysisJob, updateAnalysisJobWithResults } from './history';
+import { AuthenticatedRequest } from '../types/auth';
 
 // Type definition for analysis result
 interface AnalysisResult {
@@ -346,7 +347,7 @@ const validateAnalysisRequest = [
 router.post(
   '/image',
   upload.single('image'),
-  async (req: Request, res: Response) => {
+  async (req: AuthenticatedRequest, res: Response) => {
     let job: { id: string; report_code: string } | null = null;
     
     try {
@@ -374,7 +375,7 @@ router.post(
       // Process the image using Python service
       const result = await (pythonBridge as unknown as { request: (options: unknown) => Promise<unknown> }).request({
         method: 'POST',
-        url: '/analysis/image',  // Fixed: Remove /api/v2 prefix
+        url: '/image',  // Fixed: Match Python route structure
         data: {
           image: req.file.buffer.toString('base64'),
           mimeType: req.file.mimetype,
@@ -426,7 +427,7 @@ router.post(
 router.post(
   '/audio',
   upload.single('audio'),
-  async (req: Request, res: Response) => {
+  async (req: AuthenticatedRequest, res: Response) => {
     let job: { id: string; report_code: string } | null = null;
     
     try {
@@ -454,9 +455,9 @@ router.post(
       // Process the audio using Python service
       const result = await (pythonBridge as unknown as { request: (options: unknown) => Promise<unknown> }).request({
         method: 'POST',
-        url: '/analysis/audio',
+        url: '/audio',  // Fixed: Match Python route structure
         data: {
-          audio: req.file.buffer.toString('base64'),
+          image: req.file.buffer.toString('base64'),  // Python expects 'image' field for all types
           mimeType: req.file.mimetype,
           jobId: job.id,
           filename: req.file.originalname,
@@ -506,7 +507,7 @@ router.post(
 router.post(
   '/batch',
   upload.array('files', 10), // Max 10 files
-  async (req: Request, res: Response) => {
+  async (req: AuthenticatedRequest, res: Response) => {
     try {
       if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
         return res.status(400).json({ error: 'No files uploaded' });
@@ -578,7 +579,7 @@ router.post(
   '/video',
   upload.single('video'),
   validateRequest,
-  async (req: Request, res: Response) => {
+  async (req: AuthenticatedRequest, res: Response) => {
     let job: { id: string; report_code: string } | null = null;
     
     try {
@@ -609,9 +610,9 @@ router.post(
       // Process the video using Python service
       const result = await (pythonBridge as unknown as { request: (options: unknown) => Promise<unknown> }).request({
         method: 'POST',
-        url: '/analysis/video',
+        url: '/video',  // Fixed: Match Python route structure
         data: {
-          video: req.file.buffer.toString('base64'),
+          image: req.file.buffer.toString('base64'),  // Python expects 'image' field for all types
           mimeType: req.file.mimetype,
           jobId: job.id,
           filename: req.file.originalname,
@@ -662,7 +663,7 @@ router.post(
   '/multimodal',
   upload.array('files', 5), // Max 5 files for multimodal
   validateRequest,
-  async (req: Request, res: Response) => {
+  async (req: AuthenticatedRequest, res: Response) => {
     let job: { id: string; report_code: string } | null = null;
     
     try {
@@ -752,7 +753,7 @@ router.post(
   '/webcam',
   upload.single('image'),
   validateRequest,
-  async (req: Request, res: Response) => {
+  async (req: AuthenticatedRequest, res: Response) => {
     let job: { id: string; report_code: string } | null = null;
     
     try {

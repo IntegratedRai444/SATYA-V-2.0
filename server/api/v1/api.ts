@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import { body } from 'express-validator';
 import { v4 as uuidv4 } from 'uuid';
 import { authenticate, requireRole } from '../../middleware/auth.middleware';
@@ -7,16 +7,19 @@ import { successResponse, errorResponse } from '../../utils/apiResponse';
 import { logger } from '../../config/logger';
 import { rateLimiter } from '../../middleware/rateLimiter';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ApiRequest = any;
+
 const router = Router();
 
 // Apply rate limiting to all API routes
-router.use(rateLimiter);
+router.use(rateLimiter('api'));
 
 // Apply authentication middleware to all API routes
-router.use(authenticate);
+router.use((req, res, next) => authenticate(req as ApiRequest, res, next));
 
 // Health check endpoint
-router.get('/health', asyncHandler(async (req, res) => {
+router.get('/health', asyncHandler(async (req: ApiRequest, res: Response) => {
   return successResponse(res, {
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -25,7 +28,7 @@ router.get('/health', asyncHandler(async (req, res) => {
 }));
 
 // User profile
-router.get('/user/profile', asyncHandler(async (req, res) => {
+router.get('/user/profile', asyncHandler(async (req: ApiRequest, res: Response) => {
   // In a real app, fetch user from database
   const user = {
     id: req.user?.id,
@@ -45,7 +48,7 @@ router.put(
     body('name').optional().isString().trim().notEmpty(),
   ],
   validateRequest,
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: ApiRequest, res: Response) => {
     // In a real app, update user in database
     const updates = req.body;
     
@@ -60,7 +63,7 @@ router.put(
 router.post(
   '/analyze',
   // Add file validation middleware
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: ApiRequest, res: Response) => {
     // In a real app, process the file upload
     const file = req.file;
     
@@ -90,7 +93,7 @@ router.post(
 );
 
 // Get job status
-router.get('/jobs/:jobId', asyncHandler(async (req, res) => {
+router.get('/jobs/:jobId', asyncHandler(async (req: ApiRequest, res: Response) => {
   const { jobId } = req.params;
   
   // In a real app, fetch job status from database/queue
@@ -108,8 +111,9 @@ router.get('/jobs/:jobId', asyncHandler(async (req, res) => {
 // Admin-only route example
 router.get(
   '/admin/stats',
-  requireRole(['admin']),
-  asyncHandler(async (req, res) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+  requireRole(['admin']) as any,
+  asyncHandler(async (req: ApiRequest, res: Response) => {
     // In a real app, fetch admin stats
     const stats = {
       totalUsers: 100,

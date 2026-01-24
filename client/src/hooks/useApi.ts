@@ -7,68 +7,80 @@ import { analysisService } from '../lib/api/services/analysisService';
 // Types
 export interface AnalysisResult {
   id: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
-  is_deepfake: boolean;
-  confidence: number;
-  model_info: Record<string, unknown>;
-  timestamp: string;
-  evidence_id: string;
-  proof: {
-    model_name: string;
-    model_version: string;
-    modality: string;
-    timestamp: string;
-    inference_duration: number;
-    frames_analyzed: number;
-    signature: string;
-    metadata: {
-      request_id: string;
-      user_id: string;
-      analysis_type: string;
-      content_size: number;
+  type: 'image' | 'video' | 'audio' | 'multimodal';
+  status: 'processing' | 'completed' | 'failed';
+  proof?: AnalysisProof;
+  result?: {
+    isAuthentic: boolean;
+    confidence: number;
+    details: Record<string, unknown>;
+    metrics: {
+      processingTime: number;
+      modelVersion: string;
     };
   };
-  file_name: string;
-  file_size: number;
-  modality: 'image' | 'audio' | 'video' | 'multimodal';
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+  fileName: string;
+  fileSize: number;
+  userId?: string;
+  requestId?: string;
+}
+
+export interface AnalysisProof {
+  model_name: string;
+  model_version: string;
+  modality: string;
+  timestamp: string;
+  inference_duration: number;
+  frames_analyzed: number;
+  signature: string;
+  metadata: {
+    request_id: string;
+    user_id: string;
+    analysis_type: string;
+    content_size: number;
+  };
 }
 
 export interface HistoryItem {
   id: string;
-  file_name: string;
+  fileName: string;
   modality: string;
-  created_at: string;
+  createdAt: string;
   confidence: number;
-  is_deepfake: boolean;
+  isAuthentic: boolean;
   status: string;
 }
 
 export interface DashboardStats {
-  total_analyses: number;
-  deepfake_detected: number;
-  real_detected: number;
-  avg_confidence: number;
-  last_7_days: Array<{
+  totalAnalyses: number;
+  deepfakeDetected: number;
+  realDetected: number;
+  avgConfidence: number;
+  last7Days: Array<{
     date: string;
     count: number;
+    deepfakes: number;
   }>;
 }
 
 export interface UserAnalytics {
-  usage_by_type: {
+  usageByType: {
     image: number;
     audio: number;
     video: number;
     multimodal: number;
     webcam: number;
   };
-  recent_activity: Array<{
+  recentActivity: Array<{
     id: string;
     modality: string;
-    created_at: string;
+    createdAt: string;
     confidence: number;
-    is_deepfake: boolean;
-    file_name: string;
+    isAuthentic: boolean;
+    fileName: string;
   }>;
 }
 
@@ -220,11 +232,11 @@ export const useDashboardStats = () => {
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchInterval: 30 * 1000, // 30 seconds
     placeholderData: {
-      total_analyses: 0,
-      deepfake_detected: 0,
-      real_detected: 0,
-      avg_confidence: 0,
-      last_7_days: []
+      totalAnalyses: 0,
+      deepfakeDetected: 0,
+      realDetected: 0,
+      avgConfidence: 0,
+      last7Days: []
     }
   });
 };

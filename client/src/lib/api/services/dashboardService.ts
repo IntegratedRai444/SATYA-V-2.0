@@ -28,19 +28,19 @@ export interface ApiDashboardStats {
 
 class DashboardService extends BaseService {
   constructor() {
-    super(''); // Use empty base path since we're using direct routes
+    super('/api/v2'); // Use /api/v2 base path for consistency
   }
 
   async getDashboardStats(): Promise<ApiDashboardStats> {
     return this.get<ApiDashboardStats>('/dashboard/stats');
   }
 
-  async getUserAnalytics(): Promise<any> {
-    return this.get<any>('/analytics/user');
+  async getUserAnalytics(): Promise<unknown> {
+    return this.get<unknown>('/dashboard/analytics');
   }
 
-  async getAnalysisHistory(params?: { limit?: number }): Promise<any> {
-    return this.get<any>('/analytics/history', params);
+  async getAnalysisHistory(params?: { limit?: number }): Promise<unknown> {
+    return this.get<unknown>('/history', params);
   }
 }
 

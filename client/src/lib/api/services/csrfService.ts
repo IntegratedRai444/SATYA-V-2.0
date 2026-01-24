@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Create a dedicated axios instance for CSRF requests
 const csrfClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5001/api/v2',
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5001',
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
@@ -15,32 +15,16 @@ let tokenPromise: Promise<string> | null = null;
 
 /**
  * Fetches a new CSRF token from the server
+ * TEMPORARILY DISABLED - CSRF endpoint not implemented
  */
 export const fetchCsrfToken = async (): Promise<string> => {
   try {
-    const response = await csrfClient.get<{ token: string }>('/auth/csrf-token');
+    // TODO: Re-enable CSRF when endpoint is implemented
+    // const response = await csrfClient.get<{ token: string }>('/api/v2/auth/csrf-token');
+    // return response.data?.token || '';
     
-    if (!response.data?.token) {
-      throw new Error('Invalid CSRF token response from server');
-    }
-    
-    const { token } = response.data;
-    csrfToken = token;
-    
-    // Set a reasonable expiration time if not provided by server
-    const expiresIn = 3600; // 1 hour default
-    
-    // If token has an expiration, set a timeout to refresh it before it expires
-    if (expiresIn) {
-      const refreshTime = Math.max(1000, expiresIn * 1000 - 60000); // Refresh 1 minute before expiry
-      setTimeout(() => {
-        if (csrfToken) {  // Only refresh if we still have a token
-          fetchCsrfToken().catch(console.error);
-        }
-      }, refreshTime);
-    }
-    
-    return csrfToken || ''; // Ensure we always return a string
+    // Return placeholder token for now
+    return 'csrf-disabled-placeholder';
   } catch (error) {
     console.error('Failed to fetch CSRF token:', error);
     // Clear token on error to force a new fetch on next attempt

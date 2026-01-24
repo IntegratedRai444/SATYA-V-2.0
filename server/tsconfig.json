@@ -7,7 +7,7 @@
     "resolveJsonModule": true,
     "allowJs": true,
     "outDir": "./dist",
-    "rootDir": "..",
+    "rootDir": "./",
     "strict": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
@@ -32,6 +32,9 @@
     "**/*.spec.ts",
     "**/__tests__/**/*",
     "**/__mocks__/**",
-    "test-connection.js"
+    "test-connection.js",
+    "scripts/complete-satyaai.ts",
+    "tests/run-validation.ts",
+    "tests/**"
   ]
 }

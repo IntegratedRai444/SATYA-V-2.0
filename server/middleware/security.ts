@@ -1,12 +1,10 @@
 import type { Request, Response, NextFunction, RequestHandler, ErrorRequestHandler } from 'express';
-import { createHmac, timingSafeEqual, randomBytes } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { logger } from '../config/logger';
 import { ApiKeyService } from '../services/apiKeyService';
 import { AuthUser } from './auth';
-import { validationResult } from 'express-validator';
 import { rateLimit } from 'express-rate-limit';
-import helmet, { contentSecurityPolicy, crossOriginEmbedderPolicy, crossOriginOpenerPolicy, crossOriginResourcePolicy, dnsPrefetchControl, frameguard, hidePoweredBy, hsts, ieNoOpen, noSniff, originAgentCluster, referrerPolicy, xssFilter } from 'helmet';
-// @ts-ignore - Using custom type declaration from server/types
+import helmet, { contentSecurityPolicy, crossOriginEmbedderPolicy, crossOriginOpenerPolicy, crossOriginResourcePolicy, dnsPrefetchControl, hsts, ieNoOpen, noSniff, originAgentCluster, referrerPolicy, xssFilter } from 'helmet';
 import xss from 'xss-clean';
 import hpp from 'hpp';
 import mongoSanitize from 'express-mongo-sanitize';
@@ -232,9 +230,8 @@ interface SecurityHeadersOptions {
 export const securityHeaders = ({
   enableCSP = true,
   enableHSTS = true,
+  // Security headers configuration
   enableXSS = true,
-  enableFrameOptions = true,
-  enableNoSniff = true,
   cspDirectives = {
     defaultSrc: ["'self'"],
     scriptSrc: ["'self'"],
@@ -245,10 +242,12 @@ export const securityHeaders = ({
   },
   maxRequestBodySize = '10mb'
 }: SecurityHeadersOptions = {}): { middleware: RequestHandler[], errorHandlers: ErrorRequestHandler[] } => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const middleware: RequestHandler[] = [
     // Parse JSON bodies with size limit
     express.json({
       limit: maxRequestBodySize,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       verify: (req: any, res: any, buf: Buffer) => {
         req.rawBody = buf.toString();
       },
@@ -265,6 +264,7 @@ export const securityHeaders = ({
     helmet(),
     enableCSP ? contentSecurityPolicy({
       useDefaults: true,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       directives: cspDirectives as any,
     }) : (req, res, next) => next(),
     crossOriginEmbedderPolicy(),
@@ -309,7 +309,8 @@ export const securityHeaders = ({
     }),
 
     // Add security response headers
-    (req: Request, res: Response, next: NextFunction) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (req: any, res: Response, next: NextFunction) => {
       // Add request ID
       req.id = req.get('X-Request-ID') || uuidv4();
       res.setHeader('X-Request-ID', req.id);
@@ -334,14 +335,17 @@ export const securityHeaders = ({
         success: false,
         code: 'TOO_MANY_REQUESTS',
         message: 'Too many requests, please try again later',
-        requestId: (req: Request) => req.id,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        requestId: (req: any) => req.id,
       },
     }),
   ];
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const errorHandlers: ErrorRequestHandler[] = [
     // Request validation error handler
-    (err: any, req: Request, res: Response, next: NextFunction) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (err: any, req: any, res: Response, next: NextFunction) => {
       if (err instanceof SyntaxError && 'body' in err) {
         return res.status(400).json({
           success: false,

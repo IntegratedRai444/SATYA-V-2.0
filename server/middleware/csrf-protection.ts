@@ -1,4 +1,4 @@
-import type { Request, Response, NextFunction, RequestHandler } from 'express';
+import type { RequestHandler } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../config/logger';
 import { getSecurityConfig } from '../config/security';
@@ -9,7 +9,7 @@ const securityConfig = getSecurityConfig();
  * CSRF Protection Middleware
  * Implements the double submit cookie pattern for CSRF protection
  */
-export const csrfProtection = (req: Request, res: Response, next: NextFunction) => {
+export const csrfProtection: RequestHandler = (req, res, next) => {
   // Skip CSRF check for safe methods
   if (['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(req.method)) {
     return next();
@@ -49,7 +49,7 @@ export const csrfProtection = (req: Request, res: Response, next: NextFunction) 
 /**
  * Middleware to generate and set CSRF token
  */
-export const csrfToken = (req: Request, res: Response, next: NextFunction) => {
+export const csrfToken: RequestHandler = (req, res, next) => {
   if (!securityConfig.csrf.enabled) {
     return next();
   }
@@ -86,7 +86,7 @@ export const csrfToken = (req: Request, res: Response, next: NextFunction) => {
 /**
  * Middleware to verify CSRF token for API requests
  */
-export const verifyCsrfToken = (req: Request, res: Response, next: NextFunction) => {
+export const verifyCsrfToken: RequestHandler = (req, res, next) => {
   // Skip CSRF check for safe methods
   if (['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(req.method)) {
     return next();

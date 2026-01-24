@@ -235,9 +235,9 @@ export const defaultSecurityConfig: SecurityConfig = {
   // CORS Configuration
   cors: {
     enabled: true,
-    allowedOrigins: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000'],
+    allowedOrigins: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:5173'],
     allowedMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-API-Version'],
     exposedHeaders: ['X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset'],
     credentials: true,
     maxAge: 600 // 10 minutes

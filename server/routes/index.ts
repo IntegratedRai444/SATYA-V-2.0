@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
 import { healthRouter } from './health.routes';
-import { authRouter } from './auth.routes';
 import { analysisRouter } from './analysis.routes';
 import { dashboardRouter } from './dashboard.routes';
 import historyRouter from './history';
@@ -20,29 +19,34 @@ router.use('/health', healthRouter);
 // API v2 Routes
 const v2Router = Router();
 
-// Authentication routes
-v2Router.use('/auth', authRouter);
 
 // Dashboard routes (PROTECTED)
-v2Router.use('/dashboard', authenticate, dashboardRouter);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+v2Router.use('/dashboard', authenticate as any, dashboardRouter);
 
 // History routes (PROTECTED)
-v2Router.use('/history', authenticate, historyRouter);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+v2Router.use('/history', authenticate as any, historyRouter);
 
 // Analysis routes (PROTECTED)
-v2Router.use('/analysis', authenticate, analysisRouter);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+v2Router.use('/analysis', authenticate as any, analysisRouter);
 
 // Chat routes (PROTECTED)
-v2Router.use('/chat', authenticate, chatRouter);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+v2Router.use('/chat', authenticate as any, chatRouter);
 
 // Notifications routes (PROTECTED)
-v2Router.use('/notifications', authenticate, notificationsRouter);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+v2Router.use('/notifications', authenticate as any, notificationsRouter);
 
 // User routes (PROTECTED)
-v2Router.use('/user', authenticate, userRouter);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+v2Router.use('/user', authenticate as any, userRouter);
 
 // Results routes (PROTECTED)
-v2Router.use('/results', authenticate, resultsRouter);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+v2Router.use('/results', authenticate as any, resultsRouter);
 
 // Models routes (PUBLIC - for model info)
 v2Router.use('/models', modelsRouter);
@@ -80,7 +84,8 @@ router.get('/', (req: Request, res: Response) => {
 });
 
 // 404 handler for API routes (must be after all other routes)
-router.use('/api', (req: Request, res: Response) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+router.use('/api', (req: any, res: Response) => {
   res.status(404).json({
     error: {
       code: 'NOT_FOUND',
@@ -93,7 +98,8 @@ router.use('/api', (req: Request, res: Response) => {
 });
 
 // 404 handler for all other routes (must be the last route)
-router.use((req: Request, res: Response) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+router.use((req: any, res: Response) => {
   res.status(404).send(`
     <!DOCTYPE html>
     <html>

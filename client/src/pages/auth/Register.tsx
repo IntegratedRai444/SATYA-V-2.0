@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/SupabaseAuthProvider';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,7 +7,11 @@ import { Eye, EyeOff, Shield, AlertTriangle, Loader2, UserPlus, User, Lock, Mail
 
 export default function Register() {
   const navigate = useNavigate();
-  const { register, error, isLoading, clearError, isAuthenticated } = useAuth();
+  // TODO: Re-implement auth after reset
+  const error = null;
+  const isLoading = false;
+  const clearError = () => {};
+  const isAuthenticated = false;
 
   useEffect(() => {
     console.log('Register component mounted');
@@ -101,22 +104,9 @@ export default function Register() {
         passwordLength: formData.password.length
       });
 
-      if (register) {
-        const result = await register({
-          username: formData.name,
-          email: formData.email,
-          password: formData.password,
-          fullName: formData.name
-        });
-
-        console.log('Registration result:', result);
-
-        if (result.user) {
-          navigate('/dashboard');
-        } else {
-          throw new Error('Registration failed - no user returned');
-        }
-      }
+      // TODO: Re-implement register after reset
+      console.log('Registration disabled during auth reset');
+      navigate('/dashboard');
     } catch (err: unknown) {
       console.error('Registration error details:', {
         message: err instanceof Error ? err.message : 'Unknown error',
@@ -386,14 +376,14 @@ export default function Register() {
                   <div className="text-sm text-gray-400">
                     Already have an account?{' '}
                     <a
-                      href="/login"
+                      href="/dashboard"
                       className="font-medium text-cyan-400 hover:text-cyan-300 transition-colors"
                       onClick={(e) => {
                         e.preventDefault();
-                        navigate('/login');
+                        navigate('/dashboard');
                       }}
                     >
-                      Login
+                      Go to Dashboard
                     </a>
                   </div>
                 </div>

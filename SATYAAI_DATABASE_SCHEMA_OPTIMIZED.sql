@@ -755,6 +755,107 @@ FROM public.tasks
 WHERE type = 'analysis';
 
 -- ============================================================
+-- PERFORMANCE VIEWS
+-- ============================================================
+
+-- Drop existing views first to avoid column renaming conflicts
+DROP VIEW IF EXISTS public.analysis_jobs_view;
+DROP VIEW IF EXISTS public.scans_view;
+DROP VIEW IF EXISTS public.user_analytics_view;
+
+-- Analysis Jobs View - Optimized for dashboard and history queries
+CREATE VIEW public.analysis_jobs_view AS
+SELECT 
+  t.id,
+  t.user_id,
+  t.type as task_type,
+  t.status as task_status,
+  t.file_name,
+  t.file_type,
+  t.file_size,
+  t.report_code,
+  t.result,
+  t.created_at,
+  t.updated_at,
+  t.completed_at,
+  t.started_at,
+  t.progress,
+  -- Extract common result fields for easier access
+  (t.result->>'confidence')::float as confidence,
+  (t.result->>'is_deepfake')::boolean as is_deepfake,
+  t.result->>'model_name' as model_name,
+  t.result->>'model_version' as model_version,
+  t.result->>'summary' as summary,
+  -- User information for joins
+  u.username,
+  u.email,
+  u.full_name
+FROM public.tasks t
+LEFT JOIN public.users u ON t.user_id = u.id
+WHERE t.type = 'analysis'
+  AND t.deleted_at IS NULL;
+
+-- Scans View - Optimized for analytics and reporting
+CREATE VIEW public.scans_view AS
+SELECT 
+  t.id,
+  t.user_id,
+  t.file_type,
+  t.status as task_status,
+  t.created_at,
+  t.completed_at,
+  -- Performance metrics
+  EXTRACT(EPOCH FROM (t.completed_at - t.started_at)) as processing_time_seconds,
+  -- Result analysis
+  CASE 
+    WHEN (t.result->>'is_deepfake')::boolean THEN 'MANIPULATED MEDIA'
+    WHEN t.status = 'completed' THEN 'AUTHENTIC MEDIA'
+    ELSE 'PROCESSING'
+  END as authenticity,
+  COALESCE((t.result->>'confidence')::float, 0.0) as confidence_score,
+  -- Time-based grouping
+  DATE_TRUNC('day', t.created_at) as analysis_date,
+  DATE_TRUNC('week', t.created_at) as analysis_week,
+  DATE_TRUNC('month', t.created_at) as analysis_month,
+  -- User info
+  u.username,
+  u.email
+FROM public.tasks t
+LEFT JOIN public.users u ON t.user_id = u.id
+WHERE t.type = 'analysis'
+  AND t.deleted_at IS NULL
+  AND t.status IN ('completed', 'failed');
+
+-- User Analytics View - Comprehensive user statistics
+CREATE VIEW public.user_analytics_view AS
+SELECT 
+  u.id as user_id,
+  u.username,
+  u.email,
+  u.created_at as user_created_at,
+  u.last_login,
+  -- Analysis counts
+  COUNT(CASE WHEN t.type = 'analysis' THEN 1 END) as total_analyses,
+  COUNT(CASE WHEN t.type = 'analysis' AND t.status = 'completed' THEN 1 END) as completed_analyses,
+  COUNT(CASE WHEN t.type = 'analysis' AND t.status = 'pending' THEN 1 END) as pending_analyses,
+  COUNT(CASE WHEN t.type = 'analysis' AND t.status = 'failed' THEN 1 END) as failed_analyses,
+  -- Deepfake detection stats
+  COUNT(CASE WHEN (t.result->>'is_deepfake')::boolean = true THEN 1 END) as deepfakes_detected,
+  COUNT(CASE WHEN (t.result->>'is_deepfake')::boolean = false THEN 1 END) as authentic_media,
+  -- Average confidence
+  AVG(CASE WHEN (t.result->>'confidence')::float > 0 THEN (t.result->>'confidence')::float END) as avg_confidence,
+  -- File type breakdown
+  COUNT(CASE WHEN t.file_type LIKE 'image%' THEN 1 END) as image_analyses,
+  COUNT(CASE WHEN t.file_type LIKE 'video%' THEN 1 END) as video_analyses,
+  COUNT(CASE WHEN t.file_type LIKE 'audio%' THEN 1 END) as audio_analyses,
+  -- Time-based activity
+  MAX(t.created_at) as last_analysis,
+  DATE_TRUNC('day', MAX(t.created_at)) as last_analysis_date
+FROM public.users u
+LEFT JOIN public.tasks t ON u.id = t.user_id AND t.type = 'analysis' AND t.deleted_at IS NULL
+GROUP BY u.id, u.username, u.email, u.created_at, u.last_login;
+
+-- ============================================================
 -- FINAL COMMENT
 -- ============================================================
 COMMENT ON SCHEMA public IS 'SatyaAI Schema v2.6 - Tasks as Single Source of Truth';
