@@ -4,17 +4,14 @@
  * message queuing, and automatic reconnection
  */
 
-import { supabase } from '../lib/supabaseSingleton';
+import { getAccessToken } from '../lib/auth/getAccessToken';
 
 // Get JWT token for WebSocket authentication
 const getAuthToken = async (): Promise<string | null> => {
   try {
-    const { data: { session }, error } = await supabase.auth.getSession();
-    if (error) {
-      console.error('Failed to get auth session for WebSocket:', error);
-      return null;
-    }
-    return session?.access_token || null;
+    const token = await getAccessToken();
+    console.log("WebSocket auth token:", token ? "Bearer [REDACTED]" : "null");
+    return token;
   } catch (error) {
     console.error('Error getting auth token for WebSocket:', error);
     return null;
@@ -152,7 +149,7 @@ class WebSocketService {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       // Use backend server instead of frontend host
       const wsHost = import.meta.env.VITE_WS_URL?.replace(/^ws:\/\//, '')?.replace(/^wss:\/\//, '') || 'localhost:5001';
-      return `${protocol}//${wsHost}/ws?token=${encodeURIComponent(token)}`;
+      return `${protocol}//${wsHost}/api/v2/dashboard/ws?token=${encodeURIComponent(token)}`;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       logger.error('Failed to construct WebSocket URL: ' + errorMessage);

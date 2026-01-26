@@ -11,19 +11,20 @@ import logger from './logger';
 // ============================================================================
 
 const envSchema = z.object({
-  // API Configuration
-  VITE_API_URL: z.string().url().default('http://localhost:5001'),
-  VITE_API_TIMEOUT: z.coerce.number().default(300000), // 5 minutes
-  
-  // WebSocket Configuration
+  // Legacy support
+  VITE_API_URL: z.string().url().optional(),
+  VITE_AUTH_API_URL: z.string().url().optional(),
+  VITE_ANALYSIS_API_URL: z.string().url().optional(),
   VITE_WS_URL: z.string().url().optional(),
+  VITE_SUPABASE_URL: z.string().url().optional(),
+  VITE_SUPABASE_ANON_KEY: z.string().optional(),
   VITE_WS_RECONNECT_ATTEMPTS: z.coerce.number().default(5),
   VITE_WS_RECONNECT_DELAY: z.coerce.number().default(3000),
   
   // Feature Flags
   VITE_ENABLE_ANALYTICS: z.coerce.boolean().default(true),
   VITE_ENABLE_NOTIFICATIONS: z.coerce.boolean().default(true),
-  VITE_ENABLE_WEBCAM: z.coerce.boolean().default(true),
+  VITE_ENABLE_WEBCAM: z.coerce.boolean().default(false), // DISABLED
   VITE_ENABLE_BATCH_UPLOAD: z.coerce.boolean().default(false), // DISABLED
   
   // Logging Configuration
@@ -34,6 +35,7 @@ const envSchema = z.object({
   // Upload Configuration
   VITE_MAX_FILE_SIZE: z.coerce.number().default(10485760), // 10MB
   VITE_MAX_BATCH_SIZE: z.coerce.number().default(10),
+  VITE_API_TIMEOUT: z.coerce.number().default(300000), // 5 minutes
   VITE_ALLOWED_IMAGE_TYPES: z.string().default('image/jpeg,image/png,image/webp'),
   VITE_ALLOWED_VIDEO_TYPES: z.string().default('video/mp4,video/webm'),
   VITE_ALLOWED_AUDIO_TYPES: z.string().default('audio/mp3,audio/wav,audio/ogg'),
@@ -116,7 +118,7 @@ class ConfigManager {
       
       if (!result.success) {
         this.validationErrors = result.error.issues.map(
-          (err: any) => `${err.path?.join('.') || 'unknown'}: ${err.message}`
+          (err) => `${err.path?.join('.') || 'unknown'}: ${err.message}`
         );
         logger.warn('Configuration validation failed', { errors: this.validationErrors });
         
@@ -145,11 +147,11 @@ class ConfigManager {
    */
   private buildAppConfig(envConfig: EnvConfig): AppConfig {
     const wsUrl = envConfig.VITE_WS_URL || 
-      envConfig.VITE_API_URL.replace(/^http/, 'ws').replace(/:\d+/, ':5001');
+      (envConfig.VITE_API_URL ? envConfig.VITE_API_URL.replace(/^http/, 'ws').replace(/:\d+/, ':5001') : 'ws://localhost:5001');
 
     return {
       api: {
-        baseUrl: envConfig.VITE_API_URL,
+        baseUrl: envConfig.VITE_API_URL || 'http://localhost:5001',
         timeout: envConfig.VITE_API_TIMEOUT,
         retryAttempts: 3,
       },

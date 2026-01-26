@@ -7,7 +7,7 @@ import axios, {
   AxiosPromise
 } from 'axios';
 import { v4 as uuidv4 } from 'uuid';
-// Auth token handling moved to getAuthToken method
+import { getAccessToken } from "../auth/getAccessToken"
 
 type RetryConfig = {
   retries?: number;
@@ -56,14 +56,18 @@ interface PendingRequest {
 // Removed unused QueuedRequest type
 
 class EnhancedApiClient {
-  private handleRequest = (config: InternalAxiosRequestConfig): InternalAxiosRequestConfig => {
+  private handleRequest = async (config: InternalAxiosRequestConfig): Promise<InternalAxiosRequestConfig> => {
     const enhancedConfig = config as EnhancedRequestConfig;
     
     // Add auth token if available and not skipped
     if (!enhancedConfig.skipAuth) {
-      const token = this.getAuthToken();
+      const token = await this.getAuthToken();
+      console.log("Enhanced client auth token:", token ? "Bearer [REDACTED]" : "null");
+      
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
+      } else {
+        console.error("User session missing - enhanced client requests will be unauthenticated");
       }
     }
 
@@ -212,13 +216,8 @@ class EnhancedApiClient {
     }
   }
 
-  private getAuthToken(): string | null {
-    if (typeof document === 'undefined') return null;
-    
-    return document.cookie
-      .split('; ')
-      .find(row => row.startsWith('satyaai_auth_token='))
-      ?.split('=')[1] || null;
+  private async getAuthToken(): Promise<string | null> {
+    return await getAccessToken();
   }
 
   private refreshToken = async (): Promise<string | null> => {

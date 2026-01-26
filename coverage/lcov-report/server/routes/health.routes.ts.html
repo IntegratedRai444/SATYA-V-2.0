@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/9</span>
+                <span class='fraction'>0/7</span>
             </div>
         
             
@@ -37,16 +37,16 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/2</span>
+                <span class='fraction'>0/0</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/9</span>
+                <span class='fraction'>0/7</span>
             </div>
         
             
@@ -140,24 +140,7 @@
 <a name='L75'></a><a href='#L75'>75</a>
 <a name='L76'></a><a href='#L76'>76</a>
 <a name='L77'></a><a href='#L77'>77</a>
-<a name='L78'></a><a href='#L78'>78</a>
-<a name='L79'></a><a href='#L79'>79</a>
-<a name='L80'></a><a href='#L80'>80</a>
-<a name='L81'></a><a href='#L81'>81</a>
-<a name='L82'></a><a href='#L82'>82</a>
-<a name='L83'></a><a href='#L83'>83</a>
-<a name='L84'></a><a href='#L84'>84</a>
-<a name='L85'></a><a href='#L85'>85</a>
-<a name='L86'></a><a href='#L86'>86</a>
-<a name='L87'></a><a href='#L87'>87</a>
-<a name='L88'></a><a href='#L88'>88</a>
-<a name='L89'></a><a href='#L89'>89</a>
-<a name='L90'></a><a href='#L90'>90</a>
-<a name='L91'></a><a href='#L91'>91</a>
-<a name='L92'></a><a href='#L92'>92</a>
-<a name='L93'></a><a href='#L93'>93</a>
-<a name='L94'></a><a href='#L94'>94</a>
-<a name='L95'></a><a href='#L95'>95</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<a name='L78'></a><a href='#L78'>78</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -211,20 +194,6 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -245,14 +214,11 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js"><span class="cstat-no" title="statement not covered" >import { Router } from 'express';</span>
-<span class="cstat-no" title="statement not covered" >import { healthCheck } from '../controllers/health.controller';</span>
+<span class="cstat-no" title="statement not covered" >import { healthController } from '../controllers/health.controller';</span>
 &nbsp;
 export const <span class="cstat-no" title="statement not covered" >healthRouter = Router();</span>
 &nbsp;
@@ -291,7 +257,7 @@ export const <span class="cstat-no" title="statement not covered" >healthRouter 
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-<span class="cstat-no" title="statement not covered" >healthRouter.get('/', healthCheck);</span>
+<span class="cstat-no" title="statement not covered" >healthRouter.get('/', healthController.healthCheck);</span>
 &nbsp;
 /**
  * @swagger
@@ -302,25 +268,10 @@ export const <span class="cstat-no" title="statement not covered" >healthRouter 
  *     responses:
  *       200:
  *         description: Service is ready
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: 'ready'
  *       503:
- *         description: Service Unavailable
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
+ *         description: Service is not ready
  */
-<span class="cstat-no" title="statement not covered" >healthRouter.get('/ready', <span class="fstat-no" title="function not covered" >(r</span>eq, res) =&gt; {</span>
-  // Add readiness checks here (database connection, external services, etc.)
-<span class="cstat-no" title="statement not covered" >  res.status(200).json({ status: 'ready' });</span>
-});
+<span class="cstat-no" title="statement not covered" >healthRouter.get('/ready', healthController.readinessCheck);</span>
 &nbsp;
 /**
  * @swagger
@@ -340,9 +291,7 @@ export const <span class="cstat-no" title="statement not covered" >healthRouter 
  *                   type: string
  *                   example: 'live'
  */
-<span class="cstat-no" title="statement not covered" >healthRouter.get('/live', <span class="fstat-no" title="function not covered" >(r</span>eq, res) =&gt; {</span>
-<span class="cstat-no" title="statement not covered" >  res.status(200).json({ status: 'live' });</span>
-});
+<span class="cstat-no" title="statement not covered" >healthRouter.get('/live', healthController.livenessCheck);</span>
 &nbsp;
 <span class="cstat-no" title="statement not covered" >export default healthRouter;</span>
 &nbsp;</pre></td></tr></table></pre>
@@ -352,7 +301,7 @@ export const <span class="cstat-no" title="statement not covered" >healthRouter 
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-01-01T09:38:09.763Z
+                at 2026-01-26T16:11:14.637Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

@@ -77,20 +77,22 @@ class ApiError extends Error {
   }
 }
 
+import { getAccessToken } from "@/lib/auth/getAccessToken"
+
 // Function to set the auth service reference (kept for backward compatibility)
 export const setAuthService = () => {
   // No-op: kept for backward compatibility
 };
 
-// Auth service placeholder - Cookie-based auth only
+// Auth service using Supabase session
 const authService = {
-  getToken: (): string | null => {
-    // Force cookie-based authentication only
-    return null;
+  getToken: async (): Promise<string | null> => {
+    return await getAccessToken();
   },
   refreshToken: async (): Promise<{ access_token: string }> => {
-    // This will be replaced with actual refresh token logic
-    return { access_token: '' };
+    // Supabase handles token refresh automatically
+    const token = await getAccessToken();
+    return { access_token: token || '' };
   }
 };
 
@@ -285,11 +287,16 @@ class ApiClient {
     const executeRequest = async (): Promise<T> => {
       try {
         // Add auth token if available
-        let token = authService.getToken();
+        let token = await authService.getToken();
         
         // If token is expired, try to refresh it
         if (!token && this.isRefreshing) {
           token = await this.handleTokenRefresh();
+        }
+
+        console.log("Auth token attached:", token ? "Bearer [REDACTED]" : "null");
+        if (!token) {
+          console.error("User session missing - API calls will be unauthenticated");
         }
 
         const headers: Record<string, string> = {

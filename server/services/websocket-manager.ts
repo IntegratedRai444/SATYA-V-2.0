@@ -1,20 +1,10 @@
 import { WebSocketServer, WebSocket, RawData } from 'ws';
 import { Server, IncomingMessage } from 'http';
-import { verify, JwtPayload } from 'jsonwebtoken';
 import { RateLimiterMemory } from 'rate-limiter-flexible';
 import { logger } from '../config/logger';
 import { z } from 'zod';
 import { EventEmitter } from 'events';
-import { JWT_SECRET } from '../config/constants';
-
-// Define JWT Payload interface
-interface JwtUserPayload extends JwtPayload {
-  userId: string;
-  username: string;
-  sessionId: string;
-  iat?: number;
-  exp?: number;
-}
+import { supabase } from '../config/supabase';
 
 // Rate limiting configurations
 const rateLimitRules = {
@@ -109,11 +99,20 @@ function extractTokenFromQuery(url: string): string | null {
   }
 }
 
-// JWT Auth Service
-const jwtAuthService = {
-  verifyToken: (token: string) => {
+// Supabase Auth Service
+const supabaseAuthService = {
+  verifyToken: async (token: string) => {
     try {
-      return verify(token, JWT_SECRET) as JwtUserPayload;
+      const { data: { user }, error } = await supabase.auth.getUser(token);
+      if (error || !user) {
+        return null;
+      }
+      return {
+        userId: user.id,
+        username: user.email || '',
+        email: user.email,
+        sessionId: user.id // Use user ID as session identifier
+      };
     } catch (e) {
       return null;
     }
@@ -536,7 +535,7 @@ export class WebSocketManager {
     }
 
     try {
-      const decoded = await jwtAuthService.verifyToken(token);
+      const decoded = await supabaseAuthService.verifyToken(token);
       if (!decoded || !decoded.userId) {
         throw new Error('Invalid token payload');
       }

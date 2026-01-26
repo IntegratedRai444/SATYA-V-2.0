@@ -1,6 +1,7 @@
 import axios, { AxiosInstance, AxiosResponse, InternalAxiosRequestConfig, CancelToken } from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { metrics, trackError as logError } from '@/lib/services/metrics';
+import { getAccessToken } from "../auth/getAccessToken";
 
 // Export types needed by services
 export interface ApiResponse<T = unknown> {
@@ -326,7 +327,7 @@ setInterval(processBatch, batchInterval);
 
 // Request interceptor for batching
 apiClient.interceptors.request.use(
-  (config: RequestConfig): InternalAxiosRequestConfig => {
+  async (config: RequestConfig): Promise<InternalAxiosRequestConfig> => {
     // Skip batching for now to simplify type issues
     // Skip deduplication for non-idempotent methods
     const isIdempotent = ['GET', 'HEAD', 'OPTIONS'].includes(config.method?.toUpperCase() || '');
@@ -346,10 +347,14 @@ apiClient.interceptors.request.use(
     }
     
     // Add auth token if available
-    const token = localStorage.getItem('access_token');
+    const token = await getAccessToken();
+    console.log("Enhanced client auth token:", token ? "Bearer [REDACTED]" : "null");
+    
     if (token) {
       config.headers = config.headers || {};
       config.headers.Authorization = `Bearer ${token}`;
+    } else {
+      console.error("User session missing - enhanced client requests will be unauthenticated");
     }
     
     // Generate request ID and track start time

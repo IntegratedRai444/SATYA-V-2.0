@@ -72,7 +72,6 @@ export interface UserAnalytics {
     audio: number;
     video: number;
     multimodal: number;
-    webcam: number;
   };
   recentActivity: Array<{
     id: string;
@@ -90,8 +89,8 @@ export const useImageAnalysis = () => {
   
   const analyzeImage = useMutation({
     mutationFn: async ({ file, options }: { file: File; options?: Record<string, unknown> }) => {
-      const response = await analysisService.analyzeImage(file, options);
-      return response;
+      const jobId = await analysisService.analyzeImage(file, options);
+      return { jobId }; // Return object with jobId
     },
     onSuccess: () => {
       // Invalidate history and stats queries
@@ -113,8 +112,8 @@ export const useAudioAnalysis = () => {
   
   const analyzeAudio = useMutation({
     mutationFn: async ({ file, options }: { file: File; options?: Record<string, unknown> }) => {
-      const response = await analysisService.analyzeAudio(file, options);
-      return response;
+      const jobId = await analysisService.analyzeAudio(file, options);
+      return { jobId }; // Return object with jobId
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['analysis-history'] });
@@ -135,8 +134,8 @@ export const useVideoAnalysis = () => {
   
   const analyzeVideo = useMutation({
     mutationFn: async ({ file, options }: { file: File; options?: Record<string, unknown> }) => {
-      const response = await analysisService.analyzeVideo(file, options);
-      return response;
+      const jobId = await analysisService.analyzeVideo(file, options);
+      return { jobId }; // Return object with jobId
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['analysis-history'] });
@@ -162,13 +161,8 @@ export const useMultimodalAnalysis = () => {
         formData.append(`files`, file);
       });
       
-      const response = await apiClient.post('/analysis/multimodal', {
-        data: formData,
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      });
-      return response;
+      const jobId = await analysisService.analyzeMultimodal(files[0], { metadata: { files } });
+      return { jobId }; // Return object with jobId
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['analysis-history'] });

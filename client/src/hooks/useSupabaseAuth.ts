@@ -1,18 +1,20 @@
 import { useState, useEffect } from 'react';
-import { User } from '@supabase/supabase-js';
+import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabaseSingleton';
 
 export interface UseSupabaseAuthReturn {
   user: User | null;
+  session: Session | null;
   loading: boolean;
   error: string | null;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string, metadata?: Record<string, unknown>) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
 export const useSupabaseAuth = (): UseSupabaseAuthReturn => {
   const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -20,6 +22,7 @@ export const useSupabaseAuth = (): UseSupabaseAuthReturn => {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
+      setSession(session ?? null);
       setLoading(false);
     });
 
@@ -27,6 +30,7 @@ export const useSupabaseAuth = (): UseSupabaseAuthReturn => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         setUser(session?.user ?? null);
+        setSession(session ?? null);
         setLoading(false);
       }
     );
@@ -47,11 +51,17 @@ export const useSupabaseAuth = (): UseSupabaseAuthReturn => {
     }
   };
 
-  const signUp = async (email: string, password: string) => {
+  const signUp = async (email: string, password: string, metadata?: Record<string, unknown>) => {
     try {
       setError(null);
       setLoading(true);
-      const { error } = await supabase.auth.signUp({ email, password });
+      const { error } = await supabase.auth.signUp({ 
+        email, 
+        password,
+        options: {
+          data: metadata
+        }
+      });
       if (error) throw error;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to sign up');
@@ -75,6 +85,7 @@ export const useSupabaseAuth = (): UseSupabaseAuthReturn => {
 
   return {
     user,
+    session,
     loading,
     error,
     signIn,

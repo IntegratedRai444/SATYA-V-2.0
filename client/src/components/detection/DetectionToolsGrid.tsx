@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, Video, Mic, Camera } from 'lucide-react';
+import { Image, Video, Mic } from 'lucide-react';
 import DetectionToolCard from './DetectionToolCard';
 
 interface DetectionTool {
@@ -32,14 +32,8 @@ const DetectionToolsGrid: React.FC = () => {
       features: ['Voice Cloning Detection', 'Natural Patterns Analysis', 'Neural Voice Filter'],
       icon: Mic,
       path: '/audio-analysis'
-    },
-    {
-      title: 'Live Webcam',
-      accuracy: 92.7,
-      features: ['Live Deepfake Alert', 'Facial Authentication', 'Low Light Analysis'],
-      icon: Camera,
-      path: '/webcam-live'
     }
+    // Webcam feature temporarily disabled
   ];
   
   return (

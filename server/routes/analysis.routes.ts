@@ -6,6 +6,7 @@ import { validateRequest } from '../middleware/validate-request';
 import { pythonBridge } from '../services/python-http-bridge';
 import { logger } from '../config/logger';
 import { createAnalysisJob, updateAnalysisJobWithResults } from './history';
+import FormData from 'form-data';
 import { AuthenticatedRequest } from '../types/auth';
 
 // Type definition for analysis result
@@ -373,28 +374,40 @@ router.post(
       });
 
       // Process the image using Python service
+      // Create FormData to match Python's UploadFile expectation
+      const form = new FormData();
+      
+      // Append the file buffer as a file with proper filename and mimetype
+      form.append('file', req.file.buffer, {
+        filename: req.file.originalname,
+        contentType: req.file.mimetype
+      });
+      
+      // Add additional metadata as form fields
+      form.append('jobId', job.id);
+      form.append('analyze_forensics', 'true');
+
       const result = await (pythonBridge as unknown as { request: (options: unknown) => Promise<unknown> }).request({
         method: 'POST',
-        url: '/image',  // Fixed: Match Python route structure
-        data: {
-          image: req.file.buffer.toString('base64'),
-          mimeType: req.file.mimetype,
-          jobId: job.id,
-          filename: req.file.originalname,
-        },
-      }) as { data: { status: string; confidence?: number; is_deepfake?: boolean; model_name?: string; model_version?: string; summary?: Record<string, unknown>; proof?: Record<string, unknown>; error?: string } };
+        url: '/api/v2/analysis/unified/image',
+        data: form,
+        headers: {
+          ...form.getHeaders()
+        }
+      }) as { data: { success: boolean; result: { success: boolean; authenticity?: string; confidence?: number; is_deepfake?: boolean; model_name?: string; model_version?: string; summary?: Record<string, unknown>; proof?: Record<string, unknown>; error?: string } } };
 
       // Save results to Supabase
-      if (result.data && result.data.status === 'success') {
+      if (result.data && result.data.success) {
+        const analysisResult = result.data.result;
         await updateAnalysisJobWithResults(job.id, {
           status: 'completed',
-          confidence: result.data.confidence || 0,
-          is_deepfake: result.data.is_deepfake || false,
-          model_name: result.data.model_name || 'SatyaAI-Image',
-          model_version: result.data.model_version || '1.0.0',
-          summary: result.data.summary || {},
-          analysis_data: result.data,
-          proof_json: result.data.proof || {}
+          confidence: analysisResult.confidence || 0,
+          is_deepfake: analysisResult.is_deepfake || false,
+          model_name: analysisResult.model_name || 'SatyaAI-Image',
+          model_version: analysisResult.model_version || '1.0.0',
+          summary: analysisResult.summary || {},
+          analysis_data: analysisResult,
+          proof_json: analysisResult.proof || {}
         });
 
         res.json({
@@ -409,12 +422,12 @@ router.post(
         // Mark job as failed
         await updateAnalysisJobWithResults(job.id, {
           status: 'failed',
-          error_message: result.data?.error || 'Analysis failed'
+          error_message: result.data?.result?.error || 'Analysis failed'
         });
 
         res.status(500).json({
           success: false,
-          error: result.data?.error || 'Analysis failed'
+          error: result.data?.result?.error || 'Analysis failed'
         });
       }
     } catch (error) {
@@ -453,28 +466,40 @@ router.post(
       });
 
       // Process the audio using Python service
+      // Create FormData to match Python's UploadFile expectation
+      const form = new FormData();
+      
+      // Append the file buffer as a file with proper filename and mimetype
+      form.append('file', req.file.buffer, {
+        filename: req.file.originalname,
+        contentType: req.file.mimetype
+      });
+      
+      // Add additional metadata as form fields
+      form.append('jobId', job.id);
+      form.append('analyze_forensics', 'true');
+
       const result = await (pythonBridge as unknown as { request: (options: unknown) => Promise<unknown> }).request({
         method: 'POST',
-        url: '/audio',  // Fixed: Match Python route structure
-        data: {
-          image: req.file.buffer.toString('base64'),  // Python expects 'image' field for all types
-          mimeType: req.file.mimetype,
-          jobId: job.id,
-          filename: req.file.originalname,
-        },
-      }) as { data: { status: string; confidence?: number; is_deepfake?: boolean; model_name?: string; model_version?: string; summary?: Record<string, unknown>; proof?: Record<string, unknown>; error?: string } };
+        url: '/api/v2/analysis/unified/audio',
+        data: form,
+        headers: {
+          ...form.getHeaders()
+        }
+      }) as { data: { success: boolean; result: { success: boolean; authenticity?: string; confidence?: number; is_deepfake?: boolean; model_name?: string; model_version?: string; summary?: Record<string, unknown>; proof?: Record<string, unknown>; error?: string } } };
 
       // Save results to Supabase
-      if (result.data && result.data.status === 'success') {
+      if (result.data && result.data.success) {
+        const analysisResult = result.data.result;
         await updateAnalysisJobWithResults(job.id, {
           status: 'completed',
-          confidence: result.data.confidence || 0,
-          is_deepfake: result.data.is_deepfake || false,
-          model_name: result.data.model_name || 'SatyaAI-Audio',
-          model_version: result.data.model_version || '1.0.0',
-          summary: result.data.summary || {},
-          analysis_data: result.data,
-          proof_json: result.data.proof || {}
+          confidence: analysisResult.confidence || 0,
+          is_deepfake: analysisResult.is_deepfake || false,
+          model_name: analysisResult.model_name || 'SatyaAI-Audio',
+          model_version: analysisResult.model_version || '1.0.0',
+          summary: analysisResult.summary || {},
+          analysis_data: analysisResult,
+          proof_json: analysisResult.proof || {}
         });
 
         res.json({
@@ -489,12 +514,12 @@ router.post(
         // Mark job as failed
         await updateAnalysisJobWithResults(job.id, {
           status: 'failed',
-          error_message: result.data?.error || 'Analysis failed'
+          error_message: result.data?.result?.error || 'Analysis failed'
         });
 
         res.status(500).json({
           success: false,
-          error: result.data?.error || 'Analysis failed'
+          error: result.data?.result?.error || 'Analysis failed'
         });
       }
     } catch (error) {
@@ -608,28 +633,40 @@ router.post(
       });
 
       // Process the video using Python service
+      // Create FormData to match Python's UploadFile expectation
+      const form = new FormData();
+      
+      // Append the file buffer as a file with proper filename and mimetype
+      form.append('file', req.file.buffer, {
+        filename: req.file.originalname,
+        contentType: req.file.mimetype
+      });
+      
+      // Add additional metadata as form fields
+      form.append('jobId', job.id);
+      form.append('analyze_forensics', 'true');
+
       const result = await (pythonBridge as unknown as { request: (options: unknown) => Promise<unknown> }).request({
         method: 'POST',
-        url: '/video',  // Fixed: Match Python route structure
-        data: {
-          image: req.file.buffer.toString('base64'),  // Python expects 'image' field for all types
-          mimeType: req.file.mimetype,
-          jobId: job.id,
-          filename: req.file.originalname,
-        },
-      }) as { data: { status: string; confidence?: number; is_deepfake?: boolean; model_name?: string; model_version?: string; summary?: Record<string, unknown>; proof?: Record<string, unknown>; error?: string } };
+        url: '/api/v2/analysis/unified/video',
+        data: form,
+        headers: {
+          ...form.getHeaders()
+        }
+      }) as { data: { success: boolean; result: { success: boolean; authenticity?: string; confidence?: number; is_deepfake?: boolean; model_name?: string; model_version?: string; summary?: Record<string, unknown>; proof?: Record<string, unknown>; error?: string } } };
 
       // Save results to Supabase
-      if (result.data && (result.data as AnalysisResult).status === 'success') {
+      if (result.data && result.data.success) {
+        const analysisResult = result.data.result;
         await updateAnalysisJobWithResults(job.id, {
           status: 'completed',
-          confidence: (result.data as AnalysisResult).confidence || 0,
-          is_deepfake: (result.data as AnalysisResult).is_deepfake || false,
-          model_name: (result.data as AnalysisResult).model_name || 'SatyaAI-Video',
-          model_version: (result.data as AnalysisResult).model_version || '1.0.0',
-          summary: (result.data as AnalysisResult).summary || {},
-          analysis_data: result.data,
-          proof_json: (result.data as AnalysisResult).proof || {}
+          confidence: analysisResult.confidence || 0,
+          is_deepfake: analysisResult.is_deepfake || false,
+          model_name: analysisResult.model_name || 'SatyaAI-Video',
+          model_version: analysisResult.model_version || '1.0.0',
+          summary: analysisResult.summary || {},
+          analysis_data: analysisResult,
+          proof_json: analysisResult.proof || {}
         });
 
         res.json({
@@ -644,12 +681,12 @@ router.post(
         // Mark job as failed
         await updateAnalysisJobWithResults(job.id, {
           status: 'failed',
-          error_message: (result.data as AnalysisResult)?.error || 'Analysis failed'
+          error_message: result.data?.result?.error || 'Analysis failed'
         });
 
         res.status(500).json({
           success: false,
-          error: (result.data as AnalysisResult)?.error || 'Analysis failed'
+          error: result.data?.result?.error || 'Analysis failed'
         });
       }
     } catch (error) {
@@ -691,35 +728,42 @@ router.post(
         status: 'pending'
       });
 
-      // Convert files to base64
-      const files = (req.files as Express.Multer.File[]).map(file => ({
-        data: file.buffer.toString('base64'),
-        mimeType: file.mimetype,
-        filename: file.originalname,
-        size: file.size
-      }));
-
       // Process using Python service
+      // Create FormData to match Python's UploadFile expectation
+      const form = new FormData();
+      
+      // Add each file as a separate form field
+      (req.files as Express.Multer.File[]).forEach((file, index) => {
+        form.append(`file${index}`, file.buffer, {
+          filename: file.originalname,
+          contentType: file.mimetype
+        });
+      });
+      
+      // Add metadata
+      form.append('jobId', job.id);
+
       const result = await (pythonBridge as unknown as { request: (options: unknown) => Promise<unknown> }).request({
         method: 'POST',
-        url: '/analysis/multimodal',
-        data: {
-          files,
-          jobId: job.id,
-        },
-      }) as { data: { status: string; confidence?: number; is_deepfake?: boolean; model_name?: string; model_version?: string; summary?: Record<string, unknown>; proof?: Record<string, unknown>; error?: string } };
+        url: '/api/v2/analysis/multimodal',
+        data: form,
+        headers: {
+          ...form.getHeaders()
+        }
+      }) as { data: { success: boolean; result: { success: boolean; authenticity?: string; confidence?: number; is_deepfake?: boolean; model_name?: string; model_version?: string; summary?: Record<string, unknown>; proof?: Record<string, unknown>; error?: string } } };
 
       // Save results to Supabase
-      if (result.data && (result.data as AnalysisResult).status === 'success') {
+      if (result.data && result.data.success) {
+        const analysisResult = result.data.result;
         await updateAnalysisJobWithResults(job.id, {
           status: 'completed',
-          confidence: (result.data as AnalysisResult).confidence || 0,
-          is_deepfake: (result.data as AnalysisResult).is_deepfake || false,
-          model_name: (result.data as AnalysisResult).model_name || 'SatyaAI-Multimodal',
-          model_version: (result.data as AnalysisResult).model_version || '1.0.0',
-          summary: (result.data as AnalysisResult).summary || {},
-          analysis_data: result.data,
-          proof_json: (result.data as AnalysisResult).proof || {}
+          confidence: analysisResult.confidence || 0,
+          is_deepfake: analysisResult.is_deepfake || false,
+          model_name: analysisResult.model_name || 'SatyaAI-Multimodal',
+          model_version: analysisResult.model_version || '1.0.0',
+          summary: analysisResult.summary || {},
+          analysis_data: analysisResult,
+          proof_json: analysisResult.proof || {}
         });
 
         res.json({
@@ -732,14 +776,15 @@ router.post(
         });
       } else {
         // Mark job as failed
+        const errorMessage = result.data?.result?.error || result.data?.error || 'Analysis failed';
         await updateAnalysisJobWithResults(job.id, {
           status: 'failed',
-          error_message: (result.data as AnalysisResult)?.error || 'Analysis failed'
+          error_message: errorMessage
         });
 
         res.status(500).json({
           success: false,
-          error: (result.data as AnalysisResult)?.error || 'Analysis failed'
+          error: errorMessage
         });
       }
     } catch (error) {

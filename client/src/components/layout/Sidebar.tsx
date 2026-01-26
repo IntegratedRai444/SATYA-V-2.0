@@ -13,7 +13,6 @@ import {
   FiChevronLeft,
   FiChevronRight,
   FiGrid,
-  FiCamera,
   FiTrendingUp,
   FiClock,
   FiZap
@@ -145,22 +144,6 @@ const Sidebar = ({ isOpen, onToggle }: SidebarProps) => {
                 <span className="text-[15px] font-medium">Audio Analysis</span>
               </Link>
               
-              {/* Webcam Live */}
-              <Link
-                to="/webcam-live"
-                className={clsx(
-                  "w-full flex items-center gap-4 px-4 py-3.5 rounded-lg transition-all duration-150",
-                  "focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-[#141414]",
-                  isActive('/webcam-live')
-                    ? "bg-cyan-500/10 text-cyan-400 border-l-3 border-cyan-500"
-                    : "text-gray-400 hover:bg-[#1c1c1c] hover:text-white"
-                )}
-                aria-current={isActive('/webcam-live') ? 'page' : undefined}
-              >
-                <FiCamera className="w-6 h-6 flex-shrink-0" strokeWidth={2} />
-                <span className="text-[15px] font-medium">Webcam Live</span>
-              </Link>
-
               {/* Multimodal Analysis */}
               <Link
                 to="/multimodal-analysis"

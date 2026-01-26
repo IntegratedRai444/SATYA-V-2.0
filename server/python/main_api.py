@@ -14,8 +14,11 @@ from pathlib import Path
 from dotenv import load_dotenv
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from root .env file
+load_dotenv('../../.env')
+
+# Force enable ML models for development
+os.environ['ENABLE_ML_MODELS'] = 'true'
 
 from fastapi import FastAPI, HTTPException, Request, status, UploadFile, File, Depends
 from fastapi.exceptions import RequestValidationError
@@ -41,7 +44,7 @@ if sys.platform == "win32":
 handlers = [logging.StreamHandler()]
 
 logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO"),
+    level=os.getenv("LOG_LEVEL", "INFO").upper() if os.getenv("LOG_LEVEL") else "INFO",
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=handlers,
 )
@@ -92,7 +95,8 @@ except ImportError as e:
     MIDDLEWARE_AVAILABLE = False
 
 # Import ML services
-ENABLE_ML_MODELS = os.getenv("ENABLE_ML_MODELS", "true").lower() == "true"
+# Force enable ML models for development
+ENABLE_ML_MODELS = True
 
 # Initialize ML_AVAILABLE flag
 ML_AVAILABLE = False
@@ -905,95 +909,118 @@ async def get_unified_detector_status():
             "available": False,
             "reason": f"Status check failed: {str(e)}"
         }
+
+@app.post("/api/v2/analysis/multimodal")
 async def analyze_multimodal(
-    image: Optional[UploadFile] = File(None),
-    audio: Optional[UploadFile] = File(None),
-    video: Optional[UploadFile] = File(None),
+    request: Request,
     current_user: Optional[Dict] = Depends(get_current_user) if MIDDLEWARE_AVAILABLE else None
 ):
     """
     Multi-modal analysis combining image, audio, and video detection.
     
     Args:
-        image: Optional image file
-        audio: Optional audio file  
-        video: Optional video file
+        request: FastAPI request object to access form data
         current_user: Authenticated user (if auth enabled)
         
     Returns:
         Fused analysis results from multiple modalities
     """
-    if not SATYAAI_CORE_AVAILABLE or not hasattr(app.state, 'satyaai_core') or app.state.satyaai_core is None:
+    if not UNIFIED_DETECTOR_AVAILABLE or not hasattr(app.state, 'unified_detector') or app.state.unified_detector is None:
         raise HTTPException(
             status_code=503,
-            detail="Multi-modal fusion engine not available"
+            detail="Unified detector not available"
         )
     
     try:
-        # Read media files
-        image_buffer = None
-        audio_buffer = None
-        video_buffer = None
+        # Get form data
+        form = await request.form()
         
-        if image:
-            image_buffer = await image.read()
-            # Validate image
-            if not image_buffer or len(image_buffer) < 100:
-                raise ValueError("Invalid image file")
-                
-        if audio:
-            audio_buffer = await audio.read()
-            # Validate audio
-            if not audio_buffer or len(audio_buffer) < 100:
-                raise ValueError("Invalid audio file")
-                
-        if video:
-            video_buffer = await video.read()
-            # Validate video
-            if not video_buffer or len(video_buffer) < 100:
-                raise ValueError("Invalid video file")
+        # Read media files from form data
+        image_files = []
+        audio_files = []
+        video_files = []
+        
+        # Extract files from form data
+        for key, value in form.items():
+            if isinstance(value, UploadFile):
+                content = await value.read()
+                if not content or len(content) < 100:
+                    continue
+                    
+                # Determine file type by content and extension
+                filename = value.filename or ""
+                if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif')) or value.content_type.startswith('image/'):
+                    image_files.append(content)
+                elif filename.lower().endswith(('.mp3', '.wav', '.ogg', '.m4a', '.webm')) or value.content_type.startswith('audio/'):
+                    audio_files.append(content)
+                elif filename.lower().endswith(('.mp4', '.avi', '.mov', '.webm', '.mpeg')) or value.content_type.startswith('video/'):
+                    video_files.append(content)
         
         # Check if at least one modality is provided
-        if not any([image_buffer, audio_buffer, video_buffer]):
+        if not any([image_files, audio_files, video_files]):
             raise HTTPException(
                 status_code=400,
                 detail="At least one media file must be provided"
             )
         
-        # Perform multi-modal analysis
-        satyaai_core = app.state.satyaai_core
-        result = satyaai_core.analyze_multimodal(
-            image_buffer=image_buffer,
-            audio_buffer=audio_buffer,
-            video_buffer=video_buffer
-        )
+        # Perform multi-modal analysis using unified detector
+        detector = app.state.unified_detector
         
-        # Add metadata
-        result.update({
-            "analysis_timestamp": datetime.utcnow().isoformat(),
-            "modalities_analyzed": {
-                "image": image_buffer is not None,
-                "audio": audio_buffer is not None,
-                "video": video_buffer is not None
-            },
-            "fusion_engine": "satyaai_core",
-            "user_id": current_user.get("id") if current_user else "anonymous"
-        })
+        # Analyze each modality and combine results
+        results = []
         
-        logger.info(f"Multi-modal analysis completed: {result.get('authenticity', 'Unknown')}")
+        # Analyze images
+        for image_buffer in image_files:
+            result = detector.detect_image(image_buffer)
+            results.append(result.to_dict())
+        
+        # Analyze audio files
+        for audio_buffer in audio_files:
+            result = detector.detect_audio(audio_buffer)
+            results.append(result.to_dict())
+        
+        # Analyze video files
+        for video_buffer in video_files:
+            result = detector.detect_video(video_buffer)
+            results.append(result.to_dict())
+        
+        # Combine results (simple fusion - take average confidence and majority vote for authenticity)
+        if results:
+            combined_confidence = sum(r.get('confidence', 0) for r in results) / len(results)
+            authentic_count = sum(1 for r in results if r.get('is_deepfake') == False)
+            is_authentic = authentic_count > len(results) / 2
+            
+            combined_result = {
+                "success": True,
+                "authenticity": "authentic" if is_authentic else "deepfake",
+                "confidence": combined_confidence,
+                "is_deepfake": not is_authentic,
+                "model_name": "SatyaAI-Multimodal",
+                "model_version": "1.0.0",
+                "summary": {
+                    "total_files": len(results),
+                    "images": len(image_files),
+                    "audio_files": len(audio_files),
+                    "video_files": len(video_files),
+                    "individual_results": results
+                },
+                "user_id": current_user.get("id") if current_user else "anonymous"
+            }
+        else:
+            combined_result = {
+                "success": False,
+                "error": "No valid files processed"
+            }
+        
+        logger.info(f"Multimodal analysis completed: {combined_result.get('success', False)}")
         return {
-            "success": True,
-            "result": result
+            "success": combined_result.get("success", False),
+            "result": combined_result
         }
         
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Multi-modal analysis failed: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Multi-modal analysis failed: {str(e)}"
-        )
+        logger.error(f"Multimodal analysis failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/v2/analysis/multimodal/status")
 async def get_multimodal_status():
@@ -1003,34 +1030,34 @@ async def get_multimodal_status():
     Returns:
         Status information about available modalities and fusion engine
     """
-    if not SATYAAI_CORE_AVAILABLE:
+    if not UNIFIED_DETECTOR_AVAILABLE:
         return {
             "available": False,
-            "reason": "SatyaAI Core not available",
+            "reason": "Unified detector not available",
             "modalities": {"image": False, "audio": False, "video": False}
         }
     
-    if not hasattr(app.state, 'satyaai_core') or app.state.satyaai_core is None:
+    if not hasattr(app.state, 'unified_detector') or app.state.unified_detector is None:
         return {
             "available": False,
-            "reason": "SatyaAI Core not initialized",
+            "reason": "Unified detector not initialized",
             "modalities": {"image": False, "audio": False, "video": False}
         }
     
     try:
-        model_info = app.state.satyaai_core.get_model_info()
+        detector = app.state.unified_detector
+        detector_info = detector.get_detector_info()
         return {
             "available": True,
-            "fusion_engine": "satyaai_core",
+            "detector_info": detector_info,
             "modalities": {
-                "image": model_info.get("image_detector", {}).get("available", False),
-                "video": model_info.get("video_detector", {}).get("available", False),
-                "audio": model_info.get("audio_detector", {}).get("available", False)
-            },
-            "model_info": model_info
+                "image": detector_info.get("image_available", False),
+                "audio": detector_info.get("audio_available", False), 
+                "video": detector_info.get("video_available", False)
+            }
         }
     except Exception as e:
-        logger.error(f"Failed to get multi-modal status: {e}")
+        logger.error(f"Failed to get multimodal status: {e}")
         return {
             "available": False,
             "reason": f"Status check failed: {str(e)}",

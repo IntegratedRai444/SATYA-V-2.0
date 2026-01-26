@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/38</span>
+                <span class='fraction'>0/37</span>
             </div>
         
             
@@ -299,10 +299,7 @@
 <a name='L234'></a><a href='#L234'>234</a>
 <a name='L235'></a><a href='#L235'>235</a>
 <a name='L236'></a><a href='#L236'>236</a>
-<a name='L237'></a><a href='#L237'>237</a>
-<a name='L238'></a><a href='#L238'>238</a>
-<a name='L239'></a><a href='#L239'>239</a>
-<a name='L240'></a><a href='#L240'>240</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<a name='L237'></a><a href='#L237'>237</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -349,16 +346,10 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -437,30 +428,33 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -555,7 +549,6 @@ type EnvConfig = {
   PORT: string;
   
   // API Configuration
-  VITE_API_URL: string;
   API_BASE_URL: string;
   
   // Security
@@ -573,14 +566,14 @@ type EnvConfig = {
   SUPABASE_SERVICE_ROLE_KEY: string;
   
   // WebSocket
-  VITE_WS_URL: string;
+  WS_URL: string;
   
   // CORS
   CORS_ORIGIN: string;
   
   // Python AI Engine
-  PYTHON_SERVER_URL: string;
-  PYTHON_SERVER_PORT: string;
+  PYTHON_URL: string;
+  PYTHON_PORT: string;
   PYTHON_HEALTH_CHECK_URL: string;
   
   // Optional Features
@@ -595,11 +588,6 @@ const envSchema = <span class="cstat-no" title="statement not covered" >z.object
   PORT: z.string().default('3000'),
   
   // API Configuration
-  VITE_API_URL: z.string()
-    .url('VITE_API_URL must be a valid URL')
-    .refine(<span class="fstat-no" title="function not covered" >url </span>=&gt; <span class="cstat-no" title="statement not covered" >new URL(url).pathname.endsWith('/api/v2'),</span> {
-      message: 'VITE_API_URL must end with /api/v2'
-    }),
   API_BASE_URL: z.string()
     .url('API_BASE_URL must be a valid URL')
     .refine(<span class="fstat-no" title="function not covered" >url </span>=&gt; <span class="cstat-no" title="statement not covered" >!url.endsWith('/'),</span> {
@@ -644,10 +632,10 @@ const envSchema = <span class="cstat-no" title="statement not covered" >z.object
     .min(32, 'SUPABASE_SERVICE_ROLE_KEY must be at least 32 characters long'),
   
   // WebSocket
-  VITE_WS_URL: z.string()
-    .url('VITE_WS_URL must be a valid WebSocket URL')
+  WS_URL: z.string()
+    .url('WS_URL must be a valid WebSocket URL')
     .refine(<span class="fstat-no" title="function not covered" >url </span>=&gt; <span class="cstat-no" title="statement not covered" >url.startsWith('ws://') || url.startsWith('wss://'),</span> {
-      message: 'VITE_WS_URL must start with ws:// or wss://'
+      message: 'WS_URL must start with ws:// or wss://'
     }),
   
   // CORS
@@ -664,26 +652,26 @@ const envSchema = <span class="cstat-no" title="statement not covered" >z.object
     }, 'CORS_ORIGIN should not include localhost in production'),
   
   // Python AI Engine
-  PYTHON_SERVER_URL: z.string()
-    .url('PYTHON_SERVER_URL must be a valid URL')
-    .default('http://localhost:5001'),
-  PYTHON_SERVER_PORT: z.string()
-    .regex(/^\d+$/, 'PYTHON_SERVER_PORT must be a number')
-    .default('5001'),
+  PYTHON_URL: z.string()
+    .url('PYTHON_URL must be a valid URL')
+    .default('http://localhost:8000'),
+  PYTHON_PORT: z.string()
+    .regex(/^\d+$/, 'PYTHON_PORT must be a number')
+    .default('8000'),
   PYTHON_HEALTH_CHECK_URL: z.string()
     .url('PYTHON_HEALTH_CHECK_URL must be a valid URL')
-    .default('http://localhost:5001/health'),
+    .default('http://localhost:8000/health'),
   
   // Optional Features
   ENABLE_METRICS: z.string()
-    .transform(<span class="fstat-no" title="function not covered" >val </span>=&gt; <span class="cstat-no" title="statement not covered" >val === 'true')</span>
-    .optional()
-    .default('true'),
+    .default('true')
+    .transform(<span class="fstat-no" title="function not covered" >(v</span>al) =&gt; <span class="cstat-no" title="statement not covered" >val === 'true')</span>
+    .pipe(z.boolean()),
   ENABLE_DEV_TOOLS: z.string()
-    .transform(<span class="fstat-no" title="function not covered" >val </span>=&gt; <span class="cstat-no" title="statement not covered" >val === 'true')</span>
-    .optional()
     .default('false')
-    .refine(<span class="fstat-no" title="function not covered" >val </span>=&gt; <span class="cstat-no" title="statement not covered" >process.env.NODE_ENV !== 'production' || val === false,</span> {
+    .transform(<span class="fstat-no" title="function not covered" >(v</span>al) =&gt; <span class="cstat-no" title="statement not covered" >val === 'true')</span>
+    .pipe(z.boolean())
+    .refine(<span class="fstat-no" title="function not covered" >(v</span>al) =&gt; <span class="cstat-no" title="statement not covered" >process.env.NODE_ENV !== 'production' || val === false,</span> {
       message: 'Dev tools cannot be enabled in production'
     })
 });
@@ -694,12 +682,15 @@ const envSchema = <span class="cstat-no" title="statement not covered" >z.object
     const result = <span class="cstat-no" title="statement not covered" >envSchema.safeParse(process.env);</span>
     
 <span class="cstat-no" title="statement not covered" >    if (!result.success) {</span>
-      const errorMessages = <span class="cstat-no" title="statement not covered" >result.error.errors.map(<span class="fstat-no" title="function not covered" >err </span>=&gt; </span>
-<span class="cstat-no" title="statement not covered" >        `- ${err.path.join('.')}: ${err.message}`</span>
-      ).join('\n');
+      const errorDetails = <span class="cstat-no" title="statement not covered" >result.error.issues.map(<span class="fstat-no" title="function not covered" >issue </span>=&gt; (<span class="cstat-no" title="statement not covered" >{</span></span>
+        path: issue.path.join('.'),
+        message: issue.message
+      }));
       
 <span class="cstat-no" title="statement not covered" >      logger.error('❌ Environment validation failed:');</span>
-<span class="cstat-no" title="statement not covered" >      logger.error(errorMessages);</span>
+<span class="cstat-no" title="statement not covered" >      errorDetails.forEach(<span class="fstat-no" title="function not covered" >({</span> path, message }) =&gt; {</span>
+<span class="cstat-no" title="statement not covered" >        logger.error(`- ${path}: ${message}`);</span>
+      });
 <span class="cstat-no" title="statement not covered" >      return false;</span>
     }
     
@@ -754,7 +745,7 @@ export const <span class="cstat-no" title="statement not covered" >config = (<sp
     
     // WebSocket
     ws: {
-      url: env.VITE_WS_URL
+      url: env.WS_URL
     },
     
     // CORS
@@ -766,8 +757,8 @@ export const <span class="cstat-no" title="statement not covered" >config = (<sp
     
     // Python AI Engine
     python: {
-      serverUrl: env.PYTHON_SERVER_URL,
-      serverPort: parseInt(env.PYTHON_SERVER_PORT, 10),
+      serverUrl: env.PYTHON_URL,
+      serverPort: parseInt(env.PYTHON_PORT, 10),
       healthCheckUrl: env.PYTHON_HEALTH_CHECK_URL
     },
     
@@ -787,7 +778,7 @@ export const <span class="cstat-no" title="statement not covered" >config = (<sp
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-01-01T09:38:09.763Z
+                at 2026-01-26T16:11:14.637Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

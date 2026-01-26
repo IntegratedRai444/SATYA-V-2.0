@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   FiCloud,
   FiHelpCircle,
@@ -39,7 +39,7 @@ import { useDashboardWebSocket } from '@/hooks/useDashboardWebSocket';
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   // TODO: Re-implement auth after reset
-  const logout = () => {};
+  const logout = useCallback(() => {}, []);
   
   // State management
   const [error, setError] = useState<string | null>(null);
@@ -117,6 +117,7 @@ const Dashboard: React.FC = () => {
     }
   };
   
+
   // TODO: Re-implement auth error handling after reset
   useEffect(() => {
     if (error?.includes('401') || error?.includes('403')) {
@@ -174,20 +175,20 @@ const Dashboard: React.FC = () => {
   return (
     <div className="max-w-[1400px] mx-auto">
       {renderError()}
-          {/* Connection Status Badge */}
-        <div className="flex justify-end mb-4">
-          <div className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-            isConnected ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-          }`}>
-            <span className={`w-2 h-2 rounded-full mr-2 ${
-              isConnected ? 'bg-green-500' : 'bg-yellow-500'
-            }`}></span>
-            {isConnected ? 'Connected' : 'Disconnected'}
-          </div>
+      {/* Connection Status Badge */}
+      <div className="flex justify-end mb-4">
+        <div className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+          isConnected ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+        }`}>
+          <span className={`w-2 h-2 rounded-full mr-2 ${
+            isConnected ? 'bg-green-500' : 'bg-yellow-500'
+          }`}></span>
+          {isConnected ? 'Connected' : 'Disconnected'}
         </div>
-        
-        {/* Hero Banner Section with Blue Gradient Background */}
-          <div className="relative bg-gradient-to-br from-[#1e3a5f] via-[#1a2f4a] to-[#152238] rounded-2xl p-10 mb-14 overflow-hidden border border-gray-800/30">
+      </div>
+      
+      {/* Hero Banner Section with Blue Gradient Background */}
+      <div className="relative bg-gradient-to-br from-[#1e3a5f] via-[#1a2f4a] to-[#152238] rounded-2xl p-10 mb-14 overflow-hidden border border-gray-800/30">
             <div className="grid grid-cols-[1.2fr_320px] gap-16 relative z-10">
               {/* Left Section - Text Content */}
               <div className="space-y-5">
@@ -220,7 +221,7 @@ const Dashboard: React.FC = () => {
 
                 {/* Secondary Text */}
                 <p className="text-gray-400 text-[14px] leading-relaxed max-w-xl">
-                  Upload your files or use your webcam for real-time analysis and get detailed authenticity reports instantly.
+                  Upload your files for analysis and get detailed authenticity reports instantly.
                 </p>
 
                 {/* CTA Buttons */}
@@ -461,54 +462,7 @@ const Dashboard: React.FC = () => {
                 </div>
               </Card>
 
-              {/* Webcam Card */}
-              <Card className="bg-[#0f1419] border border-gray-800/50 p-5 rounded-lg hover:border-pink-500/40 transition-all cursor-pointer group relative">
-                {/* Accuracy Badge - Top Right */}
-                <div className="absolute top-3 right-3 text-[10px] text-gray-500">
-                  Accuracy: <span className="text-white font-semibold">92.7%</span>
-                </div>
-
-                {/* Icon - Centered at Top */}
-                <div className="flex justify-start mb-4">
-                  <div className="w-10 h-10 rounded-md bg-pink-500/10 border border-pink-500/20 flex items-center justify-center">
-                    <FiCamera className="w-5 h-5 text-pink-400" strokeWidth={2} />
-                  </div>
-                </div>
-
-                {/* Content */}
-                <div className="space-y-3">
-                  <h3 className="text-[15px] font-bold text-white">
-                    Live Webcam
-                  </h3>
-                  <p className="text-[11px] text-gray-400 leading-relaxed">
-                    Real-time deepfake analysis & verification
-                  </p>
-
-                  {/* Features List */}
-                  <div className="space-y-1.5 pt-1">
-                    <div className="flex items-center gap-2 text-[10px] text-gray-500">
-                      <FiCheck className="w-3 h-3 text-gray-600 flex-shrink-0" />
-                      <span>Live Deepfake Alert</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-[10px] text-gray-500">
-                      <FiCheck className="w-3 h-3 text-gray-600 flex-shrink-0" />
-                      <span>Facial Authentication</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-[10px] text-gray-500">
-                      <FiCheck className="w-3 h-3 text-gray-600 flex-shrink-0" />
-                      <span>Low-Light Analysis</span>
-                    </div>
-                  </div>
-
-                  {/* Button */}
-                  <button 
-                    onClick={() => navigate('/webcam-live')}
-                    className="w-full py-2 text-[10px] font-bold text-cyan-400 hover:text-cyan-300 rounded-md transition-all flex items-center justify-center gap-1 mt-4"
-                  >
-                    START ANALYSIS →
-                  </button>
-                </div>
-              </Card>
+              {/* Batch Analysis Card - DISABLED */}
             </div>
           </div>
 

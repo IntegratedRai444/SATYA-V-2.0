@@ -6,10 +6,17 @@
 import React, { lazy, ComponentType } from 'react';
 import logger from '../lib/logger';
 
+// Add type for IntersectionObserverInit
+interface IntersectionObserverInit {
+  root?: Element | null;
+  rootMargin?: string;
+  threshold?: number | number[];
+}
+
 /**
  * Enhanced lazy loading with retry logic
  */
-function lazyWithRetry<T extends ComponentType<any>>(
+function lazyWithRetry<T extends ComponentType<Record<string, unknown>>>(
   componentImport: () => Promise<{ default: T }>,
   maxRetries = 3,
   retryDelay = 1000
@@ -60,7 +67,6 @@ export const LazyBatchAnalysis = lazyWithRetry(() => import('../pages/BatchAnaly
 export const LazyHistory = lazyWithRetry(() => import('../pages/History'));
 export const LazyHelp = lazyWithRetry(() => import('../pages/Help'));
 export const LazyAIAssistant = lazyWithRetry(() => import('../pages/AIAssistant'));
-export const LazyWebcamLive = lazyWithRetry(() => import('../pages/WebcamLive'));
 
 // Lazy load heavy analysis components
 export const LazyAnalysisResults = lazy(() => import('../components/analysis/AnalysisResults'));
@@ -180,12 +186,6 @@ export const preloadResource = (url: string, type: 'image' | 'script' | 'style' 
     case 'script':
       link.as = 'script';
       break;
-    case 'style':
-      link.as = 'style';
-      break;
-    case 'style':
-      link.as = 'style';
-      break;
   }
 
   document.head.appendChild(link);
@@ -207,12 +207,12 @@ export const loadChunk = async (chunkName: string) => {
 /**
  * Preload a lazy component
  */
-export function preloadComponent<T extends ComponentType<any>>(
+export function preloadComponent<T extends ComponentType<unknown>>(
   LazyComponent: React.LazyExoticComponent<T>
 ): void {
-  // @ts-ignore - accessing internal preload method
+  // @ts-expect-error - accessing internal preload method
   if (LazyComponent._payload && LazyComponent._payload._result === null) {
-    // @ts-ignore
+    // @ts-expect-error - accessing internal property
     LazyComponent._payload._result = LazyComponent._payload._fn();
   }
 }

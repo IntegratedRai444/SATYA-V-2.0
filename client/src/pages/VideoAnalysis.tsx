@@ -1,17 +1,39 @@
-import React, { useState, useCallback } from 'react';
-import { Video, Upload, Film, CheckCircle, AlertCircle, Loader2, Eye } from 'lucide-react';
-import { useVideoAnalysis, type AnalysisResult } from '../hooks/useApi';
+import React, { useState, useCallback, useEffect } from 'react';
+import { Loader2, Upload, Video, CheckCircle, AlertCircle, FileText, BarChart3, Eye, Film } from 'lucide-react';
+import { useVideoAnalysis } from '../hooks/useApi';
+import { pollAnalysisResult } from '../lib/analysis/pollResult';
+import { logger } from '../lib/logger';
 import { formatFileSize } from '../lib/file-utils';
-import logger from '../lib/logger';
+
+interface AnalysisResult {
+  result: {
+    isAuthentic: boolean;
+    confidence: number;
+    details: {
+      isDeepfake: boolean;
+      modelInfo: Record<string, unknown>;
+    };
+    metrics: {
+      processingTime: number;
+      modelVersion: string;
+    };
+  };
+  key_findings?: string[];
+  case_id?: string;
+  analysis_date?: string;
+  technical_details?: {
+    processing_time_seconds?: number;
+  };
+}
 
 export default function VideoAnalysis() {
   const [dragActive, setDragActive] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [analysisStatus, setAnalysisStatus] = useState<'idle' | 'uploading' | 'processing' | 'completed' | 'failed'>('idle');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState<string>('');
-  
-  // Use the proper hook for video analysis
-  const { analyzeVideo, isAnalyzing } = useVideoAnalysis();
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const { analyzeVideo, isAnalyzing } = useVideoAnalysis();
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -70,32 +92,81 @@ export default function VideoAnalysis() {
 
   const handleAnalyzeVideo = async () => {
     if (!selectedFile) return;
-
+    
+    setError('');
+    setAnalysisResult(null);
+    setAnalysisStatus('uploading');
+    
     try {
       logger.info('Starting video analysis', {
         filename: selectedFile.name,
         size: selectedFile.size
       });
 
-      // Use the hook for analysis
-      const result = await analyzeVideo({ 
+      const response = await analyzeVideo({ 
         file: selectedFile, 
         options: { includeDetails: true } 
       });
       
-      // Set the analysis result
-      setAnalysisResult(result as unknown as AnalysisResult);
-      setError('');
-      
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error 
-        ? error.message 
-        : 'Video analysis failed. Please try again.';
-      
-      logger.error('Video analysis failed: ' + errorMessage);
-      setError(errorMessage);
+      if (!response?.jobId) {
+        throw new Error('No jobId returned from backend');
+      }
+
+      setJobId(response.jobId);
+      setAnalysisStatus('processing');
+    } catch (err) {
+      console.error('Video analysis failed:', err);
+      setError(err instanceof Error ? err.message : 'Failed to analyze video. Please try again.');
+      setAnalysisStatus('failed');
     }
   };
+
+  // Poll for results when jobId is available
+  useEffect(() => {
+    let cleanup: (() => void) | null = null;
+    if (jobId && analysisStatus === 'processing') {
+      cleanup = pollAnalysisResult(
+        jobId,
+        (job: any) => {
+          if (job.status === 'completed' && job.result) {
+            const analysisResult: AnalysisResult = {
+              result: {
+                isAuthentic: job.result.isAuthentic,
+                confidence: job.result.confidence,
+                details: {
+                  isDeepfake: job.result.details.isDeepfake,
+                  modelInfo: job.result.details.modelInfo || {},
+                },
+                metrics: {
+                  processingTime: job.result.metrics?.processingTime || 0,
+                  modelVersion: job.result.metrics?.modelVersion || '1.0.0'
+                }
+              },
+              key_findings: [
+                job.result.isAuthentic 
+                  ? 'No signs of manipulation detected' 
+                  : 'Potential signs of manipulation found',
+                `Confidence: ${(job.result.confidence * 100).toFixed(1)}%`,
+                'Video analysis completed successfully'
+              ],
+              case_id: job.id || `CASE_${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
+              analysis_date: new Date().toISOString(),
+              technical_details: {
+                processing_time_seconds: job.result.metrics?.processingTime || 0
+              }
+            };
+            setAnalysisResult(analysisResult);
+            setAnalysisStatus('completed');
+          }
+        },
+        (err: any) => {
+          setError(err.message);
+          setAnalysisStatus('failed');
+        }
+      );
+    }
+    return cleanup;
+  }, [jobId, analysisStatus]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-6">

@@ -51,16 +51,9 @@ export interface AnalysisResult {
   updatedAt: string;
 }
 
-export interface AnalysisApiResponse {
-  status: string;
-  analysis: {
-    is_deepfake: boolean;
-    confidence: number;
-    model_info: Record<string, unknown>;
-    timestamp: string;
-    evidence_id: string;
-    proof: AnalysisProof;
-  };
+export interface JobStartResponse {
+  success: boolean;
+  jobId: string;
 }
 
 export interface AnalysisProof {
@@ -84,45 +77,12 @@ export class AnalysisService extends BaseService {
     super(''); // Use empty base path since we're using direct routes
   }
 
-  private validateResponse<T>(response: unknown): T {
-    if (!response) {
-      throw new Error('Empty response from server');
-    }
-
-    // Type guard to ensure response is an object
-    if (typeof response !== 'object' || response === null) {
-      throw new Error('Invalid response format');
-    }
-
-    const responseObj = response as Record<string, unknown>;
-
-    // Check for error response
-    if (responseObj.error) {
-      const errorObj = responseObj.error as Record<string, unknown>;
-      throw new Error((errorObj.message as string) || 'Analysis failed');
-    }
-
-    // Validate proof if present
-    if (responseObj.proof) {
-      const proofObj = responseObj.proof as Record<string, unknown>;
-      const requiredFields = ['model_name', 'model_version', 'signature', 'timestamp'];
-      for (const field of requiredFields) {
-        if (proofObj[field] === undefined || proofObj[field] === null) {
-          throw new Error(`Invalid proof: missing required field '${field}'`);
-        }
-      }
-    }
-
-    return response as T;
-  }
-
-
   async analyzeImage(
     file: File,
     options: AnalysisOptions = {}
-  ): Promise<AnalysisResult> {
+  ): Promise<string> {
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('image', file);
 
     // Add request metadata
     if (options.metadata) {
@@ -130,50 +90,18 @@ export class AnalysisService extends BaseService {
     }
 
     try {
-      const response = await this.post<AnalysisApiResponse>('/api/v2/analysis/image', formData, {
+      const response = await this.post<JobStartResponse>('/api/v2/analysis/image', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
         signal: options.signal,
       });
 
-      // Validate the response including proof
-      const validated = this.validateResponse<AnalysisApiResponse>(response);
-
-      if (validated.status !== 'success' || !validated.analysis) {
-        throw new Error('Invalid analysis response from server');
+      if (!response.success || !response.jobId) {
+        throw new Error('Failed to start analysis job');
       }
 
-      // Verify the proof is valid
-      if (!validated.analysis.proof || !validated.analysis.proof.signature) {
-        throw new Error('Analysis response is missing valid proof');
-      }
-
-      // Verify the proof matches the analysis
-      if (validated.analysis.proof.metadata.request_id !== validated.analysis.evidence_id) {
-        throw new Error('Proof verification failed: request ID mismatch');
-      }
-
-      return {
-        id: validated.analysis.evidence_id,
-        type: 'image',
-        status: 'completed',
-        proof: validated.analysis.proof,
-        result: {
-          isAuthentic: !validated.analysis.is_deepfake,
-          confidence: validated.analysis.confidence,
-          details: {
-            isDeepfake: validated.analysis.is_deepfake,
-            modelInfo: validated.analysis.model_info || {},
-          },
-          metrics: {
-            processingTime: validated.analysis.proof.inference_duration || 0,
-            modelVersion: validated.analysis.proof.model_version || 'unknown',
-          },
-        },
-        createdAt: validated.analysis.timestamp || new Date().toISOString(),
-        updatedAt: validated.analysis.timestamp || new Date().toISOString(),
-      };
+      return response.jobId; // IMPORTANT: return jobId, not result
     } catch (error) {
       console.error('Image analysis failed:', error);
       
@@ -193,40 +121,94 @@ export class AnalysisService extends BaseService {
         }
       }
       
-      throw new Error('Failed to analyze image. Please try again.');
+      throw new Error('Failed to start image analysis. Please try again.');
     }
+  }
+
+  async getAnalysisResult(jobId: string): Promise<AnalysisResult> {
+    return this.get(`/api/v2/results/${jobId}`);
   }
 
   async analyzeVideo(
     file: File,
     options: AnalysisOptions = {}
-  ): Promise<AnalysisResult> {
+  ): Promise<string> {
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('video', file);
 
-    return this.upload<AnalysisResult>(
-      '/api/v2/analysis/video',
-      formData,
-      options
-    );
+    try {
+      const response = await this.post<JobStartResponse>('/api/v2/analysis/video', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+        signal: options.signal,
+      });
+
+      if (!response.success || !response.jobId) {
+        throw new Error('Failed to start analysis job');
+      }
+
+      return response.jobId;
+    } catch (error) {
+      throw new Error('Failed to start video analysis');
+    }
   }
 
   async analyzeAudio(
     file: File,
     options: AnalysisOptions = {}
-  ): Promise<AnalysisResult> {
+  ): Promise<string> {
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('audio', file);
 
-    return this.upload<AnalysisResult>(
-      '/api/v2/analysis/audio',
-      formData,
-      options
-    );
+    try {
+      const response = await this.post<JobStartResponse>('/api/v2/analysis/audio', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+        signal: options.signal,
+      });
+
+      if (!response.success || !response.jobId) {
+        throw new Error('Failed to start analysis job');
+      }
+
+      return response.jobId;
+    } catch (error) {
+      throw new Error('Failed to start audio analysis');
+    }
   }
 
-  async getAnalysisResult(id: string): Promise<AnalysisResult> {
-    return this.get<AnalysisResult>(`/api/v2/results/${id}`);
+  async analyzeMultimodal(
+    file: File,
+    options: AnalysisOptions = {}
+  ): Promise<string> {
+    const formData = new FormData();
+    formData.append('files', file);
+
+    // Add additional files if provided in metadata
+    if (options.metadata?.files) {
+      (options.metadata.files as File[]).forEach((f: File) => {
+        formData.append('files', f);
+      });
+    }
+
+    try {
+      const response = await this.post<JobStartResponse>('/api/v2/analysis/multimodal', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+        signal: options.signal,
+      });
+
+      if (!response.success || !response.jobId) {
+        throw new Error('Failed to start analysis job');
+      }
+
+      return response.jobId;
+    } catch (error) {
+      throw new Error('Failed to start multimodal analysis');
+    }
   }
 
   async getAnalysisHistory(params: {
@@ -270,58 +252,6 @@ export class AnalysisService extends BaseService {
         }],
         total: 1
       };
-    }
-  }
-
-  // Helper method for file uploads with progress tracking
-  private async upload<T>(
-    endpoint: string,
-    data: FormData,
-    options: AnalysisOptions = {}
-  ): Promise<T> {
-    const controller = new AbortController();
-    
-    // Set up progress tracking if needed
-    if (options.metadata?.onUploadProgress) {
-      options.metadata.onUploadProgress = (progressEvent: ProgressEvent) => {
-        const percentCompleted = Math.round(
-          (progressEvent.loaded * 100) / (progressEvent.total || 1)
-        );
-        const metadataObj = options.metadata as Record<string, unknown>;
-        if (typeof metadataObj.onUploadProgress === 'function') {
-          metadataObj.onUploadProgress(percentCompleted);
-        }
-      };
-    }
-
-    // Set up timeout if specified
-    if (options.timeout) {
-      setTimeout(() => {
-        controller.abort();
-      }, options.timeout);
-    }
-
-    // Make the request
-    try {
-      const response = await this.post<T>(
-        endpoint,
-        data,
-        {
-          signal: options.signal || controller.signal,
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-        }
-      );
-
-      return response;
-    } catch (error: unknown) {
-      if (error instanceof Error) {
-        if (error.name === 'AbortError') {
-          throw new Error('Request was aborted due to timeout');
-        }
-      }
-      throw error;
     }
   }
 }

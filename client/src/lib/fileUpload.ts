@@ -1,3 +1,5 @@
+import { getAccessToken } from "./auth/getAccessToken";
+
 export interface UploadProgress {
   fileId: string;
   fileName: string;
@@ -45,13 +47,20 @@ export class FileUploadManager {
     try {
       updateProgress(0, 'uploading');
       
+      const token = await getAccessToken();
+      console.log("File upload auth token:", token ? "Bearer [REDACTED]" : "null");
+      
+      if (!token) {
+        throw new Error("User session missing - cannot upload file");
+      }
+      
       const formData = new FormData();
       formData.append('file', file);
 
       const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/v2/upload/${type}`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+          'Authorization': `Bearer ${token}`,
         },
         body: formData,
         signal: controller.signal,

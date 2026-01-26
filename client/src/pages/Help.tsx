@@ -108,8 +108,8 @@ export default function Help() {
             <div className="border rounded-lg p-4">
               <h4 className="font-semibold mb-2">Real-time Detection</h4>
               <p className="text-sm text-muted-foreground">
-                Live webcam analysis for real-time deepfake detection. Instant feedback 
-                and alerts.
+                Advanced analysis algorithms for instant deepfake detection. Get immediate 
+                feedback and detailed authenticity reports.
               </p>
             </div>
             <div className="border rounded-lg p-4">

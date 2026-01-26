@@ -1,8 +1,13 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Loader2, Upload, Eye, CheckCircle, AlertCircle, FileText, BarChart3, Camera } from 'lucide-react';
 import { useImageAnalysis } from '../hooks/useApi';
+import { pollAnalysisResult, AnalysisJobStatus } from '../lib/analysis/pollResult';
 
-interface AnalysisResult {
+interface PollError {
+  message: string;
+}
+
+interface LocalAnalysisResult {
   result: {
     isAuthentic: boolean;
     confidence: number;
@@ -22,14 +27,18 @@ interface AnalysisResult {
   analysis_date?: string;
   technical_details?: {
     processing_time_seconds?: number;
+    model_used?: string;
+    model_version?: string;
   };
 }
 
 const ImageAnalysis = () => {
   const [dragActive, setDragActive] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [analysisStatus, setAnalysisStatus] = useState<'idle' | 'uploading' | 'processing' | 'completed' | 'failed'>('idle');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState('');
-  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<LocalAnalysisResult | null>(null);
   const { analyzeImage, isAnalyzing } = useImageAnalysis();
 
   // Handler functions
@@ -79,47 +88,79 @@ const ImageAnalysis = () => {
     
     setError('');
     setAnalysisResult(null);
+    setAnalysisStatus('uploading');
     
     try {
-      const result = await analyzeImage({ file: selectedFile, options: {} });
+      const response = await analyzeImage({ file: selectedFile, options: {} });
       
-      if (!result?.result) {
-        throw new Error('Invalid response from server');
+      if (!response?.jobId) {
+        throw new Error('No jobId returned from backend');
       }
 
-      const analysisResult: AnalysisResult = {
-        result: {
-          isAuthentic: result.result.isAuthentic,
-          confidence: result.result.confidence,
-          details: {
-            isDeepfake: result.result.details.isDeepfake as boolean,
-            modelInfo: (result.result.details.modelInfo as Record<string, unknown>) || {},
-          },
-          metrics: {
-            processingTime: result.result.metrics?.processingTime || 0,
-            modelVersion: result.result.metrics?.modelVersion || '1.0.0'
-          }
-        },
-        key_findings: [
-          result.result.isAuthentic 
-            ? 'No signs of manipulation detected' 
-            : 'Potential signs of manipulation found',
-          `Confidence: ${(result.result.confidence * 100).toFixed(1)}%`,
-          'Analysis completed successfully'
-        ],
-        case_id: result.id || `CASE_${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
-        analysis_date: result.createdAt || new Date().toISOString(),
-        technical_details: {
-          processing_time_seconds: result.result.metrics?.processingTime || 0
-        }
-      };
-
-      setAnalysisResult(analysisResult);
+      setJobId(response.jobId);
+      setAnalysisStatus('processing');
     } catch (err) {
       console.error('Analysis failed:', err);
       setError(err instanceof Error ? err.message : 'Failed to analyze image. Please try again.');
+      setAnalysisStatus('failed');
     }
   };
+
+  // Poll for results when jobId is available
+  useEffect(() => {
+    if (jobId && analysisStatus === 'processing') {
+      const polling = pollAnalysisResult(jobId, {
+        onProgress: (progress: number) => {
+          console.log(`Analysis progress: ${progress}%`);
+        }
+      });
+      
+      // Handle the polling promise
+      polling.promise
+        .then((job: AnalysisJobStatus) => {
+          if (job.status === 'completed' && job.result) {
+            const analysisResult: LocalAnalysisResult = {
+              result: {
+                isAuthentic: !job.result.details.isDeepfake, // Backend sends is_deepfake
+                confidence: job.result.confidence,
+                details: {
+                  isDeepfake: job.result.details.isDeepfake,
+                  modelInfo: job.result.details.modelInfo,
+                },
+                metrics: {
+                  processingTime: job.result.metrics.processingTime,
+                  modelVersion: job.result.metrics.modelVersion
+                }
+              },
+              key_findings: [
+                !job.result.details.isDeepfake 
+                  ? 'No signs of manipulation detected' 
+                  : 'Potential signs of manipulation found',
+                `Confidence: ${(job.result.confidence * 100).toFixed(1)}%`,
+                `Model: ${job.result.details.modelInfo?.name || 'SatyaAI'}`,
+                'Analysis completed successfully'
+              ],
+              case_id: job.id || `CASE_${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
+              analysis_date: new Date().toISOString(),
+              technical_details: {
+                processing_time_seconds: job.result.metrics.processingTime,
+                model_used: job.result.details.modelInfo?.name as string || 'SatyaAI',
+                model_version: job.result.metrics.modelVersion
+              }
+            };
+            setAnalysisResult(analysisResult);
+            setAnalysisStatus('completed');
+          }
+        })
+        .catch((err: PollError) => {
+          setError(err.message);
+          setAnalysisStatus('failed');
+        });
+      
+      // Return cleanup function
+      return polling.cancel;
+    }
+  }, [jobId, analysisStatus]);
 
   return (
     <div className="container mx-auto px-4 py-8">

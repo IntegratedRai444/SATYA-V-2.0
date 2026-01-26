@@ -253,10 +253,6 @@ export const router = createBrowserRouter([
         ),
       },
       {
-        path: 'webcam-live',
-        element: <Navigate to="/smart-analysis" replace />,
-      },
-      {
         path: 'multimodal-analysis',
         element: <Navigate to="/smart-analysis" replace />,
       },

@@ -4,24 +4,21 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Eye, EyeOff, Shield, AlertTriangle, Loader2, UserPlus, User, Lock, Mail } from 'lucide-react';
+import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 
 export default function Register() {
   const navigate = useNavigate();
-  // TODO: Re-implement auth after reset
-  const error = null;
-  const isLoading = false;
-  const clearError = () => {};
-  const isAuthenticated = false;
+  const { signUp, user, loading, error } = useSupabaseAuth();
 
   useEffect(() => {
     console.log('Register component mounted');
-    console.log('Auth state:', { error, isLoading });
+    console.log('Auth state:', { error, loading, user });
 
     // Redirect if already authenticated
-    if (isAuthenticated) {
+    if (user) {
       navigate('/dashboard');
     }
-  }, [isAuthenticated, navigate, error, isLoading]);
+  }, [user, loading, navigate, error]);
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -86,7 +83,6 @@ export default function Register() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    clearError && clearError();
 
     const errors = validateForm();
     if (Object.keys(errors).length > 0) {
@@ -104,9 +100,14 @@ export default function Register() {
         passwordLength: formData.password.length
       });
 
-      // TODO: Re-implement register after reset
-      console.log('Registration disabled during auth reset');
-      navigate('/dashboard');
+      // Call real Supabase registration
+      await signUp(formData.email, formData.password, { 
+        name: formData.name,
+        full_name: formData.name
+      });
+      
+      // Registration successful - user will be redirected by useEffect
+      console.log('Registration successful');
     } catch (err: unknown) {
       console.error('Registration error details:', {
         message: err instanceof Error ? err.message : 'Unknown error',
@@ -360,9 +361,9 @@ export default function Register() {
                 <Button
                   type="submit"
                   className="w-full flex justify-center py-3 px-4 border border-transparent rounded-full text-sm font-medium text-white bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:ring-offset-2 focus:ring-offset-transparent disabled:opacity-75 transition-all duration-200 shadow-lg shadow-cyan-500/25 hover:shadow-cyan-500/40 hover:-translate-y-0.5"
-                  disabled={isLoading}
+                  disabled={loading}
                 >
-                  {isLoading ? (
+                  {loading ? (
                     <>
                       <Loader2 className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" />
                       Creating account...

@@ -204,36 +204,10 @@
 <a name='L139'></a><a href='#L139'>139</a>
 <a name='L140'></a><a href='#L140'>140</a>
 <a name='L141'></a><a href='#L141'>141</a>
-<a name='L142'></a><a href='#L142'>142</a>
-<a name='L143'></a><a href='#L143'>143</a>
-<a name='L144'></a><a href='#L144'>144</a>
-<a name='L145'></a><a href='#L145'>145</a>
-<a name='L146'></a><a href='#L146'>146</a>
-<a name='L147'></a><a href='#L147'>147</a>
-<a name='L148'></a><a href='#L148'>148</a>
-<a name='L149'></a><a href='#L149'>149</a>
-<a name='L150'></a><a href='#L150'>150</a>
-<a name='L151'></a><a href='#L151'>151</a>
-<a name='L152'></a><a href='#L152'>152</a>
-<a name='L153'></a><a href='#L153'>153</a>
-<a name='L154'></a><a href='#L154'>154</a>
-<a name='L155'></a><a href='#L155'>155</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L142'></a><a href='#L142'>142</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -371,23 +345,10 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import type { Request, Response, NextFunction, RequestHandler } from 'express';
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import type { RequestHandler } from 'express';
 <span class="cstat-no" title="statement not covered" >import { v4 as uuidv4 } from 'uuid';</span>
 <span class="cstat-no" title="statement not covered" >import { logger } from '../config/logger';</span>
 <span class="cstat-no" title="statement not covered" >import { getSecurityConfig } from '../config/security';</span>
-&nbsp;
-// Extend the Express Request type to include session
-declare global {
-  namespace Express {
-    interface Request {
-      session?: {
-        csrfToken?: string;
-        [key: string]: any;
-      };
-      csrfToken?: () =&gt; string;
-    }
-  }
-}
 &nbsp;
 const securityConfig = <span class="cstat-no" title="statement not covered" >getSecurityConfig();</span>
 &nbsp;
@@ -395,7 +356,7 @@ const securityConfig = <span class="cstat-no" title="statement not covered" >get
  * CSRF Protection Middleware
  * Implements the double submit cookie pattern for CSRF protection
  */
-export const <span class="cstat-no" title="statement not covered" >csrfProtection = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >(</span>r</span>eq: Request, res: Response, next: NextFunction) =&gt; {</span>
+export const <span class="cstat-no" title="statement not covered" >csrfProtection: RequestHandler = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >(</span>r</span>eq, res, next) =&gt; {</span>
   // Skip CSRF check for safe methods
 <span class="cstat-no" title="statement not covered" >  if (['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(req.method)) {</span>
 <span class="cstat-no" title="statement not covered" >    return next();</span>
@@ -435,7 +396,7 @@ export const <span class="cstat-no" title="statement not covered" >csrfProtectio
 /**
  * Middleware to generate and set CSRF token
  */
-export const <span class="cstat-no" title="statement not covered" >csrfToken = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >(</span>r</span>eq: Request, res: Response, next: NextFunction) =&gt; {</span>
+export const <span class="cstat-no" title="statement not covered" >csrfToken: RequestHandler = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >(</span>r</span>eq, res, next) =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >  if (!securityConfig.csrf.enabled) {</span>
 <span class="cstat-no" title="statement not covered" >    return next();</span>
   }
@@ -472,7 +433,7 @@ export const <span class="cstat-no" title="statement not covered" >csrfToken = <
 /**
  * Middleware to verify CSRF token for API requests
  */
-export const <span class="cstat-no" title="statement not covered" >verifyCsrfToken = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >(</span>r</span>eq: Request, res: Response, next: NextFunction) =&gt; {</span>
+export const <span class="cstat-no" title="statement not covered" >verifyCsrfToken: RequestHandler = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >(</span>r</span>eq, res, next) =&gt; {</span>
   // Skip CSRF check for safe methods
 <span class="cstat-no" title="statement not covered" >  if (['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(req.method)) {</span>
 <span class="cstat-no" title="statement not covered" >    return next();</span>
@@ -487,9 +448,9 @@ export const <span class="cstat-no" title="statement not covered" >verifyCsrfTok
   const csrfToken = <span class="cstat-no" title="statement not covered" >req.headers[securityConfig.csrf.headerName.toLowerCase()] || </span>
                    req.body[securityConfig.csrf.fieldName];
   
-  // Verify the CSRF token
-  const sessionToken = <span class="cstat-no" title="statement not covered" >req.session?.csrfToken;</span>
-  const isValidToken = <span class="cstat-no" title="statement not covered" >csrfToken &amp;&amp; sessionToken &amp;&amp; csrfToken === sessionToken;</span>
+  // Verify the CSRF token using cookie-based approach
+  const csrfCookie = <span class="cstat-no" title="statement not covered" >req.cookies ? req.cookies[securityConfig.csrf.cookie.name] : null;</span>
+  const isValidToken = <span class="cstat-no" title="statement not covered" >csrfToken &amp;&amp; csrfCookie &amp;&amp; csrfToken === csrfCookie;</span>
   
 <span class="cstat-no" title="statement not covered" >  if (!isValidToken) {</span>
 <span class="cstat-no" title="statement not covered" >    logger.warn('CSRF token validation failed', {</span>
@@ -497,7 +458,7 @@ export const <span class="cstat-no" title="statement not covered" >verifyCsrfTok
       method: req.method,
       path: req.path,
       hasToken: !!csrfToken,
-      sessionToken: req.session?.csrfToken ? 'present' : 'missing'
+      hasCookie: !!csrfCookie
     });
 &nbsp;
 <span class="cstat-no" title="statement not covered" >    return res.status(403).json({</span>
@@ -532,7 +493,7 @@ export const <span class="cstat-no" title="statement not covered" >csrfMiddlewar
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-01-01T09:38:09.763Z
+                at 2026-01-26T16:11:14.637Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

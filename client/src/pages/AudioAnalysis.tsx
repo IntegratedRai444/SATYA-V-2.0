@@ -1,12 +1,15 @@
-import React, { useState, useCallback } from 'react';
-import { Mic, Upload, CheckCircle, AlertCircle, Loader2, Eye, FileText, BarChart3 } from 'lucide-react';
+import React, { useState, useCallback, useEffect } from 'react';
+import { Loader2, Upload, Mic, CheckCircle, AlertCircle, FileText, BarChart3 } from 'lucide-react';
 import { useAudioAnalysis } from '../hooks/useApi';
+import { pollAnalysisResult } from '../lib/analysis/pollResult';
 import { AnalysisResult } from '../lib/api/services/analysisService';
 import logger from '../lib/logger';
 
 export default function AudioAnalysis() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [activeTab, setActiveTab] = useState<'upload' | 'live'>('upload');
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [analysisStatus, setAnalysisStatus] = useState<'idle' | 'uploading' | 'processing' | 'completed' | 'failed'>('idle');
   
   // Use the proper hook for audio analysis
   const { analyzeAudio: analyzeAudioHook } = useAudioAnalysis();
@@ -85,42 +88,85 @@ export default function AudioAnalysis() {
     }
   };
 
-
   const handleAnalyzeAudio = useCallback(async () => {
     if (!selectedFile) return;
 
-    try {
-      logger.info('Starting audio analysis', {
-        filename: selectedFile.name,
-        size: selectedFile.size
-      });
+    setAnalysisStatus('uploading');
+    setAnalysisState({ status: 'analyzing', result: null, error: null });
 
-      // Use the hook for analysis
-      const result = await analyzeAudioHook({ 
+    try {
+      const response = await analyzeAudioHook({ 
         file: selectedFile, 
         options: { includeDetails: true } 
       });
       
+      if (!response?.jobId) {
+        throw new Error('No jobId returned from backend');
+      }
+
+      setJobId(response.jobId);
+      setAnalysisStatus('processing');
+    } catch (err) {
+      console.error('Audio analysis failed:', err);
       setAnalysisState({
-        status: 'success',
-        result: result,
-        error: null
-      });
-      
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error 
-        ? error.message 
-        : 'Audio analysis failed. Please try again.';
-      
-      logger.error('Audio analysis failed: ' + errorMessage);
-      setAnalysisState(prev => ({
-        ...prev,
         status: 'error',
-        error: errorMessage
-      }));
+        result: null,
+        error: err instanceof Error ? err.message : 'Failed to analyze audio. Please try again.'
+      });
+      setAnalysisStatus('failed');
     }
   }, [selectedFile, analyzeAudioHook]);
 
+  // Poll for results when jobId is available
+  useEffect(() => {
+    let cleanup: (() => void) | null = null;
+    if (jobId && analysisStatus === 'processing') {
+      cleanup = pollAnalysisResult(
+        jobId,
+        (job: any) => {
+          if (job.status === 'completed' && job.result) {
+            const analysisResult: AnalysisResult = {
+              result: {
+                isAuthentic: job.result.isAuthentic,
+                confidence: job.result.confidence,
+                details: {
+                  isDeepfake: job.result.details.isDeepfake,
+                  modelInfo: job.result.details.modelInfo || {},
+                },
+                metrics: {
+                  processingTime: job.result.metrics?.processingTime || 0,
+                  modelVersion: job.result.metrics?.modelVersion || '1.0.0'
+                }
+              },
+              key_findings: [
+                job.result.isAuthentic 
+                  ? 'No signs of manipulation detected' 
+                  : 'Potential signs of manipulation found',
+                `Confidence: ${(job.result.confidence * 100).toFixed(1)}%`,
+                'Audio analysis completed successfully'
+              ],
+              case_id: job.id || `CASE_${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
+              analysis_date: new Date().toISOString(),
+              technical_details: {
+                processing_time_seconds: job.result.metrics?.processingTime || 0
+              }
+            };
+            setAnalysisState({ status: 'success', result: analysisResult, error: null });
+            setAnalysisStatus('completed');
+          }
+        },
+        (err: any) => {
+          setAnalysisState({
+            status: 'error',
+            result: null,
+            error: err.message
+          });
+          setAnalysisStatus('failed');
+        }
+      );
+    }
+    return cleanup;
+  }, [jobId, analysisStatus]);
 
   return (
     <div className="min-h-screen bg-[#1a1d24] text-white">

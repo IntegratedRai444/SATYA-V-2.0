@@ -628,31 +628,15 @@ class AdvancedImageDetector:
     def _load_swin_model(self):
         """Load Swin Transformer model."""
         try:
-            # Try different parameter names for torchvision compatibility
-            try:
-                model = SwinTransformer(
-                    image_size=DEFAULT_IMAGE_SIZE,  # Try image_size first
-                    patch_size=4,
-                    embed_dim=EMBED_DIM,
-                    depths=[2, 2, 6, 2],
-                    num_heads=[4, 8, 16, 32],
-                    window_size=WINDOW_SIZE,
-                    num_classes=2
-                )
-            except TypeError as e1:
-                if 'image_size' in str(e1):
-                    logger.warning(f"image_size parameter failed, trying img_size: {e1}")
-                    model = SwinTransformer(
-                        img_size=DEFAULT_IMAGE_SIZE,  # Fallback to img_size
-                        patch_size=4,
-                        embed_dim=EMBED_DIM,
-                        depths=[2, 2, 6, 2],
-                        num_heads=[4, 8, 16, 32],
-                        window_size=WINDOW_SIZE,
-                        num_classes=2
-                    )
-                else:
-                    raise e1
+            # Use updated torchvision API - remove image_size parameter
+            model = SwinTransformer(
+                patch_size=4,
+                embed_dim=EMBED_DIM,
+                depths=[2, 2, 6, 2],
+                num_heads=[4, 8, 16, 32],
+                window_size=WINDOW_SIZE,
+                num_classes=2
+            )
         except Exception as e:
             logger.error(f"Failed to load SwinTransformer: {e}")
             # Fallback to a simple model

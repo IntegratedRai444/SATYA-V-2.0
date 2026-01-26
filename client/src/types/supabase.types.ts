@@ -543,7 +543,7 @@ export type Database = {
     Enums: {
       user_role: 'user' | 'admin' | 'moderator';
       analysis_status: 'pending' | 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
-      media_type: 'image' | 'video' | 'audio' | 'multimodal' | 'webcam' | 'batch';
+      media_type: 'image' | 'video' | 'audio' | 'multimodal' | 'batch';
       notification_type: 'info' | 'success' | 'warning' | 'error' | 'scan_complete' | 'chat';
     };
     CompositeTypes: {
