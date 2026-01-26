@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for SatyaAI
 
 # Stage 1: Build frontend
-FROM node:18-alpine AS frontend-builder
+FROM node:25-alpine AS frontend-builder
 
 WORKDIR /app/client
 
@@ -18,7 +18,7 @@ COPY client/ ./
 RUN npm run build
 
 # Stage 2: Build backend
-FROM node:18-alpine AS backend-builder
+FROM node:25-alpine AS backend-builder
 
 WORKDIR /app
 
@@ -48,7 +48,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY server/python/ ./
 
 # Stage 4: Production image
-FROM node:18-alpine
+FROM node:25-alpine
 
 # Install Python
 RUN apk add --no-cache python3 py3-pip
