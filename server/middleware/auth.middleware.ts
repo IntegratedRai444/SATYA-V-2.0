@@ -379,22 +379,10 @@ export const requireRole = (roles: UserRole | UserRole[]) => {
   };
 };
 
-// CSRF token generation and validation
-const CSRF_TOKEN_SECRET = process.env.CSRF_TOKEN_SECRET;
-
-if (!CSRF_TOKEN_SECRET) {
-  throw new Error('CSRF_TOKEN_SECRET environment variable is required');
-}
-
-if (CSRF_TOKEN_SECRET.length < 32) {
-  throw new Error('CSRF_TOKEN_SECRET must be at least 32 characters long for security');
-}
-
-const CSRF_TOKEN_AGE = 60 * 60 * 1000; // 1 hour (reduced from 24h)
-
-// TODO: Re-implement CSRF protection after auth reset
-export const generateCsrfToken = (userId?: string): { token: string; cookie: string } => {
-  return { token: 'placeholder', cookie: 'csrf=placeholder' };
+// CSRF protection is not needed for JWT-based authentication
+// since we use Authorization headers instead of cookies
+export const generateCsrfToken = () => {
+  return { token: '', cookie: '' };
 };
 
 export const csrfProtection = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {

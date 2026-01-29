@@ -4,6 +4,7 @@ import LoadingState from '@/components/ui/LoadingState';
 import ErrorBoundary from '@/components/ui/ErrorBoundary';
 import React from 'react';
 import AppLayout from '@/components/layout/AppLayout';
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 
 // Lazy load page components with custom loading
 const lazyWithRetry = (componentImport: () => Promise<{ default: React.ComponentType }>) =>
@@ -37,6 +38,7 @@ const Home = lazyWithRetry(() => import('@/pages/Home'));
 const Dashboard = lazyWithRetry(() => import('@/pages/Dashboard'));
 const Login = lazyWithRetry(() => import('@/pages/Login'));
 const Register = lazyWithRetry(() => import('@/pages/auth/Register'));
+const VerifyEmail = lazyWithRetry(() => import('@/pages/auth/VerifyEmail'));
 const Analytics = lazyWithRetry(() => import('@/pages/Analytics'));
 const MultimodalAnalysis = lazyWithRetry(() => import('../pages/MultimodalAnalysis'));
 const History = lazyWithRetry(() => import('@/pages/History'));
@@ -67,6 +69,14 @@ export const router = createBrowserRouter([
     element: (
       <Suspense fallback={<LoadingState variant="page" message="Loading registration..." />}>
         <Register />
+      </Suspense>
+    ),
+  },
+  {
+    path: '/verify-email',
+    element: (
+      <Suspense fallback={<LoadingState variant="page" message="Loading verification..." />}>
+        <VerifyEmail />
       </Suspense>
     ),
   },
@@ -106,7 +116,11 @@ export const router = createBrowserRouter([
   // Protected routes with MainLayout
   {
     path: '/',
-    element: <AppLayout />,
+    element: (
+      <ProtectedRoute>
+        <AppLayout />
+      </ProtectedRoute>
+    ),
     children: [
       // Redirect root to dashboard
       {

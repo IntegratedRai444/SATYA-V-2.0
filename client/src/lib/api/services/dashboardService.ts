@@ -28,19 +28,19 @@ export interface ApiDashboardStats {
 
 class DashboardService extends BaseService {
   constructor() {
-    super('/api/v2'); // Use /api/v2 base path for consistency
+    super(''); // Use empty base path since Vite proxy handles /api routing
   }
 
   async getDashboardStats(): Promise<ApiDashboardStats> {
-    return this.get<ApiDashboardStats>('/dashboard/stats');
+    return this.get<ApiDashboardStats>('/api/v2/dashboard/stats');
   }
 
   async getUserAnalytics(): Promise<unknown> {
-    return this.get<unknown>('/dashboard/analytics');
+    return this.get<unknown>('/api/v2/dashboard/analytics');
   }
 
   async getAnalysisHistory(params?: { limit?: number }): Promise<unknown> {
-    return this.get<unknown>('/history', params);
+    return this.get<unknown>('/api/v2/history', params);
   }
 }
 

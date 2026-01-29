@@ -35,8 +35,8 @@ if (!supabaseUrl.includes('supabase.co')) {
   throw new Error('Invalid Supabase URL. Please check your VITE_SUPABASE_URL environment variable.');
 }
 
-// Validate Supabase key format (removed - key is valid)
-// The key sb_publishable_hIPmJbNPv98SJGBZ_jUapA_3jGqKhnf is valid
+// Validate Supabase key format
+// Key validation is handled by Supabase client
 
 // Token refresh settings
 const TOKEN_REFRESH_MARGIN = 5 * 60 * 1000; // 5 minutes before expiry

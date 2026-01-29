@@ -42,6 +42,7 @@ export const useSupabaseAuth = (): UseSupabaseAuthReturn => {
     try {
       setError(null);
       setLoading(true);
+      console.log('Attempting login with:', { email, passwordLength: password.length });
       const { error } = await supabase.auth.signInWithPassword(email, password);
       if (error) throw error;
     } catch (err) {
@@ -55,14 +56,44 @@ export const useSupabaseAuth = (): UseSupabaseAuthReturn => {
     try {
       setError(null);
       setLoading(true);
-      const { error } = await supabase.auth.signUp({ 
+      const { data, error } = await supabase.auth.signUp({ 
         email, 
         password,
         options: {
           data: metadata
         }
       });
+      
       if (error) throw error;
+      
+      // Create user profile in database after successful signup
+      if (data.user && metadata) {
+        try {
+          const profileData = {
+            id: data.user.id,
+            email: data.user.email || '',
+            username: (metadata.name as string) || (metadata.full_name as string) || (data.user.email || '').split('@')[0],
+            full_name: (metadata.full_name as string) || (metadata.name as string),
+            role: 'user' as const, // Default role for new users
+            is_active: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          };
+          
+          const { error: profileError } = await supabase
+            .from('users')
+            .insert(profileData as any);
+          
+          if (profileError) {
+            console.warn('Failed to create user profile:', profileError);
+            // Don't throw error - signup was successful, just profile creation failed
+          }
+        } catch (profileErr) {
+          console.warn('Error creating user profile:', profileErr);
+          // Don't throw error - signup was successful, just profile creation failed
+        }
+      }
+      
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to sign up');
     } finally {

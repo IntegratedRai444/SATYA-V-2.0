@@ -14,8 +14,8 @@ export default function Register() {
     console.log('Register component mounted');
     console.log('Auth state:', { error, loading, user });
 
-    // Redirect if already authenticated
-    if (user) {
+    // Redirect if already authenticated and email is verified
+    if (user && user.email_confirmed_at) {
       navigate('/dashboard');
     }
   }, [user, loading, navigate, error]);
@@ -23,6 +23,7 @@ export default function Register() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [networkError, setNetworkError] = useState<string | null>(null);
+  const [registrationSuccess, setRegistrationSuccess] = useState(false);
   const [formErrors, setFormErrors] = useState<{
     name?: string;
     email?: string;
@@ -106,8 +107,9 @@ export default function Register() {
         full_name: formData.name
       });
       
-      // Registration successful - user will be redirected by useEffect
-      console.log('Registration successful');
+      // Show success message instead of redirecting
+      setRegistrationSuccess(true);
+      console.log('Registration successful - email verification required');
     } catch (err: unknown) {
       console.error('Registration error details:', {
         message: err instanceof Error ? err.message : 'Unknown error',
@@ -230,66 +232,44 @@ export default function Register() {
 
             {renderError()}
 
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Full Name */}
-              <div className="space-y-2">
-                <label htmlFor="name" className="block text-sm font-medium text-gray-300">
-                  Full Name
-                  {formErrors.name && (
-                    <span className="text-red-400 text-xs ml-2">{formErrors.name}</span>
-                  )}
-                </label>
-                <div className="mt-1 relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <Input
-                    id="name"
-                    name="name"
-                    type="text"
-                    autoComplete="name"
-                    required
-                    value={formData.name}
-                    onChange={handleInputChange}
-                    className={`w-full pl-11 pr-4 py-3 bg-white/5 border ${formErrors.name ? 'border-red-400/50' : 'border-white/10'
-                      } rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:border-cyan-400/50 transition-all duration-200`}
-                    placeholder="Enter your full name"
-                    aria-invalid={!!formErrors.name}
-                    aria-describedby={formErrors.name ? 'name-error' : undefined}
-                  />
-                </div>
+            {/* Success Message */}
+            {registrationSuccess && (
+              <div className="mb-6">
+                <Alert className="bg-green-900/20 border-green-500/50">
+                  <Shield className="h-4 w-4 mr-2 text-green-400" />
+                  <AlertDescription className="text-green-200">
+                    Registration successful! Please check your email to verify your account before logging in.
+                  </AlertDescription>
+                </Alert>
               </div>
+            )}
 
-              {/* Email Address */}
-              <div className="space-y-2">
-                <label htmlFor="email" className="block text-sm font-medium text-gray-300">
-                  Email Address
-                  {formErrors.email && (
-                    <span className="text-red-400 text-xs ml-2">{formErrors.email}</span>
-                  )}
-                </label>
-                <div className="mt-1 relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <Input
-                    id="email"
-                    name="email"
-                    type="email"
-                    autoComplete="email"
-                    required
-                    value={formData.email}
-                    onChange={handleInputChange}
-                    className={`w-full pl-11 pr-4 py-3 bg-white/5 border ${formErrors.email ? 'border-red-400/50' : 'border-white/10'
-                      } rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:border-cyan-400/50 transition-all duration-200`}
-                    placeholder="Enter your email address"
-                    aria-invalid={!!formErrors.email}
-                    aria-describedby={formErrors.email ? 'email-error' : undefined}
-                  />
-                </div>
-              </div>
-
-              {/* Password */}
-              <div className="space-y-2">
-                <label htmlFor="password" className="block text-sm font-medium text-gray-300">
-                  Password
-                  {formErrors.password && (
+            {!registrationSuccess && (
+              <form onSubmit={handleSubmit} className="space-y-6">
+                {/* Full Name */}
+                <div className="space-y-2">
+                  <label htmlFor="name" className="block text-sm font-medium text-gray-300">
+                    Full Name
+                    {formErrors.name && (
+                      <span className="text-red-400 text-xs ml-2">{formErrors.name}</span>
+                    )}
+                  </label>
+                  <div className="mt-1 relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <Input
+                      id="name"
+                      name="name"
+                      type="text"
+                      autoComplete="name"
+                      required
+                      value={formData.name}
+                      onChange={handleInputChange}
+                      className={`w-full pl-11 pr-4 py-3 bg-white/5 border ${formErrors.name ? 'border-red-400/50' : 'border-white/10'
+                        } rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:border-cyan-400/50 transition-all duration-200`}
+                      placeholder="Enter your full name"
+                      aria-invalid={!!formErrors.name}
+                      aria-describedby={formErrors.name ? 'name-error' : undefined}
+                    />
                     <span className="text-red-400 text-xs ml-2">{formErrors.password}</span>
                   )}
                 </label>
