@@ -3,9 +3,14 @@ import { logger } from '../../config/logger';
 import { config } from 'dotenv';
 import { v4 as uuidv4 } from 'uuid';
 import { createServer } from 'http';
-import { app } from '../../app';
+import request from 'supertest';
 import { sign } from 'jsonwebtoken';
 import { JWT_SECRET } from '../../config/constants';
+
+// Import the server app - we'll create a test instance
+import('../../index').then((module) => {
+  // We'll handle this in the setup
+});
 
 // Load environment variables
 config();

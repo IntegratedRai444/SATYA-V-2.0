@@ -473,17 +473,11 @@ class ApiClient {
   }
 }
 
+import { API_CONFIG } from '../config/urls';
+
 // Create a singleton instance with environment variable
 const getApiBaseUrl = (): string => {
-  // Check Vite environment first
-  if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL as string;
-  }
-  // Fallback for other environments
-  if (typeof window !== 'undefined' && (window as unknown as Record<string, unknown>).__VITE_API_URL__) {
-    return (window as unknown as Record<string, unknown>).__VITE_API_URL__ as string;
-  }
-  throw new Error('VITE_API_URL environment variable is not set');
+  return API_CONFIG.BASE_URL;
 };
 
 // Create and export the API client instance

@@ -776,7 +776,8 @@ router.post(
         });
       } else {
         // Mark job as failed
-        const errorMessage = result.data?.result?.error || result.data?.error || 'Analysis failed';
+        const errorData = result.data as { result?: { error?: string }; error?: string };
+        const errorMessage = errorData?.result?.error || errorData?.error || 'Analysis failed';
         await updateAnalysisJobWithResults(job.id, {
           status: 'failed',
           error_message: errorMessage

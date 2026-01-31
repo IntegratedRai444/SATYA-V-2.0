@@ -36,7 +36,7 @@ COPY tsconfig.json ./
 RUN npm run build:server
 
 # Stage 3: Python environment
-FROM python:3.10-slim AS python-env
+FROM python:3.13-slim AS python-env
 
 WORKDIR /app/python
 
@@ -64,7 +64,7 @@ COPY --from=backend-builder /app/package.json ./
 COPY --from=frontend-builder /app/client/dist ./client/dist
 
 # Copy Python environment
-COPY --from=python-env /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
+COPY --from=python-env /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 COPY --from=python-env /app/python ./server/python
 
 # Create necessary directories
@@ -72,15 +72,15 @@ RUN mkdir -p /app/uploads /app/database /app/logs
 
 # Set environment variables
 ENV NODE_ENV=production
-ENV PORT=3000
+ENV PORT=5001
 ENV PYTHON_PORT=5001
 
 # Expose ports
-EXPOSE 3000 5001
+EXPOSE 5001
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+  CMD node -e "require('http').get('http://localhost:5001/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
 # Start application
 CMD ["npm", "start"]

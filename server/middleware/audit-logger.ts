@@ -73,7 +73,7 @@ async function logAuditEntry(
         request_id: req.id || generateRequestId(),
         response_summary: getResponseSummary(responseData),
         request_params: sanitizeRequestParams(req),
-        session_id: req.session?.id || null
+        session_id: (req as any).session?.id || null
       }
     };
     

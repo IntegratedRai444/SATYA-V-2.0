@@ -1,6 +1,8 @@
 """
 SatyaAI Python-First FastAPI Application
 Complete backend in Python with direct ML integration
+
+Standard FastAPI entry point for deployment tools
 """
 
 import logging
@@ -1110,7 +1112,7 @@ if __name__ == "__main__":
     from config import settings
     
     uvicorn.run(
-        "main_api:app",
+        "main:app",
         host=settings.HOST,
         port=settings.PORT,
         reload=settings.APP_ENV == "development",

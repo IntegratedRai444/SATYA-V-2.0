@@ -48,7 +48,7 @@ const processedEnv = {
 const envSchema = z.object({
   // Server Configuration
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  PORT: z.coerce.number().default(3000),
+  PORT: z.coerce.number().default(5001),
   
   // Supabase Configuration
   SUPABASE_URL: z.string().url('SUPABASE_URL must be a valid URL'),
@@ -132,45 +132,54 @@ class ConfigurationError extends Error {
  */
 function loadEnvironment(): Environment {
   try {
-    // For development, skip validation if environment variables are missing
+    // For development, require actual environment variables but provide sensible defaults
     if (process.env.NODE_ENV === 'development') {
+      // Validate that critical environment variables are present
+      const requiredVars = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'JWT_SECRET'];
+      const missingVars = requiredVars.filter(varName => !process.env[varName]);
+      
+      if (missingVars.length > 0) {
+        throw new ConfigurationError(
+          `Missing required environment variables: ${missingVars.join(', ')}`
+        );
+      }
+
       return {
         NODE_ENV: 'development' as const,
-        PORT: 5001,
-        SUPABASE_URL: 'https://ftbpbghcebwgzqfsgmxk.supabase.co',
-        SUPABASE_ANON_KEY: 'sb_publishable_hIPmJbNPv98SJGBZ_jUapA_3jGqKhnf',
-        SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || 'PLACEHOLDER_SERVICE_ROLE_KEY',
-        SUPABASE_JWT_SECRET: '3905dec4-262c-4488-90c2-33e23cd340f0',
-        JWT_SECRET: process.env.JWT_SECRET || 'PLACEHOLDER_JWT_SECRET',
-        JWT_SECRET_KEY: process.env.JWT_SECRET_KEY || 'PLACEHOLDER_JWT_SECRET_KEY',
-        SESSION_SECRET: process.env.SESSION_SECRET || 'PLACEHOLDER_SESSION_SECRET',
-        FLASK_SECRET_KEY: process.env.FLASK_SECRET_KEY || 'PLACEHOLDER_FLASK_SECRET',
-        DATABASE_URL: 'sqlite:./satyaai.db',
-        DATABASE_PATH: './satyaai.db',
-        UPLOAD_DIR: './uploads',
-        MAX_FILE_SIZE: 104857600,
-        CLEANUP_INTERVAL: 3600000,
-        CORS_ORIGIN: 'http://localhost:5173,http://localhost:3000,http://localhost:5001',
-        RATE_LIMIT_WINDOW_MS: 900000,
-        RATE_LIMIT_MAX_REQUESTS: 100,
-        RATE_LIMIT_SKIP_SUCCESSFUL_REQUESTS: false,
-        LOG_LEVEL: 'debug' as const,
-        LOG_FORMAT: 'simple' as const,
-        LOG_FILE: 'logs/app.log',
-        HEALTH_CHECK_INTERVAL: 30000,
-        PYTHON_HEALTH_CHECK_URL: 'http://localhost:8000/health',
-        ENABLE_METRICS: true,
-        ENABLE_DEV_TOOLS: true,
-        HOT_RELOAD: true,
-        PYTHON_SERVER_URL: 'http://localhost:8000',
-        PYTHON_SERVER_PORT: 8000,
-        PYTHON_SERVER_TIMEOUT: 300000,
-        CSRF_TOKEN_SECRET: 'csrf_secure_key_9876543210fedcba0987654321',
-        JWT_EXPIRES_IN: '24h',
-        REFRESH_TOKEN_EXPIRES_IN: '30d',
-        REDIS_HOST: 'localhost',
-        REDIS_PORT: 6379,
-        REDIS_PASSWORD: undefined,
+        PORT: parseInt(process.env.PORT || '5001'),
+        SUPABASE_URL: process.env.SUPABASE_URL!,
+        SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY!,
+        SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY!,
+        SUPABASE_JWT_SECRET: process.env.SUPABASE_JWT_SECRET || process.env.JWT_SECRET!,
+        JWT_SECRET: process.env.JWT_SECRET!,
+        JWT_SECRET_KEY: process.env.JWT_SECRET_KEY || process.env.JWT_SECRET!,
+        SESSION_SECRET: process.env.SESSION_SECRET || process.env.JWT_SECRET!,
+        FLASK_SECRET_KEY: process.env.FLASK_SECRET_KEY || process.env.JWT_SECRET!,
+        DATABASE_URL: process.env.DATABASE_URL || 'sqlite:./satyaai.db',
+        DATABASE_PATH: process.env.DATABASE_PATH || './satyaai.db',
+        UPLOAD_DIR: process.env.UPLOAD_DIR || './uploads',
+        MAX_FILE_SIZE: parseInt(process.env.MAX_FILE_SIZE || '104857600'),
+        CLEANUP_INTERVAL: parseInt(process.env.CLEANUP_INTERVAL || '3600000'),
+        CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:5173,http://localhost:3000,http://localhost:5001',
+        RATE_LIMIT_WINDOW_MS: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'),
+        RATE_LIMIT_MAX_REQUESTS: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100'),
+        RATE_LIMIT_SKIP_SUCCESSFUL_REQUESTS: process.env.RATE_LIMIT_SKIP_SUCCESSFUL_REQUESTS === 'true',
+        LOG_LEVEL: (process.env.LOG_LEVEL as 'error' | 'warn' | 'info' | 'debug') || 'debug',
+        LOG_FORMAT: (process.env.LOG_FORMAT as 'json' | 'simple') || 'simple',
+        LOG_FILE: process.env.LOG_FILE || 'logs/app.log',
+        HEALTH_CHECK_INTERVAL: parseInt(process.env.HEALTH_CHECK_INTERVAL || '30000'),
+        PYTHON_HEALTH_CHECK_URL: process.env.PYTHON_HEALTH_CHECK_URL || 'http://localhost:8000/health',
+        ENABLE_METRICS: process.env.ENABLE_METRICS !== 'false',
+        ENABLE_DEV_TOOLS: process.env.ENABLE_DEV_TOOLS !== 'false',
+        HOT_RELOAD: process.env.HOT_RELOAD !== 'false',
+        PYTHON_SERVER_URL: process.env.PYTHON_SERVER_URL || 'http://localhost:8000',
+        PYTHON_SERVER_PORT: parseInt(process.env.PYTHON_SERVER_PORT || '8000'),
+        PYTHON_SERVER_TIMEOUT: parseInt(process.env.PYTHON_SERVER_TIMEOUT || '300000'),
+        JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '15m',
+        REFRESH_TOKEN_EXPIRES_IN: process.env.REFRESH_TOKEN_EXPIRES_IN || '7d',
+        REDIS_HOST: process.env.REDIS_HOST || 'localhost',
+        REDIS_PORT: parseInt(process.env.REDIS_PORT || '6379'),
+        REDIS_PASSWORD: process.env.REDIS_PASSWORD,
       } as Environment;
     }
     

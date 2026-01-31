@@ -1,6 +1,5 @@
 import { Request } from 'express';
 import { User } from '@supabase/supabase-js';
-import { Session, SessionData } from 'express-session';
 
 // Custom user interface for authenticated requests
 export interface AuthenticatedUser {
@@ -17,7 +16,6 @@ declare module 'express' {
     apiVersion?: string;
     id?: string;
     nonce?: string;
-    session?: Session & Partial<SessionData>;
     rateLimit?: {
       limit: number;
       current: number;

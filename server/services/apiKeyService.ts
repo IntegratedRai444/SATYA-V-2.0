@@ -41,21 +41,33 @@ export class ApiKeyService {
       const hashedKey = this.hashKey(apiKey);
       
       const { data: result, error } = await supabase
-        .from('users')
-        .select('id, email, role, api_key')
-        .eq('api_key', hashedKey)
-        .limit(1);
+        .from('api_keys')
+        .select(`
+          user_id,
+          users!inner (
+            id,
+            email,
+            role
+          )
+        `)
+        .eq('key_hash', hashedKey)
+        .eq('is_active', true)
+        .is('deleted_at', null)
+        .single() as { data: { user_id: string; users: { id: string; email: string | null; role: string } } | null; error: { message: string } | null };
 
-      if (error || !result || result.length === 0) return null;
+      if (error || !result) {
+        logger.warn('API key lookup failed', { error: error?.message });
+        return null;
+      }
       
       return {
-        id: result[0].id,
-        email: result[0].email,
-        role: result[0].role,
-        apiKey: result[0].api_key
+        id: result.users.id,
+        email: result.users.email,
+        role: result.users.role,
+        apiKey: hashedKey
       };
     } catch (error) {
-      console.error('Error getting user by API key:', error);
+      logger.error('Error getting user by API key:', error);
       return null;
     }
   }

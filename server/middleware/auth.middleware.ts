@@ -7,7 +7,6 @@ import { z } from 'zod';
 import { ZodError } from 'zod';
 import RedisStore from 'rate-limit-redis';
 import { createClient } from 'redis';
-import crypto from 'crypto';
 import { AuthenticatedRequest } from '../types/auth';
 
 // In-memory store for rate limiting when Redis is not available
@@ -192,19 +191,19 @@ export const getRateLimiters = async () => {
 };
 
 // Export rate limiters with initialization wrapper
-export const apiLimiter = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const apiLimiter = async (req: ExpressRequest, res: Response, next: NextFunction) => {
   const { apiRateLimiter } = await getRateLimiters();
-  return apiRateLimiter(req as any, res, next);
+  return apiRateLimiter(req as unknown as Parameters<typeof apiRateLimiter>[0], res, next);
 };
 
-export const loginLimiter = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const loginLimiter = async (req: ExpressRequest, res: Response, next: NextFunction) => {
   const { authRateLimiter } = await getRateLimiters();
-  return authRateLimiter(req as any, res, next);
+  return authRateLimiter(req as unknown as Parameters<typeof authRateLimiter>[0], res, next);
 };
 
-export const refreshTokenLimiter = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const refreshTokenLimiter = async (req: ExpressRequest, res: Response, next: NextFunction) => {
   const { refreshTokenRateLimiter } = await getRateLimiters();
-  return refreshTokenRateLimiter(req as any, res, next);
+  return refreshTokenRateLimiter(req as unknown as Parameters<typeof refreshTokenRateLimiter>[0], res, next);
 };
 
 // Slow down for brute force protection

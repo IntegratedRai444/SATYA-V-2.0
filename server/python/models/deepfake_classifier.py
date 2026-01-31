@@ -37,8 +37,15 @@ HUGGINGFACE_FALLBACKS = {
     'efficientnet': 'facebook/efficientnet-b7-clf',
     'xception': 'timm/xception',
     'resnet50': 'microsoft/resnet-50',
+    'vit': 'google/vit-base-patch16-224',
+    'swin': 'microsoft/swin-tiny-patch4-window7-224',
     'audio': 'MIT/ast-finetuned-audioset-10-10-0.4593',
-    'video': 'MCG-NJU/videomae-base-finetuned-kinetics'
+    'wav2vec2': 'facebook/wav2vec2-base-960h',
+    'hubert': 'facebook/hubert-large-l609-l9',
+    'video': 'MCG-NJU/videomae-base-finetuned-kinetics',
+    'text': 'roberta-base-openai-detector',
+    'bert': 'bert-base-uncased',
+    'distilbert': 'distilbert-base-uncased'
 }
 
 
@@ -85,7 +92,12 @@ class DeepfakeClassifier(nn.Module):
             return
 
         super(DeepfakeClassifier, self).__init__()
-        self.device = device or DEFAULT_DEVICE
+        # Convert string device to torch device
+        device_str = device or DEFAULT_DEVICE
+        if isinstance(device_str, str):
+            self.device = torch.device(device_str)
+        else:
+            self.device = device_str
         self.model_type = model_type
         self.model = None
         self.transform = None
@@ -205,11 +217,116 @@ class DeepfakeClassifier(nn.Module):
     def _load_huggingface_efficientnet(self) -> nn.Module:
         """Load EfficientNet from HuggingFace"""
         try:
-            from transformers import AutoModel
+            from transformers import AutoModel, AutoImageProcessor
             model_name = HUGGINGFACE_FALLBACKS['efficientnet']
             logger.info(f"Loading {model_name} from HuggingFace")
             
             model = AutoModel.from_pretrained(model_name)
+            self.processor = AutoImageProcessor.from_pretrained(model_name)
+            
+            # Determine feature dimension
+            if hasattr(model, 'classifier'):
+                if hasattr(model.classifier, 'in_features'):
+                    num_features = model.classifier.in_features
+                else:
+                    num_features = model.config.hidden_dim
+            else:
+                num_features = model.config.hidden_dim
+            
+            # Create classification head
+            self.classifier = nn.Sequential(
+                nn.Dropout(0.4), 
+                nn.Linear(num_features, 2)
+            )
+            
+            logger.info(f"Loaded HuggingFace EfficientNet with {num_features} features")
+            return model
+            
+        except Exception as e:
+            logger.error(f"Failed to load HuggingFace EfficientNet: {e}")
+            raise
+    
+    def _load_huggingface_vit(self) -> nn.Module:
+        """Load Vision Transformer from HuggingFace"""
+        try:
+            from transformers import ViTModel, ViTImageProcessor
+            model_name = HUGGINGFACE_FALLBACKS['vit']
+            logger.info(f"Loading {model_name} from HuggingFace")
+            
+            model = ViTModel.from_pretrained(model_name)
+            self.processor = ViTImageProcessor.from_pretrained(model_name)
+            
+            # Create classification head
+            num_features = model.config.hidden_size
+            self.classifier = nn.Sequential(
+                nn.Dropout(0.4),
+                nn.Linear(num_features, 2)
+            )
+            
+            logger.info(f"Loaded ViT with {num_features} features")
+            return model
+            
+        except Exception as e:
+            logger.error(f"Failed to load ViT: {e}")
+            raise
+    
+    def _load_huggingface_swin(self) -> nn.Module:
+        """Load Swin Transformer from HuggingFace"""
+        try:
+            from transformers import SwinModel, AutoImageProcessor
+            model_name = HUGGINGFACE_FALLBACKS['swin']
+            logger.info(f"Loading {model_name} from HuggingFace")
+            
+            model = SwinModel.from_pretrained(model_name)
+            self.processor = AutoImageProcessor.from_pretrained(model_name)
+            
+            # Create classification head
+            num_features = model.config.hidden_size
+            self.classifier = nn.Sequential(
+                nn.Dropout(0.4),
+                nn.Linear(num_features, 2)
+            )
+            
+            logger.info(f"Loaded Swin Transformer with {num_features} features")
+            return model
+            
+        except Exception as e:
+            logger.error(f"Failed to load Swin Transformer: {e}")
+            raise
+    
+    def _load_huggingface_audio(self) -> nn.Module:
+        """Load Audio model from HuggingFace"""
+        try:
+            from transformers import AutoModelForAudioClassification, AutoProcessor
+            model_name = HUGGINGFACE_FALLBACKS['wav2vec2']
+            logger.info(f"Loading {model_name} from HuggingFace")
+            
+            model = AutoModelForAudioClassification.from_pretrained(model_name)
+            self.processor = AutoProcessor.from_pretrained(model_name)
+            
+            logger.info(f"Loaded HuggingFace Audio model: {model_name}")
+            return model
+            
+        except Exception as e:
+            logger.error(f"Failed to load HuggingFace Audio model: {e}")
+            raise
+    
+    def _load_huggingface_text(self) -> nn.Module:
+        """Load Text model from HuggingFace"""
+        try:
+            from transformers import AutoModelForSequenceClassification, AutoTokenizer
+            model_name = HUGGINGFACE_FALLBACKS['bert']
+            logger.info(f"Loading {model_name} from HuggingFace")
+            
+            model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2)
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+            
+            logger.info(f"Loaded HuggingFace Text model: {model_name}")
+            return model
+            
+        except Exception as e:
+            logger.error(f"Failed to load HuggingFace Text model: {e}")
+            raise
             
             # Determine feature dimension and create classifier
             if hasattr(model, 'classifier'):

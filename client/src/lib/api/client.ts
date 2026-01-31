@@ -1,4 +1,5 @@
-import axios, { AxiosInstance, AxiosResponse, InternalAxiosRequestConfig, CancelToken } from 'axios';
+import axios, { AxiosInstance, AxiosResponse, AxiosRequestConfig } from 'axios';
+import { API_CONFIG } from '../config/urls';
 import { v4 as uuidv4 } from 'uuid';
 import { metrics, trackError as logError } from '@/lib/services/metrics';
 import { getAccessToken } from "../auth/getAccessToken";
@@ -43,7 +44,7 @@ interface RetryConfig {
   maxRetryDelay: number;
 }
 
-export interface RequestConfig extends InternalAxiosRequestConfig {
+export interface RequestConfig extends AxiosRequestConfig {
   id?: string;
   retryCount?: number;
   skipCache?: boolean;
@@ -56,8 +57,8 @@ export interface RequestConfig extends InternalAxiosRequestConfig {
     cacheKey?: string;
     fromCache?: boolean;
     requestKey?: string;
-    source?: {
-      token: CancelToken;
+    source: {
+      signal: AbortSignal;
       cancel: (message?: string) => void;
     };
   };
@@ -115,10 +116,10 @@ const createRetryDelay = (retryCount: number, config: RetryConfig): number => {
 
 // Create a cancel token source for request cancellation
 const createCancellableSource = () => {
-  const source = axios.CancelToken.source();
+  const controller = new AbortController();
   return {
-    token: source.token,
-    cancel: (message?: string) => source.cancel(message || 'Request cancelled by user')
+    signal: controller.signal,
+    cancel: (message?: string) => controller.abort(message || 'Request cancelled by user')
   };
 };
 
@@ -134,7 +135,7 @@ const createAxiosInstance = (baseURL: string): AxiosInstance => {
       'X-Request-Id': uuidv4()
     },
     withCredentials: true,
-    cancelToken: createCancellableSource().token,
+    signal: createCancellableSource().signal,
     validateStatus: (status) => status >= 200 && status < 300
   });
 
@@ -147,12 +148,13 @@ const createEnhancedAxiosInstance = (baseURL: string): AxiosInstance => {
   
   // Request interceptor for caching and metrics
   instance.interceptors.request.use(
-    async (config: RequestConfig) => {
+    async (config: any) => {
       const requestId = uuidv4();
       config.id = requestId;
       config.metadata = {
         requestId,
         startTime: Date.now(),
+        source: createCancellableSource()
       };
 
       // Add CSRF token to all non-GET requests
@@ -177,7 +179,8 @@ const createEnhancedAxiosInstance = (baseURL: string): AxiosInstance => {
         ...config.metadata,
         startTime: Date.now(),
         requestId,
-        cacheKey
+        cacheKey,
+        source: createCancellableSource()
       };
 
       // Check cache for GET requests
@@ -327,7 +330,7 @@ setInterval(processBatch, batchInterval);
 
 // Request interceptor for batching
 apiClient.interceptors.request.use(
-  async (config: RequestConfig): Promise<InternalAxiosRequestConfig> => {
+  async (config: any) => {
     // Skip batching for now to simplify type issues
     // Skip deduplication for non-idempotent methods
     const isIdempotent = ['GET', 'HEAD', 'OPTIONS'].includes(config.method?.toUpperCase() || '');
@@ -365,7 +368,7 @@ apiClient.interceptors.request.use(
     // Store request metadata
     config.headers = config.headers || {};
     config.headers['X-Request-ID'] = requestId;
-    config.cancelToken = source.token;
+    config.signal = source.signal;
     
     const requestConfig = {
       ...config,
@@ -384,6 +387,7 @@ apiClient.interceptors.request.use(
       value: 1,
       metadata: {
         url: config.url,
+        signal: config.metadata?.source?.signal,
         method: config.method?.toUpperCase() || 'GET',
         requestId,
         version: API_VERSION
@@ -402,10 +406,10 @@ apiClient.interceptors.request.use(
         pendingRequests.delete(requestKey);
       });
       pendingRequests.set(requestKey, requestPromise);
-      return requestConfig as InternalAxiosRequestConfig;
+      return requestConfig;
     }
     
-    return requestConfig as InternalAxiosRequestConfig;
+    return requestConfig;
   },
   (error) => {
     logError(new Error(`Request interceptor error: ${error.message}`), 'request_interceptor');
@@ -502,7 +506,7 @@ apiClient.interceptors.response.use(
       }
       
       const response = await axios.post(
-        `${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/v2/auth/refresh-token`,
+        `${API_CONFIG.BASE_URL}/api/v2/auth/refresh-token`,
         { refreshToken },
         { withCredentials: true }
       );
@@ -544,7 +548,7 @@ export const api = {
   get: async <T = unknown>(
     url: string, 
     params?: Record<string, unknown>, 
-    config: Partial<InternalAxiosRequestConfig> = {}
+    config: Partial<AxiosRequestConfig> = {}
   ): Promise<T> => {
     const response = await apiClient.get(url, { ...config, params });
     return response.data;
@@ -553,7 +557,7 @@ export const api = {
   post: async <T = unknown, D = unknown>(
     url: string, 
     data?: D, 
-    config: Partial<InternalAxiosRequestConfig> = {}
+    config: Partial<AxiosRequestConfig> = {}
   ): Promise<T> => {
     const response = await apiClient.post(url, data, config);
     return response.data;
@@ -562,7 +566,7 @@ export const api = {
   put: async <T = unknown, D = unknown>(
     url: string, 
     data?: D, 
-    config: Partial<InternalAxiosRequestConfig> = {}
+    config: Partial<AxiosRequestConfig> = {}
   ): Promise<T> => {
     const response = await apiClient.put(url, data, config);
     return response.data;
@@ -570,7 +574,7 @@ export const api = {
 
   delete: async <T = unknown>(
     url: string, 
-    config: Partial<InternalAxiosRequestConfig> = {}
+    config: Partial<AxiosRequestConfig> = {}
   ): Promise<T> => {
     const response = await apiClient.delete(url, config);
     return response.data;

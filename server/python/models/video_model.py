@@ -3,6 +3,7 @@ Enhanced Video Deepfake Detection Model
 
 This module provides a 3D CNN with temporal attention for detecting deepfakes in videos.
 It analyzes both spatial and temporal patterns to identify manipulations.
+Includes HuggingFace Vision Transformers for video analysis.
 """
 import logging
 from pathlib import Path
@@ -12,6 +13,19 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+# HuggingFace Vision Transformers
+try:
+    from transformers import (
+        AutoModelForVideoClassification, AutoProcessor,
+        VideoMAEModel, VideoMAEProcessor,
+        TimesformerModel, AutoImageProcessor,
+        VivitModel, VivitImageProcessor
+    )
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
+    logging.warning("HuggingFace Vision Transformers not available")
 
 logger = logging.getLogger(__name__)
 

@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { useBaseWebSocket, WebSocketMessage } from './useBaseWebSocket';
 
 interface JobProgress {
   id: string;
@@ -9,7 +10,7 @@ interface JobProgress {
   startTime: string;
   endTime?: string;
   estimatedTimeRemaining?: number;
-  result?: any;
+  result?: unknown;
   error?: string;
 }
 
@@ -19,21 +20,74 @@ interface UseWebSocketOptions {
   reconnectInterval?: number;
 }
 
-export function useWebSocket(_options: UseWebSocketOptions = {}) {
+export function useWebSocket(options: UseWebSocketOptions = {}) {
   const [jobUpdates, setJobUpdates] = useState<Map<string, JobProgress>>(new Map());
-  const [isConnected, _setIsConnected] = useState(false);
+
+  // Handle incoming WebSocket messages
+  const handleMessage = useCallback((message: WebSocketMessage) => {
+    if (message.type === 'JOB_PROGRESS' || message.type === 'JOB_COMPLETED' || message.type === 'JOB_FAILED') {
+      const payload = message.payload as Record<string, unknown>;
+      const jobId = payload?.jobId as string;
+      if (jobId) {
+        const progressData = {
+          id: jobId,
+          status: message.type === 'JOB_COMPLETED' ? 'completed' : 
+                 message.type === 'JOB_FAILED' ? 'failed' : 
+                 (payload?.status as string) || 'processing',
+          stage: (payload?.stage as string) || 'processing',
+          percentage: (payload?.progress as number) || 0,
+          message: (payload?.message as string) || '',
+          startTime: (payload?.startTime as string) || new Date().toISOString(),
+          endTime: payload?.endTime as string,
+          estimatedTimeRemaining: payload?.estimatedTimeRemaining as number,
+          result: payload?.result,
+          error: payload?.error as string
+        };
+
+        setJobUpdates(prev => {
+          const newMap = new Map(prev);
+          newMap.set(jobId, progressData);
+          return newMap;
+        });
+      }
+    }
+  }, []);
+
+  // Use base WebSocket with authentication
+  const base = useBaseWebSocket({
+    autoConnect: options.autoConnect,
+    reconnectAttempts: options.reconnectAttempts,
+    reconnectInterval: options.reconnectInterval,
+    onMessage: handleMessage,
+  });
 
   // Subscribe to a specific job
   const subscribeToJob = useCallback((jobId: string) => {
-    // Implementation would go here
-    console.log('Subscribing to job:', jobId);
-  }, []);
+    if (!base.isConnected) {
+      console.warn('WebSocket not connected, cannot subscribe to job');
+      return;
+    }
+    
+    base.sendMessage({
+      type: 'SUBSCRIBE_JOB',
+      jobId,
+      timestamp: new Date().toISOString()
+    });
+  }, [base]);
 
   // Unsubscribe from a specific job
   const unsubscribeFromJob = useCallback((jobId: string) => {
-    // Implementation would go here
-    console.log('Unsubscribing from job:', jobId);
-  }, []);
+    if (!base.isConnected) {
+      console.warn('WebSocket not connected, cannot unsubscribe from job');
+      return;
+    }
+    
+    base.sendMessage({
+      type: 'UNSUBSCRIBE_JOB',
+      jobId,
+      timestamp: new Date().toISOString()
+    });
+  }, [base]);
 
   // Get progress for a specific job
   const getJobProgress = useCallback((jobId: string) => {
@@ -50,16 +104,17 @@ export function useWebSocket(_options: UseWebSocketOptions = {}) {
   }, []);
 
   return {
-    isConnected,
+    isConnected: base.isConnected,
     jobUpdates,
     subscribeToJob,
     unsubscribeFromJob,
     getJobProgress,
     clearJobProgress,
-    sendMessage: (message: any) => {
-      // Implementation would go here - send message to WebSocket
-      console.log('Sending message:', message);
-    },
+    sendMessage: base.sendMessage,
+    connectionError: base.connectionError,
+    connectionStatus: base.connectionStatus,
+    connect: base.connect,
+    disconnect: base.disconnect,
   };
 }
 

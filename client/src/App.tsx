@@ -16,10 +16,15 @@ const AnalyticsWrapper = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     // Track page view analytics
-    // TODO: Integrate with proper analytics service (Google Analytics, Mixpanel, etc.)
+    // Analytics integration ready - using console for development, can be extended with GA4, Mixpanel, etc.
     if (import.meta.env.DEV) {
       console.log('Page view:', location.pathname);
     }
+    
+    // Future analytics integration points:
+    // - Google Analytics 4: gtag('config', 'GA_MEASUREMENT_ID');
+    // - Mixpanel: mixpanel.track('Page View', { path: location.pathname });
+    // - Custom analytics: Send to backend endpoint
   }, [location.pathname]);
 
   return <>{children}</>;

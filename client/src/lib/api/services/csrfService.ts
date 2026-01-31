@@ -1,15 +1,3 @@
-import axios from 'axios';
-
-// Create a dedicated axios instance for CSRF requests
-const csrfClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5001',
-  withCredentials: true,
-  headers: {
-    'Content-Type': 'application/json',
-    'X-Requested-With': 'XMLHttpRequest',
-  },
-});
-
 let csrfToken: string | null = null;
 let tokenPromise: Promise<string> | null = null;
 
@@ -18,19 +6,8 @@ let tokenPromise: Promise<string> | null = null;
  * TEMPORARILY DISABLED - CSRF endpoint not implemented
  */
 export const fetchCsrfToken = async (): Promise<string> => {
-  try {
-    // TODO: Re-enable CSRF when endpoint is implemented
-    // const response = await csrfClient.get<{ token: string }>('/api/v2/auth/csrf-token');
-    // return response.data?.token || '';
-    
-    // Return placeholder token for now
-    return 'csrf-disabled-placeholder';
-  } catch (error) {
-    console.error('Failed to fetch CSRF token:', error);
-    // Clear token on error to force a new fetch on next attempt
-    csrfToken = null;
-    throw error;
-  }
+  // TODO: Re-enable CSRF when endpoint is implemented
+  return 'csrf-placeholder';
 };
 
 /**

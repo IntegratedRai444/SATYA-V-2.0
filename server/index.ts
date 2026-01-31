@@ -61,18 +61,22 @@ if (process.env.NODE_ENV !== 'production') {
   console.log('Running in development mode');
 }
 
-let webSocketManager: unknown = null;
+let webSocketManager: any = null;
 
-// Initialize WebSocket manager asynchronously
+// Initialize WebSocket manager with proper error handling
 const initializeWebSocketManager = async () => {
   if (process.env.ENABLE_WEBSOCKETS === 'true') {
     try {
-      const ws = await import('./services/websocket-manager');
-      webSocketManager = ws.WebSocketManager;
+      // Import the default WebSocket manager instance
+      const webSocketModule = await import('./services/websocket-manager');
+      webSocketManager = webSocketModule.default;
+      logger.info('WebSocket manager loaded successfully');
     } catch (error) {
-      // eslint-disable-next-line no-console
-      console.warn('WebSocket manager not available:', error);
+      logger.warn('WebSocket manager not available:', error);
+      webSocketManager = null;
     }
+  } else {
+    logger.info('WebSocket service is disabled');
   }
 };
 
@@ -808,7 +812,7 @@ function logConfigurationSummary() {
   // eslint-disable-next-line no-console
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   // eslint-disable-next-line no-console
-  console.log(`Port: ${process.env.PORT || 3000}`);
+  console.log(`Port: ${process.env.PORT || 5001}`);
   // eslint-disable-next-line no-console
   console.log(`Database: ${process.env.DATABASE_URL ? 'Configured' : 'Not configured'}`);
   // eslint-disable-next-line no-console
@@ -827,9 +831,8 @@ startServer()
     // Initialize WebSocket manager if enabled
     if (webSocketManager && process.env.ENABLE_WEBSOCKETS === 'true') {
       try {
-        const WSManager = webSocketManager as { new(): { initialize(server: Server): void } };
-        const wsManager = new WSManager();
-        wsManager.initialize(serverInstance);
+        // webSocketManager is already an initialized instance
+        webSocketManager.initialize(serverInstance);
         logger.info('WebSocket server initialized');
       } catch (error) {
         logger.error('Failed to initialize WebSocket manager:', error);

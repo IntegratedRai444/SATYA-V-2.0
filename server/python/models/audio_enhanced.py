@@ -16,6 +16,18 @@ import torch.nn.functional as F
 import torchaudio
 from tqdm import tqdm
 
+# HuggingFace Transformers for audio
+try:
+    from transformers import (
+        AutoProcessor, AutoModelForAudioClassification,
+        Wav2Vec2Processor, Wav2Vec2ForSequenceClassification,
+        HubertModel, AutoTokenizer
+    )
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
+    logger.warning("Transformers not available, using basic audio processing only")
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,11 +42,17 @@ class AudioPreprocessor:
         n_fft: int = 512,
         hop_length: int = 128,
         n_mels: int = 64,
+        use_transformers: bool = True,
     ):
         self.sample_rate = sample_rate
         self.n_fft = n_fft
         self.hop_length = hop_length
         self.n_mels = n_mels
+        self.use_transformers = use_transformers and TRANSFORMERS_AVAILABLE
+
+        # Initialize HuggingFace models if available
+        if self.use_transformers:
+            self._init_transformers_models()
 
         # Mel spectrogram transform
         self.mel_spectrogram = torchaudio.transforms.MelSpectrogram(
@@ -47,6 +65,30 @@ class AudioPreprocessor:
             n_mfcc=20,
             melkwargs={"n_fft": n_fft, "n_mels": n_mels, "hop_length": hop_length},
         )
+
+    def _init_transformers_models(self):
+        """Initialize HuggingFace transformer models for audio."""
+        try:
+            # Wav2Vec2 for speech analysis
+            self.wav2vec2_processor = Wav2Vec2Processor.from_pretrained(
+                "facebook/wav2vec2-base-960h"
+            )
+            self.wav2vec2_model = Wav2Vec2ForSequenceClassification.from_pretrained(
+                "facebook/wav2vec2-base-960h"
+            )
+            
+            # HuBERT for robust audio analysis
+            self.hubert_processor = AutoProcessor.from_pretrained(
+                "facebook/hubert-large-l609-l9"
+            )
+            self.hubert_model = AutoModelForAudioClassification.from_pretrained(
+                "facebook/hubert-large-l609-l9"
+            )
+            
+            logger.info("Loaded HuggingFace audio models successfully")
+        except Exception as e:
+            logger.warning(f"Failed to load HuggingFace models: {e}")
+            self.use_transformers = False
 
     def load_audio(self, file_path: str) -> Tuple[torch.Tensor, int]:
         """Load audio file and resample if necessary."""
@@ -104,6 +146,11 @@ class AudioPreprocessor:
         # Voice activity detection
         vad = self._voice_activity_detection(waveform)
 
+        # Transformer-based features if available
+        if self.use_transformers:
+            transformer_features = self._extract_transformer_features(waveform)
+            features.update(transformer_features)
+
         # Compile features
         features.update(
             {
@@ -119,6 +166,47 @@ class AudioPreprocessor:
             }
         )
 
+        return features
+
+    def _extract_transformer_features(self, waveform: torch.Tensor) -> Dict[str, torch.Tensor]:
+        """Extract features using HuggingFace transformer models."""
+        features = {}
+        
+        try:
+            # Convert to numpy for transformers
+            waveform_np = waveform.squeeze().numpy()
+            
+            # Wav2Vec2 features
+            if hasattr(self, 'wav2vec2_processor') and hasattr(self, 'wav2vec2_model'):
+                wav2vec2_inputs = self.wav2vec2_processor(
+                    waveform_np, 
+                    sampling_rate=self.sample_rate, 
+                    return_tensors="pt"
+                )
+                with torch.no_grad():
+                    wav2vec2_outputs = self.wav2vec2_model(**wav2vec2_inputs)
+                
+                features["wav2vec2_embeddings"] = wav2vec2_outputs.last_hidden_state
+                features["wav2vec2_logits"] = wav2vec2_outputs.logits
+            
+            # HuBERT features
+            if hasattr(self, 'hubert_processor') and hasattr(self, 'hubert_model'):
+                hubert_inputs = self.hubert_processor(
+                    waveform_np,
+                    sampling_rate=self.sample_rate,
+                    return_tensors="pt"
+                )
+                with torch.no_grad():
+                    hubert_outputs = self.hubert_model(**hubert_inputs)
+                
+                features["hubert_embeddings"] = hubert_outputs.last_hidden_state
+                features["hubert_logits"] = hubert_outputs.logits
+            
+            logger.debug("Extracted transformer features successfully")
+            
+        except Exception as e:
+            logger.warning(f"Failed to extract transformer features: {e}")
+        
         return features
 
     def _spectral_centroid(self, waveform: torch.Tensor) -> torch.Tensor:

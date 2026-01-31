@@ -1,9 +1,11 @@
 // API Configuration
+import { API_CONFIG as CENTRAL_CONFIG } from '../config/urls';
+
 const API_CONFIG = {
   // Base URLs
   API_VERSION: 'v2',
-  BASE_URL: import.meta.env.VITE_API_URL || 'http://localhost:5001',
-  AUTH_URL: import.meta.env.VITE_AUTH_API_URL || 'http://localhost:5001',
+  BASE_URL: CENTRAL_CONFIG.BASE_URL,
+  AUTH_URL: CENTRAL_CONFIG.AUTH_URL,
   
   // Timeouts (in milliseconds)
   TIMEOUT: 30000, // 30 seconds

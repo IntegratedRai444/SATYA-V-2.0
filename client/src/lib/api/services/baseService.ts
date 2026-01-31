@@ -170,9 +170,11 @@ class RetryManager {
   }
 }
 
+import { API_CONFIG } from '../../config/urls';
+
 // Create axios instance
 const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5001',
+  baseURL: API_CONFIG.BASE_URL,
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',

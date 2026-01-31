@@ -51,57 +51,112 @@ async def detailed_health_check(request: Request):
     memory = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
 
-    # ML models status
-    ml_status = {
-        "image_detector": hasattr(app.state, "image_detector"),
-        "video_detector": hasattr(app.state, "video_detector"),
-        "audio_detector": hasattr(app.state, "audio_detector"),
-        "text_nlp_detector": hasattr(app.state, "text_nlp_detector"),
-        "multimodal_detector": hasattr(app.state, "multimodal_detector"),
-    }
-
-    # Database status
-    database_status = {
-        "connected": False,
-        "response_time_ms": 0,
-        "error": None
-    }
+    # Get service availability from app state
+    services = {}
     
+    # ML Service Status
+    if hasattr(app.state, "sentinel_agent"):
+        services['ml'] = {
+            'status': 'available',
+            'agent_loaded': True,
+            'models_loaded': True
+        }
+    else:
+        services['ml'] = {
+            'status': 'unavailable',
+            'agent_loaded': False,
+            'models_loaded': False
+        }
+    
+    # Database Service Status
     try:
-        from services.database import get_db_manager
+        from ..services.database import get_db_manager
         db_manager = get_db_manager()
-        database_health = await db_manager.health_check()
-        database_status = database_health
+        # Quick connection test
+        db_status = await db_manager.test_connection()
+        services['database'] = {
+            'status': 'connected' if db_status else 'disconnected',
+            'connection_test': db_status
+        }
     except Exception as e:
-        database_status["error"] = str(e)
-        database_status["connected"] = False
-
+        services['database'] = {
+            'status': 'error',
+            'error': str(e)
+        }
+    
+    # Cache Service Status
+    try:
+        from ..services.cache import get_cache_manager
+        cache_manager = get_cache_manager()
+        services['cache'] = {
+            'status': 'available',
+            'type': 'redis' if cache_manager.redis_client else 'memory'
+        }
+    except Exception as e:
+        services['cache'] = {
+            'status': 'error',
+            'error': str(e)
+        }
+    
+    # Error Recovery Service Status
+    try:
+        from ..services.error_recovery import error_recovery
+        services['error_recovery'] = {
+            'status': 'available',
+            'active_circuits': len(error_recovery.circuit_breakers)
+        }
+    except Exception as e:
+        services['error_recovery'] = {
+            'status': 'error',
+            'error': str(e)
+        }
+    
+    # Model Preloader Status
+    try:
+        from ..services.model_preloader import model_preloader
+        preload_status = model_preloader.get_preload_status()
+        preload_summary = model_preloader.get_preload_summary()
+        services['model_preloader'] = {
+            'status': 'available',
+            'preload_status': preload_status,
+            'summary': preload_summary
+        }
+    except Exception as e:
+        services['model_preloader'] = {
+            'status': 'error',
+            'error': str(e)
+        }
+    
+    # Model status
+    model_status = ensure_models_available()
+    
+    # Overall health calculation
+    healthy_services = sum(1 for service in services.values() if service.get('status') == 'available' or service.get('status') == 'connected')
+    total_services = len(services)
+    overall_health = 'healthy' if healthy_services == total_services else 'degraded' if healthy_services > 0 else 'unhealthy'
+    
     return {
-        "status": "healthy",
+        "status": overall_health,
         "version": "2.0.0",
         "timestamp": datetime.utcnow().isoformat(),
-        "uptime": time.process_time(),
+        "uptime": time.time() - app.state.start_time if hasattr(app.state, 'start_time') else 0,
         "system": {
             "cpu_percent": cpu_percent,
             "memory": {
                 "total": memory.total,
                 "available": memory.available,
                 "percent": memory.percent,
+                "used": memory.used
             },
             "disk": {
                 "total": disk.total,
-                "used": disk.used,
                 "free": disk.free,
-                "percent": disk.percent,
-            },
+                "percent": (disk.used / disk.total) * 100
+            }
         },
-        "ml_models": ml_status,
-        "components": {
-            "api": "healthy",
-            "ml_inference": "healthy" if all(ml_status.values()) else "degraded",
-            "database": "healthy" if database_status["connected"] else "unhealthy",
-            "database_details": database_status,
-        },
+        "services": services,
+        "models": model_status,
+        "service_health_ratio": f"{healthy_services}/{total_services}"
     }
 
 

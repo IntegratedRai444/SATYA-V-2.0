@@ -486,7 +486,7 @@ export class WebSocketManager {
     this.startHeartbeat();
     this.setupFileProcessorListeners();
 
-    logger.info('WebSocket server initialized at /api/v1/dashboard/ws');
+    logger.info('WebSocket server initialized at /api/v2/dashboard/ws');
   }
 
   /**

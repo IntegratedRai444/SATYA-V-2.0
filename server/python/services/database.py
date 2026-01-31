@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
+logger = logging.getLogger(__name__)
 
 # Add database directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "database"))
@@ -21,8 +22,6 @@ except ImportError:
     def get_supabase():
         return None
     logger.warning("Database module not available, database features disabled")
-
-logger = logging.getLogger(__name__)
 
 
 class DatabaseManager:

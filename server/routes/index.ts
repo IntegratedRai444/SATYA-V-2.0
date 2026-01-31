@@ -21,32 +21,25 @@ const v2Router = Router();
 
 
 // Dashboard routes (PROTECTED)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-v2Router.use('/dashboard', authenticate as any, dashboardRouter);
+v2Router.use('/dashboard', authenticate, dashboardRouter);
 
 // History routes (PROTECTED)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-v2Router.use('/history', authenticate as any, historyRouter);
+v2Router.use('/history', authenticate, historyRouter);
 
 // Analysis routes (PROTECTED)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-v2Router.use('/analysis', authenticate as any, analysisRouter);
+v2Router.use('/analysis', authenticate, analysisRouter);
 
 // Chat routes (PROTECTED)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-v2Router.use('/chat', authenticate as any, chatRouter);
+v2Router.use('/chat', authenticate, chatRouter);
 
 // Notifications routes (PROTECTED)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-v2Router.use('/notifications', authenticate as any, notificationsRouter);
+v2Router.use('/notifications', authenticate, notificationsRouter);
 
 // User routes (PROTECTED)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-v2Router.use('/user', authenticate as any, userRouter);
+v2Router.use('/user', authenticate, userRouter);
 
 // Results routes (PROTECTED)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-v2Router.use('/results', authenticate as any, resultsRouter);
+v2Router.use('/results', authenticate, resultsRouter);
 
 // Models routes (PUBLIC - for model info)
 v2Router.use('/models', modelsRouter);

@@ -7,11 +7,10 @@ services:
       dockerfile: Dockerfile
     container_name: satyaai-app
     ports:
-      - "3000:3000"
       - "5001:5001"
     environment:
       - NODE_ENV=production
-      - PORT=3000
+      - PORT=5001
       - PYTHON_PORT=5001
       - DATABASE_URL=/app/database/db.sqlite
       - JWT_SECRET=${JWT_SECRET:-change-this-secret-in-production}
@@ -25,7 +24,7 @@ services:
       - ./logs:/app/logs
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ['CMD', 'curl', '-f', 'http://localhost:5001/health']
       interval: 30s
       timeout: 3s
       retries: 3
@@ -37,7 +36,7 @@ services:
     image: prom/prometheus:latest
     container_name: satyaai-prometheus
     ports:
-      - "9090:9090"
+      - '9090:9090'
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus-data:/prometheus
@@ -54,7 +53,7 @@ services:
     image: grafana/grafana:latest
     container_name: satyaai-grafana
     ports:
-      - "3001:3000"
+      - '3001:3000'
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false

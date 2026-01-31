@@ -6,6 +6,7 @@ This module provides state-of-the-art deepfake detection for images using:
 - Cross-scale attention and feature pyramid networks
 - Self-supervised learning with contrastive learning
 - Multi-task learning for improved generalization
+- HuggingFace Transformers integration
 """
 import logging
 import os
@@ -22,6 +23,18 @@ from torchvision import models, transforms
 from torchvision.models import EfficientNet_V2_S_Weights, efficientnet_v2_s
 from torchvision.models.swin_transformer import Swin_S_Weights, SwinTransformer
 from torchvision.ops import FeaturePyramidNetwork, SqueezeExcitation
+
+# HuggingFace Transformers
+try:
+    from transformers import (
+        AutoModel, AutoImageProcessor, ViTModel, ViTImageProcessor,
+        SwinModel, AutoProcessor, BeitModel, ConvNextModel,
+        DeiTModel, DeiTImageProcessor, ResNetModel
+    )
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
+    logger.warning("HuggingFace Transformers not available")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

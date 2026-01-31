@@ -1,5 +1,5 @@
 # Use official Python runtime as a parent image
-FROM python:3.10-slim
+FROM python:3.13-slim
 
 # Set work directory
 WORKDIR /app
@@ -31,7 +31,7 @@ COPY . .
 RUN mkdir -p uploads/images uploads/videos uploads/audio
 
 # Expose port
-EXPOSE 8000
+EXPOSE 9999
 
 # Run the application
-CMD ["python", "main_api.py"]
+CMD ["uvicorn", "main_api:app", "--host", "0.0.0.0", "--port", "9999"]
