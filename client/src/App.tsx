@@ -1,6 +1,5 @@
 import { RouterProvider } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
-import { ThemeProvider } from 'next-themes';
 import { Toaster } from '@/components/ui/toaster';
 import { AppProvider } from '@/contexts/AppContext';
 import { RealtimeProvider } from '@/contexts/RealtimeContext';
@@ -9,6 +8,17 @@ import { useEffect } from 'react';
 import { router } from './utils/router';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import React from 'react';
+
+// Simple Theme Provider to replace next-themes
+const SimpleThemeProvider = ({ children }: { children: React.ReactNode }) => {
+  useEffect(() => {
+    // Force dark theme
+    document.documentElement.classList.add('dark');
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }, []);
+  
+  return <>{children}</>;
+};
 
 // Analytics wrapper component
 const AnalyticsWrapper = ({ children }: { children: React.ReactNode }) => {
@@ -34,7 +44,7 @@ function App() {
   return (
     <ErrorBoundary>
       <HelmetProvider>
-        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} forcedTheme="dark">
+        <SimpleThemeProvider>
           <TooltipProvider>
             <AppProvider>
               <RealtimeProvider>
@@ -45,7 +55,7 @@ function App() {
               </RealtimeProvider>
             </AppProvider>
           </TooltipProvider>
-        </ThemeProvider>
+        </SimpleThemeProvider>
       </HelmetProvider>
     </ErrorBoundary>
   );

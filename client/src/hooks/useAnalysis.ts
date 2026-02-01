@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
-import { analysisService, type AnalysisResult as ServiceAnalysisResult, type AnalysisOptions as ServiceAnalysisOptions } from '../lib/api';
+import { analysisService, type AnalysisResult as ServiceAnalysisResult } from '../lib/api';
 import { useWebSocket } from './useWebSocket';
 
 interface AnalysisResult {
@@ -19,13 +19,14 @@ interface AnalysisProgress {
   progress: number;
   status: 'uploading' | 'processing' | 'completed' | 'error' | 'queued';
   message?: string;
-  result?: any;
+  result?: unknown;
 }
 
 interface AnalysisOptions {
   sensitivity?: 'low' | 'medium' | 'high';
   includeDetails?: boolean;
   async?: boolean;
+  signal?: AbortSignal;
 }
 
 const analyzeFile = async ({ 
@@ -37,39 +38,44 @@ const analyzeFile = async ({
   type: 'image' | 'video' | 'audio'; 
   options?: AnalysisOptions;
 }): Promise<AnalysisResult> => {
-  const serviceOptions = options as ServiceAnalysisOptions;
-  
-  switch (type) {
-    case 'image':
-      const imageResult = await analysisService.analyzeImage(file, serviceOptions);
-      return {
-        success: imageResult.status === 'completed',
-        result: imageResult.result,
-        error: imageResult.error
-      };
-    case 'video':
-      const videoResult = await analysisService.analyzeVideo(file, serviceOptions);
-      return {
-        success: videoResult.status === 'completed',
-        result: videoResult.result,
-        error: videoResult.error
-      };
-    case 'audio':
-      const audioResult = await analysisService.analyzeAudio(file, serviceOptions);
-      return {
-        success: audioResult.status === 'completed',
-        result: audioResult.result,
-        error: audioResult.error
-      };
-    default:
-      throw new Error(`Unsupported file type: ${type}`);
+  try {
+    let jobId: string;
+    
+    switch (type) {
+      case 'image': {
+        jobId = await analysisService.analyzeImage(file, options);
+        break;
+      }
+      case 'video': {
+        jobId = await analysisService.analyzeVideo(file, options);
+        break;
+      }
+      case 'audio': {
+        jobId = await analysisService.analyzeAudio(file, options);
+        break;
+      }
+      default:
+        throw new Error(`Unsupported file type: ${type}`);
+    }
+
+    return {
+      success: true,
+      async: true,
+      jobId,
+      estimatedTime: 30000 // 30 seconds default
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Analysis failed'
+    };
   }
 };
 
 export const useAnalysis = () => {
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress[]>([]);
   const queryClient = useQueryClient();
-  const { subscribeToJob, unsubscribeFromJob } = useWebSocket();
+  const { subscribeToJob, unsubscribeFromJob, isConnected } = useWebSocket();
 
   const analysisMutation = useMutation({
     mutationFn: analyzeFile,
@@ -91,7 +97,9 @@ export const useAnalysis = () => {
             )
           );
           
-          subscribeToJob(result.jobId);
+          if (isConnected) {
+            subscribeToJob(result.jobId);
+          }
         } else {
           setAnalysisProgress(prev => 
             prev.map(p => 
@@ -168,7 +176,7 @@ export const useAnalysis = () => {
         console.error('Analysis failed for file:', file.name, error);
       }
     }
-  }, [analysisMutation, subscribeToJob]);
+  }, [analysisMutation]);
 
   const startMultimodalAnalysis = useCallback(async (
     files: { image?: File; video?: File; audio?: File },
@@ -199,33 +207,24 @@ export const useAnalysis = () => {
         )
       );
 
-      let result: AnalysisResult;
-      const serviceOptions = options as ServiceAnalysisOptions;
+      let jobId: string;
       
       if (files.image) {
-        const imageResult = await analysisService.analyzeImage(files.image, serviceOptions);
-        result = {
-          success: imageResult.status === 'completed',
-          result: imageResult.result,
-          error: imageResult.error
-        };
+        jobId = await analysisService.analyzeImage(files.image, options);
       } else if (files.video) {
-        const videoResult = await analysisService.analyzeVideo(files.video, serviceOptions);
-        result = {
-          success: videoResult.status === 'completed',
-          result: videoResult.result,
-          error: videoResult.error
-        };
+        jobId = await analysisService.analyzeVideo(files.video, options);
       } else if (files.audio) {
-        const audioResult = await analysisService.analyzeAudio(files.audio, serviceOptions);
-        result = {
-          success: audioResult.status === 'completed',
-          result: audioResult.result,
-          error: audioResult.error
-        };
+        jobId = await analysisService.analyzeAudio(files.audio, options);
       } else {
         throw new Error('No files provided for multimodal analysis');
       }
+
+      const result: AnalysisResult = {
+        success: true,
+        async: true,
+        jobId,
+        estimatedTime: 45000 // 45 seconds for multimodal
+      };
 
       if (result.success) {
         if (result.async && result.jobId) {
@@ -242,7 +241,9 @@ export const useAnalysis = () => {
             )
           );
           
-          subscribeToJob(result.jobId);
+          if (isConnected) {
+            subscribeToJob(result.jobId);
+          }
         } else {
           setAnalysisProgress(prev => 
             prev.map(p => 
@@ -285,7 +286,7 @@ export const useAnalysis = () => {
         )
       );
     }
-  }, [subscribeToJob, queryClient]);
+  }, [subscribeToJob, queryClient, isConnected]);
 
   const clearProgress = useCallback(() => {
     analysisProgress.forEach(progress => {

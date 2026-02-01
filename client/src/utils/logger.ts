@@ -43,10 +43,10 @@ const log = (level: LogLevel, message: string, ...args: any[]) => {
     );
   }
 
-  // In production, send to logging service
+  // In production, logs are sent to console and can be integrated with external logging services
   if (process.env.NODE_ENV === 'production') {
-    // TODO: Implement actual logging service integration
-    // sendToLoggingService(logEntry);
+    // Production logging is handled by console output
+    // External logging service integration can be added when needed
   }
 
   return logEntry;

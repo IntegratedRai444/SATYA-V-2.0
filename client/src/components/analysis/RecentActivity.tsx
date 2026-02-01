@@ -150,7 +150,7 @@ const RecentActivity: React.FC<RecentActivityProps> = ({ loading = false }) => {
     // Fetch real recent activity from API
     const fetchRecentActivity = async () => {
       try {
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/v2/dashboard/recent-activity`, {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/dashboard/recent-activity`, {
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('satyaai_auth_token')}`,
             'Content-Type': 'application/json'

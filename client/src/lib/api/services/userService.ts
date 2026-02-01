@@ -1,5 +1,14 @@
 import { BaseService } from './baseService';
 
+export interface ActivityLogItem {
+  id: string;
+  type: string;
+  action: string;
+  description: string;
+  timestamp: string;
+  metadata?: Record<string, unknown>;
+}
+
 export interface UserProfile {
   id: string;
   email: string;
@@ -39,7 +48,7 @@ export interface ChangePasswordData {
 
 export class UserService extends BaseService {
   constructor() {
-    super('/api/v2/user');
+    super('/user');
   }
 
   async getProfile(): Promise<UserProfile> {
@@ -97,7 +106,7 @@ export class UserService extends BaseService {
     limit?: number;
     offset?: number;
     type?: string;
-  } = {}): Promise<{ items: any[]; total: number }> {
+  } = {}): Promise<{ items: ActivityLogItem[]; total: number }> {
     return this.get('/me/activity', params);
   }
 

@@ -19,6 +19,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+import torch
 from PIL import Image
 
 logger = logging.getLogger(__name__)
@@ -87,7 +88,7 @@ class UnifiedDetector:
         """
         self.config = config or {}
         self.model_path = self.config.get("MODEL_PATH", "models")
-        self.enable_gpu = self.config.get("ENABLE_GPU", False)
+        self.enable_gpu = self.config.get("ENABLE_GPU", torch.cuda.is_available())
         self.enable_forensics = self.config.get("ENABLE_FORENSICS", True)
         self.enable_multimodal = self.config.get("ENABLE_MULTIMODAL", True)
         

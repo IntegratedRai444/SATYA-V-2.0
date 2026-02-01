@@ -34,12 +34,7 @@ export default defineConfig(({ mode }) => {
   
   // Production plugins
   const plugins = [
-    react({
-      jsxImportSource: '@emotion/react',
-      babel: {
-        plugins: ['@emotion/babel-plugin'],
-      },
-    }),
+    react(),
     nodePolyfills,
     stripConsolePlugin({
       include: ['console.log', 'console.debug'],

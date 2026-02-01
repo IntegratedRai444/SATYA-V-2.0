@@ -1,5 +1,5 @@
 // Authentication constants
-export const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+export const JWT_SECRET = process.env.JWT_SECRET || 'jwt-secret-key-set-in-env';
 export const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1d';
 
 // WebSocket configuration

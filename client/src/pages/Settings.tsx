@@ -1,22 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/components/ui/use-toast';
-import { FiUser, FiCamera, FiLock, FiTrash2, FiSave } from 'react-icons/fi';
+import { User, Camera, Lock, Trash2, Save } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import apiClient from '@/lib/api';
+import { useSupabaseAuth } from '../hooks/useSupabaseAuth';
+import { supabase } from '../lib/supabaseSingleton';
 
 export default function Settings() {
-  // TODO: Re-implement auth after reset
-  const user = { username: 'Guest', email: 'guest@example.com' };
-  const logout = () => {};
+  const { user, signOut } = useSupabaseAuth();
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   const [profileData, setProfileData] = useState({
-    fullName: user?.username || '',
-    email: user?.email || '',
-    username: user?.username || '',
+    fullName: '',
+    email: '',
+    username: '',
     avatarUrl: ''
   });
 
@@ -26,22 +26,84 @@ export default function Settings() {
     confirmPassword: '',
   });
 
-  // Load profile data on mount
+  const loadUserProfile = useCallback(async () => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error loading user profile:', error);
+        return;
+      }
+
+      if (data) {
+        const profileData = data as Record<string, unknown>;
+        setProfileData({
+          fullName: (profileData.full_name as string) || '',
+          email: (profileData.email as string) || user.email || '',
+          username: (profileData.username as string) || user.email?.split('@')[0] || '',
+          avatarUrl: (profileData.avatar_url as string) || ''
+        });
+      } else {
+        // Create profile if it doesn't exist
+        const newProfile = {
+          id: user.id,
+          username: user.email?.split('@')[0] || 'user',
+          email: user.email || '',
+          full_name: user.user_metadata?.full_name || user.user_metadata?.name || '',
+          avatar_url: user.user_metadata?.avatar_url || '',
+          role: 'user' as const,
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+
+        /* eslint-disable @typescript-eslint/no-explicit-any */
+        const { error: insertError } = await supabase
+          .from('users')
+          .insert(newProfile as any);
+        /* eslint-enable @typescript-eslint/no-explicit-any */
+
+        if (insertError) {
+          console.error('Error creating user profile:', insertError);
+        } else {
+          setProfileData({
+            fullName: newProfile.full_name || '',
+            email: newProfile.email || '',
+            username: newProfile.username || '',
+            avatarUrl: newProfile.avatar_url || ''
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error in loadUserProfile:', error);
+    }
+  }, [user]);
+
+  // Load profile data from database when user is available
   useEffect(() => {
     if (user) {
+      loadUserProfile();
+    } else {
+      // Reset profile data when no user
       setProfileData({
-        fullName: user?.username || '',
-        email: user?.email || '',
-        username: user?.username || '',
+        fullName: '',
+        email: '',
+        username: '',
         avatarUrl: ''
       });
     }
-  }, [user]);
+  }, [user, loadUserProfile]);
 
   const handleUpdateProfile = async () => {
     setIsLoading(true);
     try {
-      const response = await apiClient.put('/api/v2/user/profile', {
+      const response = await apiClient.put('/user/profile', {
         fullName: profileData.fullName,
         username: profileData.username,
         avatar_url: profileData.avatarUrl
@@ -133,14 +195,14 @@ export default function Settings() {
 
     setIsLoading(true);
     try {
-      const response = await apiClient.delete('/api/v2/user/account') as { success: boolean; message?: string };
+      const response = await apiClient.delete('/user/account') as { success: boolean; message?: string };
 
       if (response.success) {
         toast({
           title: 'Account Deleted',
           description: 'Your account has been permanently deleted.',
         });
-        await logout();
+        await signOut();
       } else {
         toast({
           title: 'Error',
@@ -162,7 +224,7 @@ export default function Settings() {
 
   const getUserInitial = () => {
     if (!user) return 'U';
-    const name = user?.username || 'User';
+    const name = user.user_metadata?.full_name || user.user_metadata?.name || user.email || 'User';
     return name.charAt(0).toUpperCase();
   };
 
@@ -183,7 +245,7 @@ export default function Settings() {
               {getUserInitial()}
             </div>
             <button className="absolute bottom-0 right-0 w-7 h-7 sm:w-8 sm:h-8 bg-gray-800 hover:bg-gray-700 rounded-full flex items-center justify-center border-2 border-[#0f1419] transition-colors">
-              <FiCamera className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-300" />
+              <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-300" />
             </button>
           </div>
           <div className="text-center sm:text-left">
@@ -250,7 +312,7 @@ export default function Settings() {
                 className="bg-cyan-500 hover:bg-cyan-600 text-white"
                 disabled={isLoading}
               >
-                <FiUser className="w-4 h-4 mr-2" />
+                <User className="w-4 h-4 text-gray-400" />
                 Edit Profile
               </Button>
             ) : (
@@ -260,7 +322,7 @@ export default function Settings() {
                   className="bg-cyan-500 hover:bg-cyan-600 text-white"
                   disabled={isLoading}
                 >
-                  <FiSave className="w-4 h-4 mr-2" />
+                  <Save className="w-4 h-4 mr-2" />
                   {isLoading ? 'Saving...' : 'Save Changes'}
                 </Button>
                 <Button
@@ -279,7 +341,7 @@ export default function Settings() {
       {/* Change Password Card */}
       <Card className="bg-[#0f1419] border border-gray-800/50 p-4 sm:p-6 lg:p-8 mb-4 sm:mb-6">
         <div className="flex items-center gap-2 sm:gap-3 mb-4 sm:mb-6">
-          <FiLock className="w-4 h-4 sm:w-5 sm:h-5 text-cyan-400" />
+          <Lock className="w-4 h-4 sm:w-5 sm:h-5 text-cyan-400" />
           <h2 className="text-[16px] sm:text-[18px] font-bold text-white">Change Password</h2>
         </div>
 
@@ -348,7 +410,7 @@ export default function Settings() {
             className="bg-transparent hover:bg-red-500/10 text-gray-400 hover:text-red-400 text-[12px] sm:text-[13px] border border-gray-800 hover:border-red-500/30 transition-colors w-full sm:w-auto flex-shrink-0"
             disabled={isLoading}
           >
-            <FiTrash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-2" />
+            <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-2" />
             Delete Account
           </Button>
         </div>

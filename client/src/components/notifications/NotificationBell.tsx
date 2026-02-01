@@ -3,7 +3,7 @@ import { Bell, Check, AlertCircle, Info, CheckCircle, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { useRealtime } from '@/contexts/RealtimeContext';
+import { useRealtime } from '@/hooks/useRealtime';
 import { useNotifications } from '@/contexts/NotificationContext';
 
 const NotificationIcon = ({ type }: { type: string }) => {

@@ -1,23 +1,21 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  FiChevronDown,
-  FiUser,
-  FiLogOut,
-  FiSettings,
-  FiHome,
-  FiZap,
-  FiClock,
-  FiHelpCircle
-} from 'react-icons/fi';
+  ChevronDown,
+  LogOut,
+  Settings,
+  Home,
+  Zap,
+  Clock,
+  HelpCircle
+} from 'lucide-react';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
+import { useSupabaseAuth } from '../../hooks/useSupabaseAuth';
 
 const Navbar = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  // TODO: Re-implement auth after reset
-  const user = { username: 'Guest', email: 'guest@example.com', role: 'user' };
-  const logout = () => {};
+  const { user, signOut } = useSupabaseAuth();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -34,30 +32,30 @@ const Navbar = () => {
   }, []);
 
   const handleLogout = async () => {
-    await logout();
+    await signOut();
     window.location.href = '/login';
   };
 
-  // Get first letter of user's name (from username)
+  // Get first letter of user's name (from email or metadata)
   const getUserInitial = () => {
     if (!user) return 'U';
-    // Use username since fullName is not available
-    const name = user.username || 'User';
+    // Use email first character or metadata name
+    const name = user.user_metadata?.full_name || user.user_metadata?.name || user.email || 'User';
     return name.charAt(0).toUpperCase();
   };
 
-  // Get display name (username)
+  // Get display name (from metadata or email)
   const getDisplayName = () => {
     if (!user) return 'User';
-    return user.username || 'User';
+    return user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'User';
   };
 
   const navItems = [
-    { icon: FiHome, label: 'Home', path: '/dashboard' },
-    { icon: FiZap, label: 'Scan', path: '/scan' },
-    { icon: FiClock, label: 'History', path: '/history' },
-    { icon: FiSettings, label: 'Settings', path: '/settings' },
-    { icon: FiHelpCircle, label: 'Help', path: '/help' },
+    { icon: Home, label: 'Home', path: '/dashboard' },
+    { icon: Zap, label: 'Scan', path: '/scan' },
+    { icon: Clock, label: 'History', path: '/history' },
+    { icon: Settings, label: 'Settings', path: '/settings' },
+    { icon: HelpCircle, label: 'Help', path: '/help' },
   ];
 
   const isActive = (path: string) => location.pathname === path;
@@ -122,7 +120,7 @@ const Navbar = () => {
               <div className="w-9 h-9 rounded-full bg-[#00BFFF] flex items-center justify-center text-white font-bold text-[14px] shadow-lg shadow-cyan-500/30 cursor-pointer hover:shadow-cyan-500/50 transition-shadow">
                 {getUserInitial()}
               </div>
-              <FiChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
             </button>
 
             {/* Dropdown Menu */}
@@ -159,7 +157,7 @@ const Navbar = () => {
                     }}
                     className="w-full px-4 py-2.5 flex items-center gap-3 text-gray-300 hover:bg-white/5 hover:text-white transition-colors"
                   >
-                    <FiUser className="w-4 h-4" />
+                    <Settings className="w-4 h-4" />
                     <span className="text-sm">Profile Settings</span>
                   </button>
                   
@@ -167,7 +165,7 @@ const Navbar = () => {
                     onClick={handleLogout}
                     className="w-full px-4 py-2.5 flex items-center gap-3 text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors"
                   >
-                    <FiLogOut className="w-4 h-4" />
+                    <LogOut className="w-4 h-4" />
                     <span className="text-sm">Logout</span>
                   </button>
                 </div>

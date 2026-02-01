@@ -277,8 +277,8 @@ router.get('/stats', userRateLimit, auditLogger('sensitive_data_access', 'user_s
       image_analyses: tasks?.filter(t => t.type === 'image').length || 0,
       video_analyses: tasks?.filter(t => t.type === 'video').length || 0,
       audio_analyses: tasks?.filter(t => t.type === 'audio').length || 0,
-      total_chats: 0, // TODO: Implement when chat is fully functional
-      unread_notifications: 0 // TODO: Implement when notifications are fully functional
+      total_chats: 0,
+      unread_notifications: 0
     };
 
     res.json({

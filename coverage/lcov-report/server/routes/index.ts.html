@@ -180,14 +180,7 @@
 <a name='L115'></a><a href='#L115'>115</a>
 <a name='L116'></a><a href='#L116'>116</a>
 <a name='L117'></a><a href='#L117'>117</a>
-<a name='L118'></a><a href='#L118'>118</a>
-<a name='L119'></a><a href='#L119'>119</a>
-<a name='L120'></a><a href='#L120'>120</a>
-<a name='L121'></a><a href='#L121'>121</a>
-<a name='L122'></a><a href='#L122'>122</a>
-<a name='L123'></a><a href='#L123'>123</a>
-<a name='L124'></a><a href='#L124'>124</a>
-<a name='L125'></a><a href='#L125'>125</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<a name='L118'></a><a href='#L118'>118</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -210,29 +203,22 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -334,32 +320,25 @@ const v2Router = <span class="cstat-no" title="statement not covered" >Router();
 &nbsp;
 &nbsp;
 // Dashboard routes (PROTECTED)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-<span class="cstat-no" title="statement not covered" >v2Router.use('/dashboard', authenticate as any, dashboardRouter);</span>
+<span class="cstat-no" title="statement not covered" >v2Router.use('/dashboard', authenticate, dashboardRouter);</span>
 &nbsp;
 // History routes (PROTECTED)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-<span class="cstat-no" title="statement not covered" >v2Router.use('/history', authenticate as any, historyRouter);</span>
+<span class="cstat-no" title="statement not covered" >v2Router.use('/history', authenticate, historyRouter);</span>
 &nbsp;
 // Analysis routes (PROTECTED)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-<span class="cstat-no" title="statement not covered" >v2Router.use('/analysis', authenticate as any, analysisRouter);</span>
+<span class="cstat-no" title="statement not covered" >v2Router.use('/analysis', authenticate, analysisRouter);</span>
 &nbsp;
 // Chat routes (PROTECTED)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-<span class="cstat-no" title="statement not covered" >v2Router.use('/chat', authenticate as any, chatRouter);</span>
+<span class="cstat-no" title="statement not covered" >v2Router.use('/chat', authenticate, chatRouter);</span>
 &nbsp;
 // Notifications routes (PROTECTED)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-<span class="cstat-no" title="statement not covered" >v2Router.use('/notifications', authenticate as any, notificationsRouter);</span>
+<span class="cstat-no" title="statement not covered" >v2Router.use('/notifications', authenticate, notificationsRouter);</span>
 &nbsp;
 // User routes (PROTECTED)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-<span class="cstat-no" title="statement not covered" >v2Router.use('/user', authenticate as any, userRouter);</span>
+<span class="cstat-no" title="statement not covered" >v2Router.use('/user', authenticate, userRouter);</span>
 &nbsp;
 // Results routes (PROTECTED)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-<span class="cstat-no" title="statement not covered" >v2Router.use('/results', authenticate as any, resultsRouter);</span>
+<span class="cstat-no" title="statement not covered" >v2Router.use('/results', authenticate, resultsRouter);</span>
 &nbsp;
 // Models routes (PUBLIC - for model info)
 <span class="cstat-no" title="statement not covered" >v2Router.use('/models', modelsRouter);</span>
@@ -442,7 +421,7 @@ export { <span class="cstat-no" title="statement not covered" >router </span>};
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-01-26T16:11:14.637Z
+                at 2026-01-31T17:58:55.682Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

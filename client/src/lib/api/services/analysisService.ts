@@ -90,7 +90,7 @@ export class AnalysisService extends BaseService {
     }
 
     try {
-      const response = await this.post<JobStartResponse>('/api/v2/analysis/image', formData, {
+      const response = await this.post<JobStartResponse>('/analysis/image', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -126,7 +126,7 @@ export class AnalysisService extends BaseService {
   }
 
   async getAnalysisResult(jobId: string): Promise<AnalysisResult> {
-    return this.get(`/api/v2/results/${jobId}`);
+    return this.get(`/results/${jobId}`);
   }
 
   async analyzeVideo(
@@ -137,7 +137,7 @@ export class AnalysisService extends BaseService {
     formData.append('video', file);
 
     try {
-      const response = await this.post<JobStartResponse>('/api/v2/analysis/video', formData, {
+      const response = await this.post<JobStartResponse>('/analysis/video', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -150,6 +150,7 @@ export class AnalysisService extends BaseService {
 
       return response.jobId;
     } catch (error) {
+      console.error('Video analysis error:', error);
       throw new Error('Failed to start video analysis');
     }
   }
@@ -162,7 +163,7 @@ export class AnalysisService extends BaseService {
     formData.append('audio', file);
 
     try {
-      const response = await this.post<JobStartResponse>('/api/v2/analysis/audio', formData, {
+      const response = await this.post<JobStartResponse>('/analysis/audio', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -175,6 +176,7 @@ export class AnalysisService extends BaseService {
 
       return response.jobId;
     } catch (error) {
+      console.error('Audio analysis error:', error);
       throw new Error('Failed to start audio analysis');
     }
   }
@@ -194,7 +196,7 @@ export class AnalysisService extends BaseService {
     }
 
     try {
-      const response = await this.post<JobStartResponse>('/api/v2/analysis/multimodal', formData, {
+      const response = await this.post<JobStartResponse>('/analysis/multimodal', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -207,6 +209,7 @@ export class AnalysisService extends BaseService {
 
       return response.jobId;
     } catch (error) {
+      console.error('Multimodal analysis error:', error);
       throw new Error('Failed to start multimodal analysis');
     }
   }
@@ -216,11 +219,11 @@ export class AnalysisService extends BaseService {
     offset?: number;
     type?: string;
   } = {}): Promise<{ items: AnalysisResult[]; total: number }> {
-    return this.get<{ items: AnalysisResult[]; total: number }>('/api/v2/history', params);
+    return this.get<{ items: AnalysisResult[]; total: number }>('/history', params);
   }
 
   async deleteAnalysis(id: string): Promise<void> {
-    await this.delete(`/api/v2/results/${id}`);
+    await this.delete(`/results/${id}`);
   }
 
   /**
@@ -235,7 +238,7 @@ export class AnalysisService extends BaseService {
     offset?: number;
   } = {}): Promise<{ items: ModelInfo[]; total: number }> {
     try {
-      return await this.get<{ items: ModelInfo[]; total: number }>('/api/v2/models', options);
+      return await this.get<{ items: ModelInfo[]; total: number }>('/models', options);
     } catch (error) {
       console.error('Failed to fetch models:', error);
       // Return a default model if the API call fails

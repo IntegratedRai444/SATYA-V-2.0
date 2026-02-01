@@ -11,23 +11,52 @@ except ImportError as e:
     print(f"Warning: DeepfakeClassifier not available: {e}")
     DEEPFAKE_CLASSIFIER_AVAILABLE = False
 
+# Legacy models from models.py
+try:
+    import sys
+    sys.path.append('../../')
+    from models import (
+        XceptionDeepfakeDetector,
+        EfficientNetDeepfakeDetector,
+        ResNet50DeepfakeDetector,
+        AudioDeepfakeDetector as LegacyAudioDetector,
+        VideoDeepfakeDetector as LegacyVideoDetector
+    )
+    XCEPTION_DETECTOR_AVAILABLE = True
+    EFFICIENTNET_DETECTOR_AVAILABLE = True
+    RESNET50_DETECTOR_AVAILABLE = True
+    LEGACY_AUDIO_DETECTOR_AVAILABLE = True
+    LEGACY_VIDEO_DETECTOR_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Legacy detectors not available: {e}")
+    XCEPTION_DETECTOR_AVAILABLE = False
+    EFFICIENTNET_DETECTOR_AVAILABLE = False
+    RESNET50_DETECTOR_AVAILABLE = False
+    LEGACY_AUDIO_DETECTOR_AVAILABLE = False
+    LEGACY_VIDEO_DETECTOR_AVAILABLE = False
+    XceptionDeepfakeDetector = None
+    EfficientNetDeepfakeDetector = None
+    ResNet50DeepfakeDetector = None
+    LegacyAudioDetector = None
+    LegacyVideoDetector = None
+
 # Enhanced modality models
 try:
-    from .image_model import ImageModel
+    from .image_model import AdvancedImageDetector as ImageModel
     IMAGE_MODEL_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: ImageModel not available: {e}")
     IMAGE_MODEL_AVAILABLE = False
 
 try:
-    from .audio_enhanced import AudioModel
+    from .audio_enhanced import AudioDeepfakeDetector as AudioModel
     AUDIO_MODEL_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: AudioModel not available: {e}")
     AUDIO_MODEL_AVAILABLE = False
 
 try:
-    from .video_model import VideoModel
+    from .video_model import VideoDeepfakeDetector as VideoModel
     VIDEO_MODEL_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: VideoModel not available: {e}")
@@ -50,7 +79,7 @@ except ImportError as e:
 
 # Ensemble and advanced models
 try:
-    from .ensemble_detector import EnsembleDetector
+    from .ensemble_detector import EnsembleDeepfakeDetector as EnsembleDetector
     ENSEMBLE_DETECTOR_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: EnsembleDetector not available: {e}")
@@ -65,6 +94,11 @@ MODEL_REGISTRY = {
     'text': TextDeepfakeDetector if TEXT_MODEL_AVAILABLE else None,
     'multimodal': MultimodalDeepfakeDetector if MULTIMODAL_MODEL_AVAILABLE else None,
     'ensemble': EnsembleDetector if ENSEMBLE_DETECTOR_AVAILABLE else None,
+    'xception_detector': XceptionDeepfakeDetector if XCEPTION_DETECTOR_AVAILABLE else None,
+    'efficientnet_detector': EfficientNetDeepfakeDetector if EFFICIENTNET_DETECTOR_AVAILABLE else None,
+    'resnet50_detector': ResNet50DeepfakeDetector if RESNET50_DETECTOR_AVAILABLE else None,
+    'legacy_audio': LegacyAudioDetector if LEGACY_AUDIO_DETECTOR_AVAILABLE else None,
+    'legacy_video': LegacyVideoDetector if LEGACY_VIDEO_DETECTOR_AVAILABLE else None,
 }
 
 # Transformer availability check
@@ -124,6 +158,11 @@ __all__ = [
     'TextDeepfakeDetector',
     'MultimodalDeepfakeDetector',
     'EnsembleDetector',
+    'XceptionDeepfakeDetector',
+    'EfficientNetDeepfakeDetector',
+    'ResNet50DeepfakeDetector',
+    'LegacyAudioDetector',
+    'LegacyVideoDetector',
     'analyze_text_deepfake',
     'analyze_multimodal_deepfake',
     'get_available_models',

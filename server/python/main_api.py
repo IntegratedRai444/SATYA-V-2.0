@@ -298,7 +298,7 @@ async def lifespan(app: FastAPI):
                     import torch  # Import torch here for availability check
                     config = {
                         "MODEL_PATH": "models",
-                        "ENABLE_GPU": torch.cuda.is_available(),
+                        "ENABLE_GPU": torch.cuda.is_available(),  # Auto-enable GPU if available
                         "ENABLE_FORENSICS": True,
                         "ENABLE_MULTIMODAL": True
                     }

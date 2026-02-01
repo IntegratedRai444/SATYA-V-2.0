@@ -73,8 +73,15 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default('24h'),
   SESSION_SECRET: z.string()
     .min(32, 'SESSION_SECRET must be at least 32 characters long')
-    .optional()
-    .default('your-super-secret-session-key-that-is-at-least-32-characters-long'),
+    .refine(secret => {
+      const isDefault = [
+        'your-super-secret-session-key-that-is-at-least-32-characters-long',
+        'change-this-to-a-secure-session-key',
+        'dev-session-key-change-in-production'
+      ].includes(secret);
+      return process.env.NODE_ENV !== 'production' || !isDefault;
+    }, 'SESSION_SECRET must be changed from default value in production')
+    .optional(),
   
   // Database
   DATABASE_URL: z.string()
@@ -117,13 +124,25 @@ const envSchema = z.object({
   // Python AI Engine
   PYTHON_URL: z.string()
     .url('PYTHON_URL must be a valid URL')
-    .default('http://localhost:8000'),
+    .refine(url => {
+      if (process.env.NODE_ENV === 'production') {
+        return !url.includes('localhost') && !url.includes('127.0.0.1');
+      }
+      return true;
+    }, 'PYTHON_URL must point to a production service in production')
+    .default(process.env.NODE_ENV === 'production' ? 'https://ml-api.yourdomain.com' : 'http://localhost:8000'),
   PYTHON_PORT: z.string()
     .regex(/^\d+$/, 'PYTHON_PORT must be a number')
     .default('8000'),
   PYTHON_HEALTH_CHECK_URL: z.string()
     .url('PYTHON_HEALTH_CHECK_URL must be a valid URL')
-    .default('http://localhost:8000/health'),
+    .refine(url => {
+      if (process.env.NODE_ENV === 'production') {
+        return !url.includes('localhost') && !url.includes('127.0.0.1');
+      }
+      return true;
+    }, 'PYTHON_HEALTH_CHECK_URL must point to a production service in production')
+    .default(process.env.NODE_ENV === 'production' ? 'https://ml-api.yourdomain.com/health' : 'http://localhost:8000/health'),
   
   // Optional Features
   ENABLE_METRICS: z.string()

@@ -1,8 +1,8 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { Loader2, Upload, Video, CheckCircle, AlertCircle, FileText, BarChart3, Eye, Film } from 'lucide-react';
+import { Loader2, Upload, Video, CheckCircle, AlertCircle, Eye, Film } from 'lucide-react';
 import { useVideoAnalysis } from '../hooks/useApi';
 import { pollAnalysisResult } from '../lib/analysis/pollResult';
-import { logger } from '../lib/logger';
+import logger from '../lib/logger';
 import { formatFileSize } from '../lib/file-utils';
 
 interface AnalysisResult {
@@ -24,6 +24,12 @@ interface AnalysisResult {
   technical_details?: {
     processing_time_seconds?: number;
   };
+  id?: string;
+  proof?: {
+    frames_analyzed?: number;
+  };
+  requestId?: string;
+  createdAt?: string;
 }
 
 export default function VideoAnalysis() {
@@ -123,49 +129,67 @@ export default function VideoAnalysis() {
 
   // Poll for results when jobId is available
   useEffect(() => {
-    let cleanup: (() => void) | null = null;
     if (jobId && analysisStatus === 'processing') {
-      cleanup = pollAnalysisResult(
+      const { cancel } = pollAnalysisResult(
         jobId,
-        (job: any) => {
+        {
+          onProgress: (progress: number) => {
+            // Update progress if needed
+            console.log(`Analysis progress: ${progress}%`);
+          },
+          onStatusChange: (status: string) => {
+            console.log(`Analysis status: ${status}`);
+          }
+        }
+      );
+      
+      // Handle the polling result separately
+      pollAnalysisResult(jobId, {
+        timeout: 300000, // 5 minutes
+        maxRetries: 10
+      }).promise
+        .then((job: { status: string; result?: { isAuthentic?: boolean; confidence?: number; details?: Record<string, unknown>; metrics?: { processingTime?: number; modelVersion?: string } }; id?: string }) => {
           if (job.status === 'completed' && job.result) {
             const analysisResult: AnalysisResult = {
               result: {
-                isAuthentic: job.result.isAuthentic,
-                confidence: job.result.confidence,
+                isAuthentic: job.result.isAuthentic ?? false,
+                confidence: job.result.confidence ?? 0,
                 details: {
-                  isDeepfake: job.result.details.isDeepfake,
-                  modelInfo: job.result.details.modelInfo || {},
+                  isDeepfake: (job.result.details?.isDeepfake as boolean) ?? false,
+                  modelInfo: (job.result.details?.modelInfo as Record<string, unknown>) ?? {},
                 },
                 metrics: {
-                  processingTime: job.result.metrics?.processingTime || 0,
-                  modelVersion: job.result.metrics?.modelVersion || '1.0.0'
+                  processingTime: job.result.metrics?.processingTime ?? 0,
+                  modelVersion: job.result.metrics?.modelVersion ?? '1.0.0'
                 }
               },
               key_findings: [
-                job.result.isAuthentic 
+                (job.result.isAuthentic ?? false) 
                   ? 'No signs of manipulation detected' 
                   : 'Potential signs of manipulation found',
-                `Confidence: ${(job.result.confidence * 100).toFixed(1)}%`,
+                `Confidence: ${((job.result.confidence ?? 0) * 100).toFixed(1)}%`,
                 'Video analysis completed successfully'
               ],
               case_id: job.id || `CASE_${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
               analysis_date: new Date().toISOString(),
               technical_details: {
-                processing_time_seconds: job.result.metrics?.processingTime || 0
+                processing_time_seconds: job.result.metrics?.processingTime ?? 0
               }
             };
             setAnalysisResult(analysisResult);
             setAnalysisStatus('completed');
           }
-        },
-        (err: any) => {
-          setError(err.message);
+        })
+        .catch((err: Error | { message?: string }) => {
+          const errorMessage = err instanceof Error ? err.message : (err.message || 'Analysis failed');
+          setError(errorMessage);
           setAnalysisStatus('failed');
-        }
-      );
+        });
+      
+      return () => {
+        cancel();
+      };
     }
-    return cleanup;
   }, [jobId, analysisStatus]);
 
   return (

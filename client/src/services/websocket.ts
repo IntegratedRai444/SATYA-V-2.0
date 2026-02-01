@@ -147,9 +147,25 @@ class WebSocketService {
   private getWebSocketUrl(token: string): string {
     try {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      // Use backend server instead of frontend host
-      const wsHost = import.meta.env.VITE_WS_URL?.replace(/^ws:\/\//, '')?.replace(/^wss:\/\//, '') || 'localhost:5001';
-      return `${protocol}//${wsHost}/api/v2/dashboard/ws?token=${encodeURIComponent(token)}`;
+      const configured = import.meta.env.VITE_WS_URL;
+
+      // VITE_WS_URL can be either:
+      // - host only: "localhost:5001"
+      // - full URL: "ws://localhost:5001/api/v2/dashboard/ws"
+      // - full URL without protocol: "localhost:5001/api/v2/dashboard/ws"
+      if (configured) {
+        const hasProtocol = /^wss?:\/\//i.test(configured);
+        const baseUrl = hasProtocol ? configured : `${protocol}//${configured}`;
+        const url = new URL(baseUrl);
+
+        // If a path is already provided, use it; otherwise default to the dashboard ws endpoint
+        const path = url.pathname && url.pathname !== '/' ? url.pathname : '/api/v2/dashboard/ws';
+        url.pathname = path;
+        url.searchParams.set('token', token);
+        return url.toString();
+      }
+
+      return `${protocol}//localhost:5001/api/v2/dashboard/ws?token=${encodeURIComponent(token)}`;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       logger.error('Failed to construct WebSocket URL: ' + errorMessage);

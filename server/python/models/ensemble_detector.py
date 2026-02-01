@@ -15,8 +15,39 @@ import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image
 
-from ..utils.error_handler import ModelLoadError, error_handler
-from .deepfake_classifier import DeepfakeClassifier, XceptionDeepfakeClassifier
+from .deepfake_classifier import DeepfakeClassifier
+
+# Import legacy detectors
+try:
+    import sys
+    sys.path.append('../../')
+    from models import (
+        XceptionDeepfakeDetector,
+        EfficientNetDeepfakeDetector,
+        ResNet50DeepfakeDetector,
+        AudioDeepfakeDetector,
+        VideoDeepfakeDetector
+    )
+    LEGACY_DETECTORS_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Legacy detectors not available: {e}")
+    LEGACY_DETECTORS_AVAILABLE = False
+    XceptionDeepfakeDetector = None
+    EfficientNetDeepfakeDetector = None
+    ResNet50DeepfakeDetector = None
+    AudioDeepfakeDetector = None
+    VideoDeepfakeDetector = None
+
+# Fix relative import issue
+try:
+    from ..utils.error_handler import ModelLoadError, error_handler
+except ImportError:
+    # Fallback if utils module not available
+    class ModelLoadError(Exception):
+        pass
+    
+    def error_handler(func):
+        return func
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +90,7 @@ class EnsembleDeepfakeDetector(nn.Module):
         # Enhanced model configurations with dynamic weight adjustment parameters
         self.model_configs = {
             "efficientnet_b7": {
-                "class": DeepfakeClassifier,
+                "class": EfficientNetDeepfakeDetector if EfficientNetDeepfakeDetector else DeepfakeClassifier,
                 "input_size": (224, 224),
                 "base_weight": 0.35,
                 "weight": 0.35,
@@ -69,7 +100,7 @@ class EnsembleDeepfakeDetector(nn.Module):
                 "confidence_threshold": 0.7,
             },
             "xception": {
-                "class": XceptionDeepfakeClassifier,
+                "class": XceptionDeepfakeDetector if XceptionDeepfakeDetector else DeepfakeClassifier,
                 "input_size": (299, 299),
                 "base_weight": 0.25,
                 "weight": 0.25,
@@ -77,6 +108,16 @@ class EnsembleDeepfakeDetector(nn.Module):
                 "min_weight": 0.15,
                 "max_weight": 0.4,
                 "confidence_threshold": 0.7,
+            },
+            "resnet50": {
+                "class": ResNet50DeepfakeDetector if ResNet50DeepfakeDetector else DeepfakeClassifier,
+                "input_size": (224, 224),
+                "base_weight": 0.2,
+                "weight": 0.2,
+                "specialty": "general_purpose",
+                "min_weight": 0.1,
+                "max_weight": 0.3,
+                "confidence_threshold": 0.65,
             },
             "face_xray": {
                 "class": FaceXRayDetector,

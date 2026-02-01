@@ -170,7 +170,7 @@ class SatyaAICore:
         # Set up default configuration
         self.config: ConfigDict = {
             "MODEL_PATH": "./models",
-            "ENABLE_GPU": False,
+            "ENABLE_GPU": torch.cuda.is_available(),
             "ENABLE_SENTINEL": SENTINEL_AVAILABLE,
             "LOG_LEVEL": "INFO",
             "MAX_WORKERS": 4,
@@ -620,8 +620,7 @@ class SatyaAIContainer:
                 if config is None:
                     config = {
                         "MODEL_PATH": os.environ.get("MODEL_PATH", "./models"),
-                        "ENABLE_GPU": os.environ.get("ENABLE_GPU", "False").lower()
-                        == "true",
+                        "ENABLE_GPU": torch.cuda.is_available() if os.environ.get("ENABLE_GPU", "auto").lower() == "auto" else os.environ.get("ENABLE_GPU", "False").lower() == "true",
                         "LOG_LEVEL": os.environ.get("LOG_LEVEL", "INFO"),
                         "ENABLE_SENTINEL": os.environ.get(
                             "ENABLE_SENTINEL", "True"

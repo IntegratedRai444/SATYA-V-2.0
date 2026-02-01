@@ -1,24 +1,21 @@
-import { useLocation, Link, useNavigate } from 'react-router-dom';
+import { useLocation, Link } from 'react-router-dom';
 import { 
-  // FiHome, // Not used
-  FiImage, 
-  FiVideo, 
-  FiMic, 
-  FiLayers, 
-  // FiUpload, // DISABLED - batch processing
-  // FiBarChart2, // Not used
-  FiSettings, 
-  FiHelpCircle, 
-  // FiChevronDown, // Not used
-  FiChevronLeft,
-  FiChevronRight,
-  FiGrid,
-  FiTrendingUp,
-  FiClock,
-  FiZap
-} from 'react-icons/fi';
+  Image, 
+  Video, 
+  Mic, 
+  Layers, 
+  Settings, 
+  HelpCircle, 
+  ChevronLeft,
+  ChevronRight,
+  Grid,
+  TrendingUp,
+  Clock,
+  Zap
+} from 'lucide-react';
 import clsx from 'clsx';
 import { useMediaQuery } from '@/hooks/use-media-query';
+import { useChat } from '@/contexts/ChatContext';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -27,16 +24,16 @@ interface SidebarProps {
 
 const Sidebar = ({ isOpen, onToggle }: SidebarProps) => {
   const location = useLocation();
-  const navigate = useNavigate();
   const isActive = (path: string) => location.pathname === path;
   const isMobile = useMediaQuery('(max-width: 768px)');
+  const { openChat } = useChat();
 
   const handleOpenChat = () => {
-    navigate('/ai-assistant');
+    openChat();
   };
 
   const handleQuickAction = (action: string) => {
-    navigate('/ai-assistant', { state: { quickPrompt: action } });
+    openChat(action);
   };
 
   return (
@@ -49,9 +46,9 @@ const Sidebar = ({ isOpen, onToggle }: SidebarProps) => {
         aria-label={isOpen ? 'Close sidebar' : 'Open sidebar'}
       >
         {isOpen ? (
-          <FiChevronLeft className="w-5 h-5 text-gray-400" />
+          <ChevronLeft className="w-5 h-5 text-gray-400" />
         ) : (
-          <FiChevronRight className="w-5 h-5 text-gray-400" />
+          <ChevronRight className="w-5 h-5 text-gray-400" />
         )}
       </button>
 
@@ -92,7 +89,7 @@ const Sidebar = ({ isOpen, onToggle }: SidebarProps) => {
                 aria-current={isActive('/dashboard') ? 'page' : undefined}
                 aria-label="Dashboard - Navigate to dashboard page"
               >
-                <FiGrid className="w-6 h-6 flex-shrink-0" strokeWidth={2} />
+                <Grid className="w-5 h-5" />
                 <span className="text-[15px] font-medium">Dashboard</span>
               </Link>
               
@@ -108,7 +105,7 @@ const Sidebar = ({ isOpen, onToggle }: SidebarProps) => {
                 )}
                 aria-current={isActive('/image-analysis') ? 'page' : undefined}
               >
-                <FiImage className="w-6 h-6 flex-shrink-0" strokeWidth={2} />
+                <Image className="w-5 h-5" />
                 <span className="text-[15px] font-medium">Image Analysis</span>
               </Link>
               
@@ -124,7 +121,7 @@ const Sidebar = ({ isOpen, onToggle }: SidebarProps) => {
                 )}
                 aria-current={isActive('/video-analysis') ? 'page' : undefined}
               >
-                <FiVideo className="w-6 h-6 flex-shrink-0" strokeWidth={2} />
+                <Video className="w-5 h-5" />
                 <span className="text-[15px] font-medium">Video Analysis</span>
               </Link>
               
@@ -140,7 +137,7 @@ const Sidebar = ({ isOpen, onToggle }: SidebarProps) => {
                 )}
                 aria-current={isActive('/audio-analysis') ? 'page' : undefined}
               >
-                <FiMic className="w-6 h-6 flex-shrink-0" strokeWidth={2} />
+                <Mic className="w-5 h-5" />
                 <span className="text-[15px] font-medium">Audio Analysis</span>
               </Link>
               
@@ -156,7 +153,7 @@ const Sidebar = ({ isOpen, onToggle }: SidebarProps) => {
                 )}
                 aria-current={isActive('/multimodal-analysis') ? 'page' : undefined}
               >
-                <FiLayers className="w-6 h-6 flex-shrink-0" strokeWidth={2} />
+                <Layers className="w-5 h-5" />
                 <span className="text-[15px] font-medium">Multimodal</span>
               </Link>
 
@@ -172,7 +169,7 @@ const Sidebar = ({ isOpen, onToggle }: SidebarProps) => {
                 )}
                 aria-current={isActive('/batch-analysis') ? 'page' : undefined}
               >
-                <FiUpload className="w-6 h-6 flex-shrink-0" strokeWidth={2} />
+                <Upload className="w-5 h-5" />
                 <span className="text-[15px] font-medium">Batch Analysis</span>
               </Link> */}
               
@@ -201,7 +198,7 @@ const Sidebar = ({ isOpen, onToggle }: SidebarProps) => {
                 )}
                 aria-current={isActive('/analytics') ? 'page' : undefined}
               >
-                <FiTrendingUp className="w-6 h-6 flex-shrink-0" strokeWidth={2} />
+                <TrendingUp className="w-5 h-5" />
                 <span className="text-[15px] font-medium">Analytics</span>
               </Link>
 
@@ -217,7 +214,7 @@ const Sidebar = ({ isOpen, onToggle }: SidebarProps) => {
                 )}
                 aria-current={isActive('/scan-history') ? 'page' : undefined}
               >
-                <FiClock className="w-6 h-6 flex-shrink-0" strokeWidth={2} />
+                <Clock className="w-5 h-5" />
                 <span className="text-[15px] font-medium">Scan History</span>
               </Link>
               
@@ -233,7 +230,7 @@ const Sidebar = ({ isOpen, onToggle }: SidebarProps) => {
                 )}
                 aria-current={isActive('/settings') ? 'page' : undefined}
               >
-                <FiSettings className="w-6 h-6 flex-shrink-0" strokeWidth={2} />
+                <Settings className="w-5 h-5" />
                 <span className="text-[15px] font-medium">Settings</span>
               </Link>
               
@@ -249,7 +246,7 @@ const Sidebar = ({ isOpen, onToggle }: SidebarProps) => {
                 )}
                 aria-current={isActive('/help') ? 'page' : undefined}
               >
-                <FiHelpCircle className="w-6 h-6 flex-shrink-0" strokeWidth={2} />
+                <HelpCircle className="w-5 h-5" />
                 <span className="text-[15px] font-medium">Help & Support</span>
               </Link>
               
@@ -265,7 +262,7 @@ const Sidebar = ({ isOpen, onToggle }: SidebarProps) => {
               <div className="flex items-center gap-2">
                 <div className="relative">
                   <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center">
-                    <FiZap className="w-4 h-4 text-white" strokeWidth={2.5} />
+                    <Zap className="w-4 h-4" />
                   </div>
                   <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-emerald-400 rounded-full border-2 border-[#141414] animate-pulse"></div>
                 </div>

@@ -15,7 +15,7 @@ const getCsrfToken = (): string | null => {
 
 const fetchCsrfToken = async (): Promise<string | null> => {
   try {
-    const response = await fetch('/api/v2/auth/csrf-token', {
+    const response = await fetch('/auth/csrf-token', {
       method: 'GET',
       credentials: 'include',
     });

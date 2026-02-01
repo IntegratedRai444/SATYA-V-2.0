@@ -1,25 +1,25 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  FiCloud,
-  FiHelpCircle,
-  FiCamera,
-  FiEye,
-  FiLock,
-  FiShield,
-  FiZap,
-  FiImage,
-  FiVideo,
-  FiMic,
-  FiCheck,
-  FiLayers,
-  FiAlertTriangle,
-  FiClock,
-  FiCheckCircle,
-  FiActivity,
-  FiTrendingUp,
-  FiBook,
-  FiExternalLink,
-} from 'react-icons/fi';
+  Cloud,
+  HelpCircle,
+  Camera,
+  Eye,
+  Lock,
+  Shield,
+  Zap,
+  Image,
+  Video,
+  Mic,
+  Check,
+  Layers,
+  AlertTriangle,
+  Clock,
+  CheckCircle,
+  Activity,
+  TrendingUp,
+  Book,
+  ExternalLink,
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -29,9 +29,10 @@ import AnalysisProgress from '@/components/analysis/AnalysisProgress';
 import AnalysisResults from '@/components/analysis/AnalysisResults';
 import ErrorBoundary from '@/components/ui/ErrorBoundary';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
+import { Loader2, RefreshCw, Loader } from 'lucide-react';
 import { useDashboardStats } from '@/hooks/useDashboardStats';
 import { useDashboardWebSocket } from '@/hooks/useDashboardWebSocket';
+import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 
 /**
  * Dashboard Component - Full Featured Version
@@ -131,14 +132,13 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  // TODO: Re-implement auth error handling after reset
+  // Handle authentication errors
   useEffect(() => {
     if (error?.includes('401') || error?.includes('403')) {
-      console.warn('Authentication error detected, but auth is disabled for now');
-      // logout();
-      // navigate('/login');
+      console.warn('Authentication error detected, redirecting to login');
+      logout();
     }
-  }, [error, logout, navigate]);
+  }, [error, logout]);
 
   // Render error state
   const renderError = () => {
@@ -212,7 +212,7 @@ const Dashboard: React.FC = () => {
             {/* Badges */}
             <div className="flex items-center gap-2.5">
               <Badge className="bg-gradient-to-r from-purple-600 to-blue-600 text-white border-0 px-3.5 py-1.5 text-[11px] font-semibold rounded-md shadow-lg">
-                <FiZap className="w-3 h-3 mr-1.5 inline" />
+                <Zap className="w-3 h-3 mr-1.5 inline" />
                 New AI Models Released
               </Badge>
               <Badge className="bg-transparent text-cyan-400 border border-cyan-500/60 px-3.5 py-1.5 text-[11px] font-semibold rounded-md">
@@ -241,7 +241,7 @@ const Dashboard: React.FC = () => {
             {/* CTA Buttons */}
             <div className="flex items-center gap-3.5 pt-4">
               <Button className="bg-cyan-500 hover:bg-cyan-600 text-white px-6 py-3 text-[14px] font-semibold rounded-lg shadow-lg shadow-cyan-500/30 transition-all">
-                <FiCloud className="w-4 h-4 mr-2" />
+                <Cloud className="w-4 h-4 mr-2" />
                 Analyze Media
                 <span className="ml-2">→</span>
               </Button>
@@ -249,7 +249,7 @@ const Dashboard: React.FC = () => {
                 variant="outline"
                 className="border-white/30 text-white hover:bg-white/10 hover:border-white/40 px-6 py-3 text-[14px] font-medium rounded-lg transition-all"
               >
-                <FiHelpCircle className="w-4 h-4 mr-2" />
+                <HelpCircle className="w-5 h-5" /> 
                 How It Works
               </Button>
             </div>
@@ -262,7 +262,7 @@ const Dashboard: React.FC = () => {
               <div className="flex flex-col items-center text-center space-y-4">
                 {/* Icon - Simple outline */}
                 <div className="w-14 h-14 rounded-lg border border-cyan-500/20 flex items-center justify-center bg-transparent">
-                  <FiCamera className="w-7 h-7 text-cyan-400/80" />
+                  <Camera className="w-5 h-5" /> 
                 </div>
 
                 {/* Score Display - Clean & Simple */}
@@ -277,7 +277,7 @@ const Dashboard: React.FC = () => {
                 <div className="w-full space-y-2 pt-2">
                   <div className="flex items-center gap-2.5 px-2 py-1.5">
                     <div className="w-5 h-5 rounded-md bg-transparent flex items-center justify-center">
-                      <FiEye className="w-3.5 h-3.5 text-cyan-400/70" />
+                      <Eye className="w-3.5 h-3.5 text-cyan-400/70" />
                     </div>
                     <span className="text-[11px] text-gray-300/80 font-normal">
                       Real-time Analysis
@@ -286,7 +286,7 @@ const Dashboard: React.FC = () => {
 
                   <div className="flex items-center gap-2.5 px-2 py-1.5">
                     <div className="w-5 h-5 rounded-md bg-transparent flex items-center justify-center">
-                      <FiLock className="w-3.5 h-3.5 text-cyan-400/70" />
+                      <Lock className="w-3.5 h-3.5 text-cyan-400/70" />
                     </div>
                     <span className="text-[11px] text-gray-300/80 font-normal">
                       Secure Processing
@@ -295,7 +295,7 @@ const Dashboard: React.FC = () => {
 
                   <div className="flex items-center gap-2.5 px-2 py-1.5">
                     <div className="w-5 h-5 rounded-md bg-transparent flex items-center justify-center">
-                      <FiShield className="w-3.5 h-3.5 text-cyan-400/70" />
+                      <Shield className="w-3.5 h-3.5 text-cyan-400/70" />
                     </div>
                     <span className="text-[11px] text-gray-300/80 font-normal">
                       Verified Protection
@@ -335,7 +335,7 @@ const Dashboard: React.FC = () => {
             {/* Icon - Centered at Top */}
             <div className="flex justify-start mb-4">
               <div className="w-10 h-10 rounded-md bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
-                <FiImage className="w-5 h-5 text-blue-400" strokeWidth={2} />
+                <Image className="w-5 h-5 text-blue-400" strokeWidth={2} />
               </div>
             </div>
 
@@ -349,15 +349,15 @@ const Dashboard: React.FC = () => {
               {/* Features List */}
               <div className="space-y-1.5 pt-1">
                 <div className="flex items-center gap-2 text-[10px] text-gray-500">
-                  <FiCheck className="w-3 h-3 text-gray-600 flex-shrink-0" />
+                  <Check className="w-3 h-3 text-gray-600 flex-shrink-0" />
                   <span>Photoshop Detection</span>
                 </div>
                 <div className="flex items-center gap-2 text-[10px] text-gray-500">
-                  <FiCheck className="w-3 h-3 text-gray-600 flex-shrink-0" />
+                  <Check className="w-3 h-3 text-gray-600 flex-shrink-0" />
                   <span>GAN Detection</span>
                 </div>
                 <div className="flex items-center gap-2 text-[10px] text-gray-500">
-                  <FiCheck className="w-3 h-3 text-gray-600 flex-shrink-0" />
+                  <Check className="w-3 h-3 text-gray-600 flex-shrink-0" />
                   <span>Metadata Analysis</span>
                 </div>
               </div>
@@ -382,7 +382,7 @@ const Dashboard: React.FC = () => {
             {/* Icon - Centered at Top */}
             <div className="flex justify-start mb-4">
               <div className="w-10 h-10 rounded-md bg-green-500/10 border border-green-500/20 flex items-center justify-center">
-                <FiVideo className="w-5 h-5 text-green-400" strokeWidth={2} />
+                <Video className="w-5 h-5 text-green-400" strokeWidth={2} />
               </div>
             </div>
 
@@ -396,15 +396,15 @@ const Dashboard: React.FC = () => {
               {/* Features List */}
               <div className="space-y-1.5 pt-1">
                 <div className="flex items-center gap-2 text-[10px] text-gray-500">
-                  <FiCheck className="w-3 h-3 text-gray-600 flex-shrink-0" />
+                  <Check className="w-3 h-3 text-gray-600 flex-shrink-0" />
                   <span>Facial Inconsistencies</span>
                 </div>
                 <div className="flex items-center gap-2 text-[10px] text-gray-500">
-                  <FiCheck className="w-3 h-3 text-gray-600 flex-shrink-0" />
+                  <Check className="w-3 h-3 text-gray-600 flex-shrink-0" />
                   <span>Temporal Analysis</span>
                 </div>
                 <div className="flex items-center gap-2 text-[10px] text-gray-500">
-                  <FiCheck className="w-3 h-3 text-gray-600 flex-shrink-0" />
+                  <Check className="w-3 h-3 text-gray-600 flex-shrink-0" />
                   <span>Lip-Sync Verification</span>
                 </div>
               </div>
@@ -429,7 +429,7 @@ const Dashboard: React.FC = () => {
             {/* Icon - Centered at Top */}
             <div className="flex justify-start mb-4">
               <div className="w-10 h-10 rounded-md bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
-                <FiMic className="w-5 h-5 text-purple-400" strokeWidth={2} />
+                <Mic className="w-5 h-5 text-purple-400" strokeWidth={2} />
               </div>
             </div>
 
@@ -443,15 +443,15 @@ const Dashboard: React.FC = () => {
               {/* Features List */}
               <div className="space-y-1.5 pt-1">
                 <div className="flex items-center gap-2 text-[10px] text-gray-500">
-                  <FiCheck className="w-3 h-3 text-gray-600 flex-shrink-0" />
+                  <Check className="w-3 h-3 text-gray-600 flex-shrink-0" />
                   <span>Voice Cloning Detection</span>
                 </div>
                 <div className="flex items-center gap-2 text-[10px] text-gray-500">
-                  <FiCheck className="w-3 h-3 text-gray-600 flex-shrink-0" />
+                  <Check className="w-3 h-3 text-gray-600 flex-shrink-0" />
                   <span>Natural Patterns Analysis</span>
                 </div>
                 <div className="flex items-center gap-2 text-[10px] text-gray-500">
-                  <FiCheck className="w-3 h-3 text-gray-600 flex-shrink-0" />
+                  <Check className="w-3 h-3 text-gray-600 flex-shrink-0" />
                   <span>Neural Voice Filter</span>
                 </div>
               </div>
@@ -459,6 +459,53 @@ const Dashboard: React.FC = () => {
               {/* Button */}
               <button
                 onClick={() => navigate('/audio-analysis')}
+                className="w-full py-2 text-[10px] font-bold text-cyan-400 hover:text-cyan-300 rounded-md transition-all flex items-center justify-center gap-1 mt-4"
+              >
+                START ANALYSIS →
+              </button>
+            </div>
+          </Card>
+
+          {/* Multimodal Card */}
+          <Card className="bg-[#0f1419] border border-gray-800/50 p-5 rounded-lg hover:border-orange-500/40 transition-all cursor-pointer group relative">
+            {/* Accuracy Badge - Top Right */}
+            <div className="absolute top-3 right-3 text-[10px] text-gray-500">
+              Accuracy: <span className="text-white font-semibold">99.1%</span>
+            </div>
+
+            {/* Icon - Centered at Top */}
+            <div className="flex justify-start mb-4">
+              <div className="w-10 h-10 rounded-md bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
+                <Layers className="w-5 h-5 text-orange-400" strokeWidth={2} />
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="space-y-3">
+              <h3 className="text-[15px] font-bold text-white">Multimodal Analysis</h3>
+              <p className="text-[11px] text-gray-400 leading-relaxed">
+                Cross-media deepfake detection with AI fusion
+              </p>
+
+              {/* Features List */}
+              <div className="space-y-1.5 pt-1">
+                <div className="flex items-center gap-2 text-[10px] text-gray-500">
+                  <Check className="w-3 h-3 text-gray-600 flex-shrink-0" />
+                  <span>Cross-Modal Fusion</span>
+                </div>
+                <div className="flex items-center gap-2 text-[10px] text-gray-500">
+                  <Check className="w-3 h-3 text-gray-600 flex-shrink-0" />
+                  <span>Multi-Source Analysis</span>
+                </div>
+                <div className="flex items-center gap-2 text-[10px] text-gray-500">
+                  <Check className="w-3 h-3 text-gray-600 flex-shrink-0" />
+                  <span>Confidence Boost</span>
+                </div>
+              </div>
+
+              {/* Button */}
+              <button
+                onClick={() => navigate('/smart-analysis')}
                 className="w-full py-2 text-[10px] font-bold text-cyan-400 hover:text-cyan-300 rounded-md transition-all flex items-center justify-center gap-1 mt-4"
               >
                 START ANALYSIS →
@@ -477,7 +524,7 @@ const Dashboard: React.FC = () => {
             <h2 className="text-xl font-semibold">Analysis in Progress</h2>
             <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
               {isRefreshing ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                <Loader className="h-4 w-4 animate-spin mr-2" />
               ) : (
                 <RefreshCw className="h-4 w-4 mr-2" />
               )}
@@ -537,7 +584,7 @@ const Dashboard: React.FC = () => {
           <div>
             <h2 className="text-[20px] font-bold text-white mb-1 flex items-center gap-2">
               Analytics & Insights
-              <FiActivity className="w-5 h-5 text-cyan-400" />
+              <Activity className="w-5 h-5 text-cyan-400" />
             </h2>
             <p className="text-gray-400 text-[13px]">System performance and detection tips</p>
           </div>
@@ -546,14 +593,14 @@ const Dashboard: React.FC = () => {
               variant="outline"
               className="border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 px-4 py-2 text-[11px] font-semibold rounded-md"
             >
-              <FiTrendingUp className="w-4 h-4 mr-2" />
+              <TrendingUp className="w-4 h-4 mr-2" />
               Statistics
             </Button>
             <Button
               variant="outline"
               className="border-gray-700 text-gray-400 hover:bg-gray-800/50 px-4 py-2 text-[11px] font-semibold rounded-md"
             >
-              <FiEye className="w-4 h-4 mr-2" />
+              <Eye className="w-4 h-4 mr-2" />
               Insights
             </Button>
           </div>
@@ -565,7 +612,7 @@ const Dashboard: React.FC = () => {
           <Card className="bg-[#0f1419] border border-gray-800/50 p-6 rounded-xl">
             <div className="flex items-start gap-3 mb-4">
               <div className="w-12 h-12 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                <FiLayers className="w-6 h-6 text-blue-400" />
+                <Layers className="w-6 h-6 text-blue-400" />
               </div>
               <div className="flex-1">
                 <p className="text-[12px] text-gray-400 font-medium">Analyzed Media</p>
@@ -581,7 +628,7 @@ const Dashboard: React.FC = () => {
           <Card className="bg-[#0f1419] border border-gray-800/50 p-6 rounded-xl">
             <div className="flex items-start gap-3 mb-4">
               <div className="w-12 h-12 rounded-lg bg-red-500/10 flex items-center justify-center">
-                <FiAlertTriangle className="w-6 h-6 text-red-400" />
+                <AlertTriangle className="w-6 h-6 text-red-400" />
               </div>
               <div className="flex-1">
                 <p className="text-[12px] text-gray-400 font-medium">Detected Deepfakes</p>
@@ -597,7 +644,7 @@ const Dashboard: React.FC = () => {
           <Card className="bg-[#0f1419] border border-gray-800/50 p-6 rounded-xl">
             <div className="flex items-start gap-3 mb-4">
               <div className="w-12 h-12 rounded-lg bg-yellow-500/10 flex items-center justify-center">
-                <FiClock className="w-6 h-6 text-yellow-400" />
+                <Clock className="w-6 h-6 text-yellow-400" />
               </div>
               <div className="flex-1">
                 <p className="text-[12px] text-gray-400 font-medium">Avg. Detection Time</p>
@@ -613,7 +660,7 @@ const Dashboard: React.FC = () => {
           <Card className="bg-[#0f1419] border border-gray-800/50 p-6 rounded-xl">
             <div className="flex items-start gap-3 mb-4">
               <div className="w-12 h-12 rounded-lg bg-green-500/10 flex items-center justify-center">
-                <FiCheckCircle className="w-6 h-6 text-green-400" />
+                <CheckCircle className="w-6 h-6 text-green-400" />
               </div>
               <div className="flex-1">
                 <p className="text-[12px] text-gray-400 font-medium">Detection Accuracy</p>
@@ -631,7 +678,7 @@ const Dashboard: React.FC = () => {
           {/* Detection Activity Chart */}
           <Card className="bg-[#0f1419] border border-gray-800/50 p-6 rounded-xl">
             <h3 className="text-[17px] font-bold text-white mb-6 flex items-center gap-2">
-              <FiActivity className="w-5 h-5 text-gray-400" />
+              <Activity className="w-5 h-5 text-gray-400" />
               Detection Activity
             </h3>
             <div className="h-64 flex items-end justify-between gap-1">
@@ -686,7 +733,7 @@ const Dashboard: React.FC = () => {
         <Card className="bg-[#0f1419] border border-gray-800/50 p-8 rounded-xl mt-6">
           <div className="flex items-center justify-between mb-7">
             <h3 className="text-[18px] font-bold text-white flex items-center gap-2">
-              <FiBook className="w-5 h-5 text-cyan-400" />
+              <Book className="w-5 h-5 text-cyan-400" />
               Detection Guide
             </h3>
             <Badge className="bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 px-4 py-2 text-[12px] font-semibold rounded-lg">
@@ -742,9 +789,9 @@ const Dashboard: React.FC = () => {
 
           {/* View Complete Guide Button */}
           <button className="w-full py-4 bg-cyan-500 hover:bg-cyan-600 text-white text-[14px] font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20">
-            <FiBook className="w-5 h-5" />
+            <Zap className="w-5 h-5" />
             View Complete Deepfake Guide
-            <FiExternalLink className="w-5 h-5" />
+            <ExternalLink className="w-5 h-5" />
           </button>
 
           {/* Additional Info */}

@@ -169,9 +169,9 @@ class EnhancedApiClient {
           return this.client.request(config);
         }
       } catch (refreshError) {
-        // TODO: Re-implement auth redirect after reset
+        // Token refresh failed, clear auth and redirect to login
         this.clearAuthTokens();
-        // window.location.href = '/login';
+        window.location.href = '/login';
         return Promise.reject(refreshError);
       } finally {
         this.isRefreshing = false;

@@ -148,6 +148,7 @@ const createEnhancedAxiosInstance = (baseURL: string): AxiosInstance => {
   
   // Request interceptor for caching and metrics
   instance.interceptors.request.use(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (config: any) => {
       const requestId = uuidv4();
       config.id = requestId;
@@ -330,6 +331,7 @@ setInterval(processBatch, batchInterval);
 
 // Request interceptor for batching
 apiClient.interceptors.request.use(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async (config: any) => {
     // Skip batching for now to simplify type issues
     // Skip deduplication for non-idempotent methods
@@ -506,7 +508,7 @@ apiClient.interceptors.response.use(
       }
       
       const response = await axios.post(
-        `${API_CONFIG.BASE_URL}/api/v2/auth/refresh-token`,
+        `${API_CONFIG.BASE_URL}/auth/refresh-token`,
         { refreshToken },
         { withCredentials: true }
       );

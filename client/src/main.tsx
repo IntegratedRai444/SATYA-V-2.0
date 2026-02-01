@@ -12,7 +12,6 @@ try {
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ThemeProvider } from 'next-themes';
 import { HelmetProvider } from 'react-helmet-async';
 import * as Sentry from '@sentry/react';
 import { AppProvider } from '@/contexts/AppContext';
@@ -25,6 +24,17 @@ import React from 'react';
 // import { PerformanceMonitor, MemoryMonitor } from './utils/performanceOptimizer';
 import { initSentry } from './lib/sentry';
 import './index.css';
+
+// Simple Theme Provider to replace next-themes
+const SimpleThemeProvider = ({ children }: { children: React.ReactNode }) => {
+  React.useEffect(() => {
+    // Force dark theme
+    document.documentElement.classList.add('dark');
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }, []);
+  
+  return <>{children}</>;
+};
 
 // Initialize Sentry
 initSentry();
@@ -89,7 +99,7 @@ root.render(
     <SentryErrorBoundary fallback={FallbackComponent}>
       <HelmetProvider>
       <QueryClientProvider client={queryClient}>
-        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} forcedTheme="dark">
+        <SimpleThemeProvider>
           <NotificationProvider>
             <AppProvider>
               {/* 6. RealtimeProvider - Real-time updates and WebSocket management */}
@@ -101,7 +111,7 @@ root.render(
               </RealtimeProvider>
             </AppProvider>
           </NotificationProvider>
-        </ThemeProvider>
+        </SimpleThemeProvider>
       </QueryClientProvider>
     </HelmetProvider>
     </SentryErrorBoundary>

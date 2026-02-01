@@ -37,7 +37,7 @@ export const testAuthFlow = async () => {
  */
 export const fetchBackendRoutes = async (): Promise<unknown[]> => {
     try {
-        const response = await apiClient.get('/api/v2/health/wiring') as { data?: unknown[] };
+        const response = await apiClient.get('/health/wiring') as { data?: unknown[] };
         return response.data || [];
     } catch (error) {
         logger.error('Failed to fetch backend routes', error as Error);

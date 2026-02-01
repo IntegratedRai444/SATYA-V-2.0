@@ -22,19 +22,14 @@ class ModelPreloader:
         """Preload all available ML models"""
         results = {}
         
-        # Preload image models
-        results['image'] = await self._preload_image_models()
-        
-        # Preload video models
-        results['video'] = await self._preload_video_models()
-        
-        # Preload audio models
-        results['audio'] = await self._preload_audio_models()
-        
-        # Preload text models
+        # Preload text models only (fastest)
         results['text'] = await self._preload_text_models()
         
-        return results
+        # Skip heavy models for faster startup
+        logger.info("📦 Skipping heavy model preloading (image, video, audio)")
+        logger.info("🤖 Heavy models will load on first use")
+        
+        return {'image': False, 'video': False, 'audio': False, 'text': results.get('text', False)}
     
     async def _preload_image_models(self) -> bool:
         """Preload image detection models"""

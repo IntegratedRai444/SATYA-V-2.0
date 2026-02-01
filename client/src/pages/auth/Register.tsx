@@ -1,62 +1,42 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Eye, EyeOff, Shield, AlertTriangle, Loader2, UserPlus, User, Lock, Mail } from 'lucide-react';
+import { Eye, EyeOff, Shield, AlertTriangle, Loader2, UserPlus, User, Lock } from 'lucide-react';
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 
 export default function Register() {
   const navigate = useNavigate();
-  const { signUp, user, loading, error } = useSupabaseAuth();
-
-  useEffect(() => {
-    console.log('Register component mounted');
-    console.log('Auth state:', { error, loading, user });
-
-    // Redirect if already authenticated and email is verified
-    if (user && user.email_confirmed_at) {
-      navigate('/dashboard');
-    }
-  }, [user, loading, navigate, error]);
-
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [networkError, setNetworkError] = useState<string | null>(null);
-  const [registrationSuccess, setRegistrationSuccess] = useState(false);
-  const [formErrors, setFormErrors] = useState<{
-    name?: string;
-    email?: string;
-    password?: string;
-    confirmPassword?: string;
-    general?: string;
-  }>({});
+  const { signUp } = useSupabaseAuth();
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     password: '',
     confirmPassword: ''
   });
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(false);
+  const [networkError, setNetworkError] = useState<string | null>(null);
+  const [registrationSuccess, setRegistrationSuccess] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
-    // Clear error for the field being edited
-    if (formErrors[name as keyof typeof formErrors]) {
-      setFormErrors(prev => ({ ...prev, [name]: undefined }));
+    setFormData(prev => ({ ...prev, [name]: value }));
+    
+    // Clear error for this field when user starts typing
+    if (formErrors[name]) {
+      setFormErrors(prev => ({ ...prev, [name]: '' }));
     }
   };
 
   const validateForm = () => {
-    const errors: typeof formErrors = {};
+    const errors: Record<string, string> = {};
 
     if (!formData.name.trim()) {
       errors.name = 'Name is required';
-    } else if (formData.name.trim().length < 2) {
-      errors.name = 'Name must be at least 2 characters';
     }
 
     if (!formData.email) {
@@ -94,6 +74,7 @@ export default function Register() {
     try {
       setNetworkError(null);
       setFormErrors({});
+      setLoading(true);
 
       console.log('Attempting registration with:', {
         username: formData.name,
@@ -141,44 +122,13 @@ export default function Register() {
       } else {
         setFormErrors({ general: 'An unexpected error occurred during registration' });
       }
+    } finally {
+      setLoading(false);
     }
-  };
-
-  const ErrorBoundary = ({ children }: { children: React.ReactNode }) => {
-    const [hasError, setHasError] = useState(false);
-
-    useEffect(() => {
-      const handleError = (error: ErrorEvent) => {
-        console.error('Error caught by error boundary:', error);
-        setHasError(true);
-      };
-
-      window.addEventListener('error', handleError);
-      return () => window.removeEventListener('error', handleError);
-    }, []);
-
-    if (hasError) {
-      return (
-        <div className="min-h-screen flex items-center justify-center p-4">
-          <div className="text-center p-6 max-w-md bg-red-900/20 rounded-lg">
-            <h2 className="text-xl font-bold text-red-400 mb-2">Something went wrong</h2>
-            <p className="text-red-200 mb-4">An unexpected error occurred. Please refresh the page and try again.</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors"
-            >
-              Refresh Page
-            </button>
-          </div>
-        </div>
-      );
-    }
-
-    return <>{children}</>;
   };
 
   const renderError = () => {
-    const errorMessage = networkError || formErrors.general || (error ? 'An error occurred during registration' : '');
+    const errorMessage = networkError || formErrors.general;
 
     if (!errorMessage) return null;
 
@@ -195,81 +145,113 @@ export default function Register() {
   };
 
   return (
-    <ErrorBoundary>
-      <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
-        {/* Background Effects */}
-        <div className="absolute inset-0">
-          {/* Radial gradient highlights */}
-          <div className="absolute top-0 left-0 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl"></div>
-          <div className="absolute bottom-0 right-0 w-96 h-96 bg-cyan-500/20 rounded-full blur-3xl"></div>
-          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl"></div>
-          
-          {/* Vignette effect */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/50"></div>
+    <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
+      {/* Background Effects */}
+      <div className="absolute inset-0">
+        {/* Radial gradient highlights */}
+        <div className="absolute top-0 left-0 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-0 right-0 w-96 h-96 bg-cyan-500/20 rounded-full blur-3xl"></div>
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl"></div>
+        
+        {/* Vignette effect */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/50"></div>
+      </div>
+
+      {/* Content */}
+      <div className="relative z-10 w-full max-w-md px-4">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full mb-6 shadow-lg shadow-blue-500/25">
+            <Shield className="w-10 h-10 text-white" />
+          </div>
+          <h1 className="text-4xl font-bold text-white mb-2 tracking-tight">SatyaAI</h1>
+          <p className="text-blue-200 text-lg font-medium">Deepfake Detection System</p>
+          <p className="text-gray-400 text-sm mt-2 max-w-sm mx-auto">
+            Secure access to AI-powered deepfake analysis and media verification tools
+          </p>
         </div>
 
-        {/* Content */}
-        <div className="relative z-10 w-full max-w-md px-4">
-          {/* Header */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full mb-6 shadow-lg shadow-blue-500/25">
-              <Shield className="w-10 h-10 text-white" />
-            </div>
-            <h1 className="text-4xl font-bold text-white mb-2 tracking-tight">SatyaAI</h1>
-            <p className="text-blue-200 text-lg font-medium">Deepfake Detection System</p>
-            <p className="text-gray-400 text-sm mt-2 max-w-sm mx-auto">
-              Secure access to AI-powered deepfake analysis and media verification tools
-            </p>
+        {/* Glass Card */}
+        <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-3xl p-8 shadow-2xl shadow-black/20">
+          {/* Secure Registration Header */}
+          <div className="flex items-center justify-center gap-2 mb-8">
+            <UserPlus className="w-5 h-5 text-cyan-400" />
+            <h2 className="text-2xl font-semibold text-white">Secure Registration</h2>
           </div>
 
-          {/* Glass Card */}
-          <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-3xl p-8 shadow-2xl shadow-black/20">
-            {/* Secure Registration Header */}
-            <div className="flex items-center justify-center gap-2 mb-8">
-              <UserPlus className="w-5 h-5 text-cyan-400" />
-              <h2 className="text-2xl font-semibold text-white">Secure Registration</h2>
+          {renderError()}
+
+          {/* Success Message */}
+          {registrationSuccess && (
+            <div className="mb-6">
+              <Alert className="bg-green-900/20 border-green-500/50">
+                <Shield className="h-4 w-4 mr-2 text-green-400" />
+                <AlertDescription className="text-green-200">
+                  Registration successful! Please check your email to verify your account before logging in.
+                </AlertDescription>
+              </Alert>
             </div>
+          )}
 
-            {renderError()}
-
-            {/* Success Message */}
-            {registrationSuccess && (
-              <div className="mb-6">
-                <Alert className="bg-green-900/20 border-green-500/50">
-                  <Shield className="h-4 w-4 mr-2 text-green-400" />
-                  <AlertDescription className="text-green-200">
-                    Registration successful! Please check your email to verify your account before logging in.
-                  </AlertDescription>
-                </Alert>
+          {!registrationSuccess && (
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Full Name */}
+              <div className="space-y-2">
+                <label htmlFor="name" className="block text-sm font-medium text-gray-300">
+                  Full Name
+                  {formErrors.name && (
+                    <span className="text-red-400 text-xs ml-2">{formErrors.name}</span>
+                  )}
+                </label>
+                <div className="mt-1 relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <Input
+                    id="name"
+                    name="name"
+                    type="text"
+                    autoComplete="name"
+                    required
+                    value={formData.name}
+                    onChange={handleInputChange}
+                    className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:border-cyan-400/50 transition-all duration-200"
+                    placeholder="Enter your full name"
+                    aria-invalid={!!formErrors.name}
+                    aria-describedby={formErrors.name ? 'name-error' : undefined}
+                  />
+                </div>
               </div>
-            )}
 
-            {!registrationSuccess && (
-              <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Full Name */}
-                <div className="space-y-2">
-                  <label htmlFor="name" className="block text-sm font-medium text-gray-300">
-                    Full Name
-                    {formErrors.name && (
-                      <span className="text-red-400 text-xs ml-2">{formErrors.name}</span>
-                    )}
-                  </label>
-                  <div className="mt-1 relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <Input
-                      id="name"
-                      name="name"
-                      type="text"
-                      autoComplete="name"
-                      required
-                      value={formData.name}
-                      onChange={handleInputChange}
-                      className={`w-full pl-11 pr-4 py-3 bg-white/5 border ${formErrors.name ? 'border-red-400/50' : 'border-white/10'
-                        } rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:border-cyan-400/50 transition-all duration-200`}
-                      placeholder="Enter your full name"
-                      aria-invalid={!!formErrors.name}
-                      aria-describedby={formErrors.name ? 'name-error' : undefined}
-                    />
+              {/* Email */}
+              <div className="space-y-2">
+                <label htmlFor="email" className="block text-sm font-medium text-gray-300">
+                  Email Address
+                  {formErrors.email && (
+                    <span className="text-red-400 text-xs ml-2">{formErrors.email}</span>
+                  )}
+                </label>
+                <div className="mt-1 relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <Input
+                    id="email"
+                    name="email"
+                    type="email"
+                    autoComplete="email"
+                    required
+                    value={formData.email}
+                    onChange={handleInputChange}
+                    className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:border-cyan-400/50 transition-all duration-200"
+                    placeholder="Enter your email address"
+                    aria-invalid={!!formErrors.email}
+                    aria-describedby={formErrors.email ? 'email-error' : undefined}
+                  />
+                </div>
+              </div>
+
+              {/* Password */}
+              <div className="space-y-2">
+                <label htmlFor="password" className="block text-sm font-medium text-gray-300">
+                  Password
+                  {formErrors.password && (
                     <span className="text-red-400 text-xs ml-2">{formErrors.password}</span>
                   )}
                 </label>
@@ -283,8 +265,7 @@ export default function Register() {
                     required
                     value={formData.password}
                     onChange={handleInputChange}
-                    className={`w-full pl-11 pr-12 py-3 bg-white/5 border ${formErrors.password ? 'border-red-400/50' : 'border-white/10'
-                      } rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:border-cyan-400/50 transition-all duration-200`}
+                    className="w-full pl-11 pr-12 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:border-cyan-400/50 transition-all duration-200"
                     placeholder="Create a strong password"
                     aria-invalid={!!formErrors.password}
                     aria-describedby={formErrors.password ? 'password-error' : undefined}
@@ -320,8 +301,7 @@ export default function Register() {
                     required
                     value={formData.confirmPassword}
                     onChange={handleInputChange}
-                    className={`w-full pl-11 pr-12 py-3 bg-white/5 border ${formErrors.confirmPassword ? 'border-red-400/50' : 'border-white/10'
-                      } rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:border-cyan-400/50 transition-all duration-200`}
+                    className="w-full pl-11 pr-12 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:border-cyan-400/50 transition-all duration-200"
                     placeholder="Confirm your password"
                     aria-invalid={!!formErrors.confirmPassword}
                     aria-describedby={formErrors.confirmPassword ? 'confirmPassword-error' : undefined}
@@ -370,7 +350,7 @@ export default function Register() {
                 </div>
               </div>
             </form>
-          </div>
+          )}
 
           {/* Footer Note */}
           <div className="mt-6 space-y-2">
@@ -383,6 +363,6 @@ export default function Register() {
           </div>
         </div>
       </div>
-    </ErrorBoundary>
+    </div>
   );
 }

@@ -237,8 +237,11 @@ export const securityHeaders = ({
     scriptSrc: ["'self'"],
     styleSrc: ["'self'"],
     imgSrc: ["'self'", 'data:'],
-    connectSrc: ["'self'"],
-    fontSrc: ["'self'"]
+    connectSrc: ["'self'", 'ws:', 'wss:'],
+    fontSrc: ["'self'"],
+    objectSrc: ["'none'"],
+    mediaSrc: ["'self'"],
+    frameSrc: ["'none'"],
   },
   maxRequestBodySize = '10mb'
 }: SecurityHeadersOptions = {}): { middleware: RequestHandler[], errorHandlers: ErrorRequestHandler[] } => {
@@ -298,14 +301,7 @@ export const securityHeaders = ({
 
     // Prevent NoSQL injection
     mongoSanitize({
-      onSanitize: ({ req, key }) => {
-        logger.warn('NoSQL injection attempt detected', {
-          ip: req.ip,
-          method: req.method,
-          url: req.originalUrl,
-          key,
-        });
-      },
+      replaceWith: '_'
     }),
 
     // Add security response headers
@@ -318,7 +314,9 @@ export const securityHeaders = ({
       // Security headers
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('X-Frame-Options', 'DENY');
-      res.setHeader('X-XSS-Protection', '1; mode=block');
+      if (enableXSS) {
+        res.setHeader('X-XSS-Protection', '1; mode=block');
+      }
       res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
       res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
       

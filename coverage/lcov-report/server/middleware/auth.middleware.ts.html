@@ -25,14 +25,14 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/165</span>
+                <span class='fraction'>0/159</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/76</span>
+                <span class='fraction'>0/72</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/153</span>
+                <span class='fraction'>0/147</span>
             </div>
         
             
@@ -535,20 +535,7 @@
 <a name='L470'></a><a href='#L470'>470</a>
 <a name='L471'></a><a href='#L471'>471</a>
 <a name='L472'></a><a href='#L472'>472</a>
-<a name='L473'></a><a href='#L473'>473</a>
-<a name='L474'></a><a href='#L474'>474</a>
-<a name='L475'></a><a href='#L475'>475</a>
-<a name='L476'></a><a href='#L476'>476</a>
-<a name='L477'></a><a href='#L477'>477</a>
-<a name='L478'></a><a href='#L478'>478</a>
-<a name='L479'></a><a href='#L479'>479</a>
-<a name='L480'></a><a href='#L480'>480</a>
-<a name='L481'></a><a href='#L481'>481</a>
-<a name='L482'></a><a href='#L482'>482</a>
-<a name='L483'></a><a href='#L483'>483</a>
-<a name='L484'></a><a href='#L484'>484</a>
-<a name='L485'></a><a href='#L485'>485</a>
-<a name='L486'></a><a href='#L486'>486</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L473'></a><a href='#L473'>473</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -561,7 +548,6 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -921,26 +907,14 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -1042,7 +1016,6 @@ import { z } from 'zod';
 <span class="cstat-no" title="statement not covered" >import { ZodError } from 'zod';</span>
 <span class="cstat-no" title="statement not covered" >import RedisStore from 'rate-limit-redis';</span>
 <span class="cstat-no" title="statement not covered" >import { createClient } from 'redis';</span>
-import crypto from 'crypto';
 import { AuthenticatedRequest } from '../types/auth';
 &nbsp;
 // In-memory store for rate limiting when Redis is not available
@@ -1227,19 +1200,19 @@ export const <span class="cstat-no" title="statement not covered" >getRateLimite
 };
 &nbsp;
 // Export rate limiters with initialization wrapper
-export const <span class="cstat-no" title="statement not covered" >apiLimiter = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >a</span>sync </span>(req: AuthenticatedRequest, res: Response, next: NextFunction) =&gt; {</span>
+export const <span class="cstat-no" title="statement not covered" >apiLimiter = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >a</span>sync </span>(req: ExpressRequest, res: Response, next: NextFunction) =&gt; {</span>
   const { apiRateLimiter } = <span class="cstat-no" title="statement not covered" >await getRateLimiters();</span>
-<span class="cstat-no" title="statement not covered" >  return apiRateLimiter(req as any, res, next);</span>
+<span class="cstat-no" title="statement not covered" >  return apiRateLimiter(req as unknown as Parameters&lt;typeof apiRateLimiter&gt;[0], res, next);</span>
 };
 &nbsp;
-export const <span class="cstat-no" title="statement not covered" >loginLimiter = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >a</span>sync </span>(req: AuthenticatedRequest, res: Response, next: NextFunction) =&gt; {</span>
+export const <span class="cstat-no" title="statement not covered" >loginLimiter = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >a</span>sync </span>(req: ExpressRequest, res: Response, next: NextFunction) =&gt; {</span>
   const { authRateLimiter } = <span class="cstat-no" title="statement not covered" >await getRateLimiters();</span>
-<span class="cstat-no" title="statement not covered" >  return authRateLimiter(req as any, res, next);</span>
+<span class="cstat-no" title="statement not covered" >  return authRateLimiter(req as unknown as Parameters&lt;typeof authRateLimiter&gt;[0], res, next);</span>
 };
 &nbsp;
-export const <span class="cstat-no" title="statement not covered" >refreshTokenLimiter = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >a</span>sync </span>(req: AuthenticatedRequest, res: Response, next: NextFunction) =&gt; {</span>
+export const <span class="cstat-no" title="statement not covered" >refreshTokenLimiter = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >a</span>sync </span>(req: ExpressRequest, res: Response, next: NextFunction) =&gt; {</span>
   const { refreshTokenRateLimiter } = <span class="cstat-no" title="statement not covered" >await getRateLimiters();</span>
-<span class="cstat-no" title="statement not covered" >  return refreshTokenRateLimiter(req as any, res, next);</span>
+<span class="cstat-no" title="statement not covered" >  return refreshTokenRateLimiter(req as unknown as Parameters&lt;typeof refreshTokenRateLimiter&gt;[0], res, next);</span>
 };
 &nbsp;
 // Slow down for brute force protection
@@ -1414,22 +1387,10 @@ export const <span class="cstat-no" title="statement not covered" >requireRole =
   };
 };
 &nbsp;
-// CSRF token generation and validation
-const CSRF_TOKEN_SECRET = <span class="cstat-no" title="statement not covered" >process.env.CSRF_TOKEN_SECRET;</span>
-&nbsp;
-<span class="cstat-no" title="statement not covered" >if (!CSRF_TOKEN_SECRET) {</span>
-<span class="cstat-no" title="statement not covered" >  throw new Error('CSRF_TOKEN_SECRET environment variable is required');</span>
-}
-&nbsp;
-<span class="cstat-no" title="statement not covered" >if (CSRF_TOKEN_SECRET.length &lt; 32) {</span>
-<span class="cstat-no" title="statement not covered" >  throw new Error('CSRF_TOKEN_SECRET must be at least 32 characters long for security');</span>
-}
-&nbsp;
-const CSRF_TOKEN_AGE = <span class="cstat-no" title="statement not covered" >60 * 60 * 1000;</span> // 1 hour (reduced from 24h)
-&nbsp;
-// TODO: Re-implement CSRF protection after auth reset
-export const <span class="cstat-no" title="statement not covered" >generateCsrfToken = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >(</span>u</span>serId?: string): { token: string; cookie: string } =&gt; {</span>
-<span class="cstat-no" title="statement not covered" >  return { token: 'placeholder', cookie: 'csrf=placeholder' };</span>
+// CSRF protection is not needed for JWT-based authentication
+// since we use Authorization headers instead of cookies
+export const <span class="cstat-no" title="statement not covered" >generateCsrfToken = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >(</span>) =</span>&gt; {</span>
+<span class="cstat-no" title="statement not covered" >  return { token: '', cookie: '' };</span>
 };
 &nbsp;
 export const <span class="cstat-no" title="statement not covered" >csrfProtection = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >(</span>r</span>eq: AuthenticatedRequest, res: Response, next: NextFunction) =&gt; {</span>
@@ -1525,7 +1486,7 @@ export const <span class="cstat-no" title="statement not covered" >errorHandler 
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-01-26T16:11:14.637Z
+                at 2026-01-31T17:58:55.682Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

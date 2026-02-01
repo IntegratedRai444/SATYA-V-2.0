@@ -61,7 +61,7 @@ if (process.env.NODE_ENV !== 'production') {
   console.log('Running in development mode');
 }
 
-let webSocketManager: any = null;
+let webSocketManager: unknown = null;
 
 // Initialize WebSocket manager with proper error handling
 const initializeWebSocketManager = async () => {
@@ -832,7 +832,7 @@ startServer()
     if (webSocketManager && process.env.ENABLE_WEBSOCKETS === 'true') {
       try {
         // webSocketManager is already an initialized instance
-        webSocketManager.initialize(serverInstance);
+        (webSocketManager as { initialize: (server: import('http').Server) => void }).initialize(serverInstance);
         logger.info('WebSocket server initialized');
       } catch (error) {
         logger.error('Failed to initialize WebSocket manager:', error);

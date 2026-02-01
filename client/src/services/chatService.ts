@@ -68,7 +68,7 @@ export const sendMessage = async (
     }
 
     const response = await api.post<ChatResponse>(
-      '/api/v2/chat/message',
+      '/chat/message',
       formData
     );
 
@@ -96,7 +96,7 @@ export const getChatHistory = async (): Promise<ChatHistoryItem[]> => {
   try {
     const response = await api.get<{
       data: ChatHistoryItem[];
-    }>('/api/v2/chat/history');
+    }>('/chat/history');
 
     return response.data;
   } catch (error) {
@@ -154,7 +154,7 @@ export const getSuggestedResponses = async (
   try {
     const response = await api.post<{
       data: string[];
-    }>('/api/v2/chat/suggestions', {
+    }>('/chat/suggestions', {
       message,
       conversationContext,
     });

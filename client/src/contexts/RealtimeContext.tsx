@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import React, { createContext, useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from '@/components/ui/use-toast';
 import { webSocketService } from '@/services/websocket';
+import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 import type { WebSocketMessage, ScanUpdateMessage, SystemAlertMessage } from '@/types/websocket';
 
 export type NotificationType = 'info' | 'success' | 'warning' | 'error';
@@ -11,47 +12,45 @@ export interface Notification {
   title: string;
   message: string;
   timestamp: Date;
-  read: boolean;
-  data?: Record<string, unknown>;
-  action?: {
-    label: string;
-    onClick: () => void;
-  };
+  read?: boolean;
+  autoClose?: boolean;
+  duration?: number;
 }
 
-interface RealtimeContextType {
-  // Connection state
+export interface RealtimeContextType {
+  notifications: Notification[];
   connectionStatus: 'connected' | 'disconnected' | 'connecting';
   lastUpdate: Date | null;
-  reconnectAttempt?: number;
-  maxReconnectAttempts?: number;
-
-  // Notifications
-  notifications: Notification[];
-  unreadCount: number;
-  addNotification: (notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => void;
-  markAsRead: (id: string) => void;
-  markAllAsRead: () => void;
-  clearAll: () => void;
-
-  // WebSocket methods
-  subscribeToScan: (scanId: string) => void;
-  unsubscribeFromScan: (scanId: string) => void;
-  sendMessage: (message: WebSocketMessage) => void;
-
-  // Scan progress tracking
   activeScans: Record<string, {
+    id: string;
     status: 'queued' | 'processing' | 'completed' | 'failed';
     progress: number;
     fileName?: string;
     error?: string;
     timestamp: Date;
   }>;
+  reconnectAttempt: number;
+  maxReconnectAttempts: number;
+  addNotification: (notification: Omit<Notification, 'id' | 'timestamp'>) => void;
+  removeNotification: (id: string) => void;
+  clearNotifications: () => void;
+  clearAll: () => void;
+  markAsRead: (id: string) => void;
+  markAllAsRead: () => void;
+  reconnect: () => void;
+  subscribeToScan: (scanId: string) => () => void;
+  unsubscribeFromScan: (scanId: string) => void;
+  sendMessage: (message: unknown) => boolean;
+  unreadCount: number;
 }
 
 const RealtimeContext = createContext<RealtimeContextType | undefined>(undefined);
 
+// Export the context separately for Fast Refresh compatibility
+export { RealtimeContext };
+
 export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useSupabaseAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'connecting'>('connecting');
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
@@ -59,8 +58,9 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [reconnectAttempt, setReconnectAttempt] = useState<number>(0);
   const [maxReconnectAttempts] = useState<number>(5);
   const { toast } = useToast();
-  // TODO: Re-implement auth after reset
-  const isAuthenticated = true;
+  
+  // User is authenticated if we have a user object
+  const isAuthenticated = !!user;
   const subscriptions = useRef<Record<string, () => void>>({});
 
   // Add a new notification
@@ -109,14 +109,31 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setNotifications([]);
   }, []);
 
+  // Remove a specific notification
+  const removeNotification = useCallback((id: string) => {
+    setNotifications(prev => prev.filter(notif => notif.id !== id));
+  }, []);
+
+  // Reconnect WebSocket
+  const reconnect = useCallback(() => {
+    if (webSocketService) {
+      webSocketService.disconnect();
+      // Connection will be re-established by the useEffect
+    }
+  }, []);
+
   // Send a message through WebSocket
-  const sendMessage = useCallback(<T = any>(message: T) => {
-    webSocketService.send(message);
+  const sendMessage = useCallback((message: unknown) => {
+    if (webSocketService) {
+      webSocketService.send(message as Record<string, unknown>);
+      return true;
+    }
+    return false;
   }, []);
 
   // Subscribe to a scan's updates
-  const subscribeToScan = useCallback((scanId: string) => {
-    if (!scanId || subscriptions.current[scanId]) return;
+  const subscribeToScan = useCallback((scanId: string): (() => void) => {
+    if (!scanId || subscriptions.current[scanId]) return (() => {});
 
     // Subscribe to WebSocket channel
     webSocketService.subscribeToScan(scanId);
@@ -128,6 +145,7 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setActiveScans((prev: RealtimeContextType['activeScans']) => ({
           ...prev,
           [scanId]: {
+            id: scanId,
             status: scanMessage.payload.status,
             progress: scanMessage.payload.progress || 0,
             fileName: scanMessage.payload.fileName,
@@ -143,8 +161,7 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             title: `Scan ${scanMessage.payload.status} `,
             message: scanMessage.payload.fileName
               ? `File "${scanMessage.payload.fileName}" scan ${scanMessage.payload.status} `
-              : `Scan ${scanMessage.payload.status} `,
-            data: { scanId }
+              : `Scan ${scanMessage.payload.status} `
           });
         }
       }
@@ -212,7 +229,8 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       handleConnectionStatus('disconnected');
     });
 
-    const unsubscribeError = webSocketService.on('error', (error: Error) => {
+    const unsubscribeError = webSocketService.on('error', (...args: unknown[]) => {
+      const error = args[0] as Error;
       addNotification({
         type: 'error',
         title: 'Connection Error',
@@ -220,7 +238,8 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       });
     });
 
-    const unsubscribeReconnecting = webSocketService.on('reconnecting', (data: { attempt: number; maxAttempts: number }) => {
+    const unsubscribeReconnecting = webSocketService.on('reconnecting', (...args: unknown[]) => {
+      const data = args[0] as { attempt: number; maxAttempts: number };
       setConnectionStatus('connecting');
       setReconnectAttempt(data.attempt);
       addNotification({
@@ -271,19 +290,25 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     // Notifications
     notifications,
-    unreadCount,
     addNotification,
+    removeNotification,
     markAsRead,
     markAllAsRead,
+    clearNotifications: clearAll,
     clearAll,
+    reconnect,
 
     // WebSocket methods
-    subscribeToScan,
+    subscribeToScan: (scanId: string) => {
+      const unsubscribe = subscribeToScan(scanId);
+      return unsubscribe || (() => {});
+    },
     unsubscribeFromScan,
     sendMessage,
 
     // Scan progress
     activeScans,
+    unreadCount,
   };
 
   return (
@@ -291,12 +316,4 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       {children}
     </RealtimeContext.Provider>
   );
-};
-
-export const useRealtime = () => {
-  const context = useContext(RealtimeContext);
-  if (!context) {
-    throw new Error('useRealtime must be used within a RealtimeProvider');
-  }
-  return context;
 };

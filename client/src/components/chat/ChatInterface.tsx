@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { FiSend, FiLoader } from 'react-icons/fi';
+import { Send, Loader } from 'lucide-react';
 import { useToast } from '../ui/use-toast';
 import ChatMessage, { MessageStatus } from './ChatMessage';
 import WelcomeMessage from './WelcomeMessage';
@@ -228,16 +228,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialPrompt }) => {
                 className={`absolute right-2 bottom-2 p-1.5 rounded-lg flex items-center justify-center ${
                   inputValue.trim() && !isSending
                     ? 'text-white bg-purple-600 hover:bg-purple-700'
-                    : 'text-gray-600 bg-gray-700 cursor-not-allowed'
+                    : 'text-gray-400 bg-gray-700'
                 }`}
               >
                 {isSending ? (
-                  <div className="flex items-center">
-                    <FiLoader className="w-4 h-4 animate-spin mr-1" />
-                    <span className="text-xs">Sending</span>
-                  </div>
+                  <Loader className="w-4 h-4 animate-spin" />
                 ) : (
-                  <FiSend className="w-4 h-4" />
+                  <Send className="w-4 h-4" />
                 )}
               </button>
             </div>

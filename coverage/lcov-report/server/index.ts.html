@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/250</span>
+                <span class='fraction'>0/251</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/244</span>
+                <span class='fraction'>0/245</span>
             </div>
         
             
@@ -923,7 +923,10 @@
 <a name='L858'></a><a href='#L858'>858</a>
 <a name='L859'></a><a href='#L859'>859</a>
 <a name='L860'></a><a href='#L860'>860</a>
-<a name='L861'></a><a href='#L861'>861</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<a name='L861'></a><a href='#L861'>861</a>
+<a name='L862'></a><a href='#L862'>862</a>
+<a name='L863'></a><a href='#L863'>863</a>
+<a name='L864'></a><a href='#L864'>864</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -992,13 +995,17 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1752,8 +1759,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1848,16 +1854,20 @@ declare global {
 &nbsp;
 let webSocketManager: unknown = <span class="cstat-no" title="statement not covered" >null;</span>
 &nbsp;
-// Initialize WebSocket manager asynchronously
+// Initialize WebSocket manager with proper error handling
 const initializeWebSocketManager = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >async </span>() =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >  if (process.env.ENABLE_WEBSOCKETS === 'true') {</span>
 <span class="cstat-no" title="statement not covered" >    try {</span>
-      const ws = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >await import('</span>./services/websocket-manager');</span>
-<span class="cstat-no" title="statement not covered" >      webSocketManager = ws.WebSocketManager;</span>
+      // Import the default WebSocket manager instance
+      const webSocketModule = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >await import('</span>./services/websocket-manager');</span>
+<span class="cstat-no" title="statement not covered" >      webSocketManager = webSocketModule.default;</span>
+<span class="cstat-no" title="statement not covered" >      logger.info('WebSocket manager loaded successfully');</span>
     } catch (error) {
-      // eslint-disable-next-line no-console
-<span class="cstat-no" title="statement not covered" >      console.warn('WebSocket manager not available:', error);</span>
+<span class="cstat-no" title="statement not covered" >      logger.warn('WebSocket manager not available:', error);</span>
+<span class="cstat-no" title="statement not covered" >      webSocketManager = null;</span>
     }
+  } else {
+<span class="cstat-no" title="statement not covered" >    logger.info('WebSocket service is disabled');</span>
   }
 };
 &nbsp;
@@ -2593,7 +2603,7 @@ function <span class="fstat-no" title="function not covered" >logConfigurationSu
   // eslint-disable-next-line no-console
 <span class="cstat-no" title="statement not covered" >  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);</span>
   // eslint-disable-next-line no-console
-<span class="cstat-no" title="statement not covered" >  console.log(`Port: ${process.env.PORT || 3000}`);</span>
+<span class="cstat-no" title="statement not covered" >  console.log(`Port: ${process.env.PORT || 5001}`);</span>
   // eslint-disable-next-line no-console
 <span class="cstat-no" title="statement not covered" >  console.log(`Database: ${process.env.DATABASE_URL ? 'Configured' : 'Not configured'}`);</span>
   // eslint-disable-next-line no-console
@@ -2612,9 +2622,8 @@ function <span class="fstat-no" title="function not covered" >logConfigurationSu
     // Initialize WebSocket manager if enabled
 <span class="cstat-no" title="statement not covered" >    if (webSocketManager &amp;&amp; process.env.ENABLE_WEBSOCKETS === 'true') {</span>
 <span class="cstat-no" title="statement not covered" >      try {</span>
-        const WSManager = <span class="cstat-no" title="statement not covered" >webSocketManager as { new(): { initialize(server: Server): void } };</span>
-        const wsManager = <span class="cstat-no" title="statement not covered" >new WSManager();</span>
-<span class="cstat-no" title="statement not covered" >        wsManager.initialize(serverInstance);</span>
+        // webSocketManager is already an initialized instance
+        (<span class="cstat-no" title="statement not covered" >webSocketManager as { initialize: (server: import('http').Server) =&gt; void }).initialize(serverInstance);</span>
 <span class="cstat-no" title="statement not covered" >        logger.info('WebSocket server initialized');</span>
       } catch (error) {
 <span class="cstat-no" title="statement not covered" >        logger.error('Failed to initialize WebSocket manager:', error);</span>
@@ -2650,7 +2659,7 @@ function <span class="fstat-no" title="function not covered" >logConfigurationSu
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-01-26T16:11:14.637Z
+                at 2026-01-31T17:58:55.682Z
             </div>
         <script src="../prettify.js"></script>
         <script>

@@ -46,15 +46,15 @@ export default function History() {
 
   // Map API response to UI format
   const renderHistoryItem = (result: any, index: number) => {
-    // Map API response to UI format
+    // Map API response to UI format - Fixed field mapping
     const uiItem = {
       id: result.id || result.jobId,
-      case_id: result.reportCode || result.jobId,
-      analysis_date: result.timestamp || result.created_at,
+      case_id: result.reportCode || result.jobId || `case-${result.id}`,
+      analysis_date: result.created_at || result.timestamp || new Date().toISOString(),
       authenticity: result.is_deepfake ? 'MANIPULATED MEDIA' : 'AUTHENTIC MEDIA',
       confidence: result.confidence || 0,
       analysis_type: result.modality || result.type || 'Unknown',
-      key_findings: result.key_findings || result.analysis_data?.findings || []
+      key_findings: result.summary?.findings || result.analysis_data?.findings || result.key_findings || []
     };
 
     return (

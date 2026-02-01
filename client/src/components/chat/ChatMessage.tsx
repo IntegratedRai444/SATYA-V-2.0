@@ -1,5 +1,5 @@
 import React from 'react';
-import { FiUser, FiCpu, FiLoader, FiAlertCircle, FiCheck } from 'react-icons/fi';
+import { User, Cpu, Loader, AlertCircle, Check } from 'lucide-react';
 
 export type MessageStatus = 'sending' | 'sent' | 'error';
 
@@ -13,9 +13,9 @@ export interface ChatMessageProps {
 }
 
 const statusIcons = {
-  sending: <FiLoader className="animate-spin" />,
-  sent: <FiCheck className="text-green-500" />,
-  error: <FiAlertCircle className="text-red-500" />,
+  sending: <Loader className="w-3 h-3 animate-spin" />,
+  sent: <Check className="w-3 h-3 text-green-500" />,
+  error: <AlertCircle className="w-3 h-3 text-red-500" />,
 };
 
 const ChatMessage: React.FC<ChatMessageProps> = ({
@@ -40,7 +40,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             isUser ? 'bg-purple-600 ml-3' : 'bg-gray-700 mr-3'
           }`}
         >
-          {isUser ? <FiUser className="text-white" /> : <FiCpu className="text-white" />}
+          {isUser ? <User className="w-4 h-4" /> : <Cpu className="w-4 h-4" />}
         </div>
         <div 
           className={`px-4 py-3 rounded-2xl relative ${

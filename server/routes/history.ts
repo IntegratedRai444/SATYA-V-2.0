@@ -3,7 +3,6 @@ import { supabase } from '../config/supabase';
 import { logger } from '../config/logger';
 
 const router = Router();
-import { AuthenticatedRequest } from '../types/auth';
 
 
 // GET /api/v2/history - Get paginated list of user's analysis jobs
@@ -70,6 +69,7 @@ router.get('/',
             filename: job.file_name,
             mime_type: job.file_type,
             size_bytes: job.file_size,
+            reportCode: job.report_code,  // ADD THIS LINE
             confidence: job.result?.confidence,
             is_deepfake: job.result?.is_deepfake,
             model_name: job.result?.model_name,
@@ -177,6 +177,7 @@ router.get('/:jobId',
             filename: job.file_name,
             mime_type: job.file_type,
             size_bytes: job.file_size,
+            reportCode: job.report_code,  // ADD THIS LINE
             confidence: analysisData?.confidence,
             is_deepfake: analysisData?.is_deepfake,
             model_name: analysisData?.model_name,

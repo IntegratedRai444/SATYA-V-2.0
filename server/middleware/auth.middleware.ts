@@ -67,9 +67,10 @@ const initializeRateLimitStore = async () => {
       await redisClient.connect();
       
       // Create Redis store with proper typing
+      // Note: Type incompatibility between ioredis and rate-limit-redis
       const redisStore = new RedisStore({
-        // Type assertion for Redis client compatibility
-        sendCommand: (...args: string[]) => redisClient.sendCommand(args),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        client: redisClient as any,
         prefix: 'ratelimit:'
       });
       

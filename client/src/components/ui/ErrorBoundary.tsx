@@ -1,5 +1,5 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
-import { FiAlertTriangle, FiRefreshCw, FiCopy, FiExternalLink } from 'react-icons/fi';
+import { AlertTriangle, RefreshCw, Copy, ExternalLink } from 'lucide-react';
 import logger from '../../utils/logger';
 import { classifyError, handleError } from '../../utils/errorHandling';
 
@@ -225,16 +225,22 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, State> {
       const isRecoverable = !['ChunkLoadError', 'TypeError', 'ReferenceError'].includes(this.state.error?.name || '');
 
       return (
-        <div className="min-h-screen bg-gray-900 flex items-center justify-center p-6">
-          <div className="bg-gray-800 rounded-lg p-8 border border-gray-700 max-w-md w-full text-center">
-            <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-              <FiAlertTriangle className="w-8 h-8 text-red-400" />
+        <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-gray-800 rounded-lg shadow-xl p-6">
+            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-red-100 mx-auto mb-4">
+              <AlertTriangle className="w-6 h-6 text-red-600" />
             </div>
-            <h2 className="text-xl font-bold text-white mb-2">{errorTitle}</h2>
-            <p className="text-gray-300 mb-6">{errorMessage}</p>
+            
+            <h2 className="text-xl font-bold text-white text-center mb-2">
+              {errorTitle}
+            </h2>
+            
+            <p className="text-gray-300 text-center mb-6">
+              {errorMessage}
+            </p>
 
-            {import.meta.env.MODE === 'development' && this.state.error && (
-              <div className="text-left p-3 bg-gray-900/50 rounded-md text-xs text-gray-400 font-mono overflow-auto max-h-32 mb-4">
+            {this.state.error && (
+              <div className="mb-6 p-3 bg-gray-700 rounded-md">
                 <div className="font-bold text-red-400 mb-1">
                   {this.state.error.name || 'Error'}
                 </div>
@@ -255,7 +261,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, State> {
                   onClick={this.handleRetry}
                   className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center justify-center"
                 >
-                  <FiRefreshCw className="w-4 h-4 mr-2" />
+                  <RefreshCw className="w-4 h-4 mr-2" />
                   Try Again
                 </button>
               )}
@@ -265,14 +271,14 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, State> {
                   onClick={this.handleCopyError}
                   className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors flex items-center justify-center space-x-2 text-sm"
                 >
-                  <FiCopy className="w-4 h-4" />
+                  <Copy className="w-4 h-4" />
                   <span>Copy Error</span>
                 </button>
                 <button
                   onClick={this.handleReportError}
                   className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors flex items-center justify-center space-x-2 text-sm"
                 >
-                  <FiExternalLink className="w-4 h-4" />
+                  <ExternalLink className="w-4 h-4" />
                   <span>Report</span>
                 </button>
               </div>
@@ -289,7 +295,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, State> {
                   onClick={() => window.location.reload()}
                   className="mt-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors flex items-center justify-center space-x-2 text-sm"
                 >
-                  <FiRefreshCw className="w-4 h-4 animate-spin" />
+                  <RefreshCw className="w-4 h-4 animate-spin" />
                   <span>Update Application</span>
                 </button>
               )}

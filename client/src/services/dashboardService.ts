@@ -5,6 +5,30 @@ import type { Detection } from '../types/dashboard';
 import type { ApiResponse } from '../lib/api';
 import { toast } from '../components/ui/use-toast';
 
+// Define interfaces for API responses
+interface DashboardAnalytics {
+  monthly: Array<{
+    name: string;
+    value: number;
+  }>;
+  metrics: Array<{
+    name: string;
+    value: number;
+  }>;
+}
+
+interface HistoryResponse {
+  history: Array<{
+    id: string;
+    type: 'image' | 'video' | 'audio';
+    status: 'completed' | 'processing' | 'failed';
+    timestamp: string;
+    confidence: number;
+    user?: string;
+    action?: string;
+  }>;
+}
+
 // Define the interface for API DashboardStats to include uncertainScans
 interface ExtendedApiDashboardStats extends ApiDashboardStats {
   uncertainScans: number;
@@ -31,9 +55,9 @@ const ActivityItemSchema = z.object({
   time: z.string(),
 });
 
-export interface StatItem extends z.infer<typeof StatItemSchema> { }
-export interface AnalysisData extends z.infer<typeof AnalysisDataSchema> { }
-export interface ActivityItem extends z.infer<typeof ActivityItemSchema> { }
+export type StatItem = z.infer<typeof StatItemSchema>;
+export type AnalysisData = z.infer<typeof AnalysisDataSchema>;
+export type ActivityItem = z.infer<typeof ActivityItemSchema>;
 
 export interface DashboardData {
   stats: StatItem[];
@@ -60,25 +84,25 @@ const transformStats = (apiStats: ExtendedApiDashboardStats): StatItem[] => {
     {
       title: 'Total Analyses',
       value: apiStats.totalScans,
-      change: '+0%', // TODO: Calculate real growth from historical data
+      change: '0%',
       trend: 'neutral',
     },
     {
       title: 'Detected Deepfakes',
       value: apiStats.manipulatedScans,
-      change: '+0%', // TODO: Calculate real growth from historical data
+      change: '0%',
       trend: 'neutral',
     },
     {
       title: 'Avg. Confidence',
       value: `${Math.round(apiStats.averageConfidence * 100)}%`,
-      change: '+0%', // TODO: Calculate real growth from historical data
+      change: '0%',
       trend: 'neutral',
     },
     {
       title: 'Uncertain Scans',
       value: apiStats.uncertainScans,
-      change: '+0%', // TODO: Calculate real growth from historical data
+      change: '0%',
       trend: 'neutral',
     },
   ];
@@ -100,7 +124,7 @@ const transformActivity = (detections: Detection[]): ActivityItem[] => {
  * @returns Processed dashboard data
  * @throws {DashboardServiceError} When there's an error fetching or processing data
  */
-export const fetchDashboardData = async (_params: {
+export const fetchDashboardData = async (params: {
   timeRange: string;
   analysisType: string;
 }): Promise<DashboardData> => {
@@ -108,16 +132,16 @@ export const fetchDashboardData = async (_params: {
   try {
     // Fetch all dashboard data in parallel using apiClient methods
     const [statsRes, analyticsRes, activityRes] = await Promise.all([
-      api.get('/api/v2/dashboard/stats') as Promise<ApiResponse<ApiDashboardStats>>,
-      api.get('/api/v2/dashboard/analytics') as Promise<ApiResponse<any>>,
-      api.get('/api/v2/history', { params: { limit: 5 } }) as Promise<ApiResponse<any>>
+      api.get('/dashboard/stats', { params: { timeRange: params.timeRange, analysisType: params.analysisType } }) as Promise<ApiResponse<ApiDashboardStats>>,
+      api.get('/dashboard/analytics', { params: { timeRange: params.timeRange, analysisType: params.analysisType } }) as Promise<ApiResponse<DashboardAnalytics>>,
+      api.get('/history', { params: { limit: 5, timeRange: params.timeRange } }) as Promise<ApiResponse<HistoryResponse>>
     ]);
 
     // Validate and transform responses
     const stats = statsRes.success && statsRes.data ? transformStats(statsRes.data as ExtendedApiDashboardStats) : [];
-    const monthlyAnalysis = analyticsRes.success ? (analyticsRes.data as any)?.monthly || [] : [];
-    const performanceMetrics = analyticsRes.success ? (analyticsRes.data as any)?.metrics || [] : [];
-    const recentActivity = activityRes.success ? transformActivity((activityRes.data as any)?.history || []) : [];
+    const monthlyAnalysis = analyticsRes.success ? (analyticsRes.data as DashboardAnalytics)?.monthly || [] : [];
+    const performanceMetrics = analyticsRes.success ? (analyticsRes.data as DashboardAnalytics)?.metrics || [] : [];
+    const recentActivity = activityRes.success ? transformActivity((activityRes.data as HistoryResponse)?.history || []) : [];
 
     // Validate data with Zod schemas
     const validatedData = {

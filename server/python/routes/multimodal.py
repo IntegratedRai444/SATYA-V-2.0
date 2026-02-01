@@ -218,7 +218,7 @@ async def analyze_multimodal(
             try:
                 config = {
                     "MODEL_PATH": "models",
-                    "ENABLE_GPU": False,  # Use CPU for multimodal to avoid resource conflicts
+                    "ENABLE_GPU": torch.cuda.is_available(),  # Auto-enable GPU if available
                     "ENABLE_FORENSICS": True,
                     "ENABLE_MULTIMODAL": True
                 }

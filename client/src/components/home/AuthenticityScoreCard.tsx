@@ -1,4 +1,5 @@
-import { FiZap, FiShield, FiCheckCircle } from 'react-icons/fi';
+import React from 'react';
+import { Zap, Shield, CheckCircle } from 'lucide-react';
 import CircularProgress from './CircularProgress';
 
 interface AuthenticityScoreCardProps {
@@ -53,17 +54,17 @@ const AuthenticityScoreCard = ({ score }: AuthenticityScoreCardProps) => {
         {/* Feature indicators */}
         <div className="space-y-4">
           <FeatureIndicator
-            icon={<FiZap className="w-4 h-4" />}
+            icon={<Zap className="w-5 h-5" />}
             label="Real-time Analysis"
             active={true}
           />
           <FeatureIndicator
-            icon={<FiShield className="w-4 h-4" />}
+            icon={<Shield className="w-5 h-5" />}
             label="Secure Processing"
             active={true}
           />
           <FeatureIndicator
-            icon={<FiCheckCircle className="w-4 h-4" />}
+            icon={<CheckCircle className="w-5 h-5" />}
             label="Verified Protection"
             active={true}
           />

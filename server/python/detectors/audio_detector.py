@@ -186,8 +186,8 @@ class AudioDetector:
         config['models'].setdefault('wav2vec2', {
             'enabled': True,
             'model_options': [
-                "Andyrasika/wav2vec2-large-xlsr-53-deepfake-detection",
-                "facebook/wav2vec2-base",
+                "facebook/wav2vec2-base-960h",
+                "facebook/wav2vec2-large-960h",
             ]
         })
         
@@ -226,8 +226,8 @@ class AudioDetector:
                 "wav2vec2": {
                     "enabled": True,
                     "model_options": [
-                        "Andyrasika/wav2vec2-large-xlsr-53-deepfake-detection",
-                        "facebook/wav2vec2-base",
+                        "facebook/wav2vec2-base-960h",
+                        "facebook/wav2vec2-large-960h",
                     ],
                 }
             },

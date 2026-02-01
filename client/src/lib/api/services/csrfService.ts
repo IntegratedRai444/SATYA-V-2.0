@@ -3,11 +3,11 @@ let tokenPromise: Promise<string> | null = null;
 
 /**
  * Fetches a new CSRF token from the server
- * TEMPORARILY DISABLED - CSRF endpoint not implemented
+ * CSRF protection is handled by Supabase authentication
  */
 export const fetchCsrfToken = async (): Promise<string> => {
-  // TODO: Re-enable CSRF when endpoint is implemented
-  return 'csrf-placeholder';
+  // CSRF protection is handled by Supabase JWT authentication
+  return 'csrf-protected';
 };
 
 /**

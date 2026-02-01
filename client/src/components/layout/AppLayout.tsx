@@ -6,10 +6,14 @@ import Sidebar from './Sidebar';
 import Footer from './Footer';
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 import { Loader2 } from 'lucide-react';
+import { ChatProvider, useChat } from '@/contexts/ChatContext';
+import ChatOverlay from '@/components/chat/ChatOverlay';
+import FloatingChatButton from '@/components/chat/FloatingChatButton';
 
-const AppLayout = () => {
+const AppLayoutContent = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const { user, loading } = useSupabaseAuth();
+  const { isChatOpen, closeChat, initialPrompt } = useChat();
 
   // Show loading spinner while checking authentication
   if (loading) {
@@ -55,7 +59,25 @@ const AppLayout = () => {
       
       {/* Global Toaster */}
       <Toaster />
+      
+      {/* Chat Overlay */}
+      <ChatOverlay 
+        isOpen={isChatOpen} 
+        onClose={closeChat} 
+        initialPrompt={initialPrompt}
+      />
+      
+      {/* Floating Chat Button */}
+      <FloatingChatButton />
     </div>
+  );
+};
+
+const AppLayout = () => {
+  return (
+    <ChatProvider>
+      <AppLayoutContent />
+    </ChatProvider>
   );
 };
 

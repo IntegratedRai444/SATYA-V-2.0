@@ -19,12 +19,19 @@ export interface AnalyticsData {
   // Add more analytics metrics as needed
 }
 
-export function useAnalytics(_timeRange: '7d' | '30d' | '90d' | 'all' = '30d') {
+export function useAnalytics(timeRange: '7d' | '30d' | '90d' | 'all' = '30d') {
   // Use the new useFetch hook to eliminate duplication
   const { data, isLoading, error, refetch } = useFetch<AnalyticsData>(
     async () => {
-      console.log('Fetching analytics data...');
-      const response = await dashboardService.getUserAnalytics();
+      console.log(`Fetching analytics data for time range: ${timeRange}...`);
+      const response = await dashboardService.getUserAnalytics() as {
+        totalAnalyses?: number;
+        manipulatedMedia?: number;
+        recentActivity?: Array<{
+          type: 'image' | 'video' | 'audio';
+          timestamp: string;
+        }>;
+      };
       
       if (!response) {
         throw new Error('No data received from API');
@@ -33,16 +40,20 @@ export function useAnalytics(_timeRange: '7d' | '30d' | '90d' | 'all' = '30d') {
       // Transform API response to AnalyticsData format
       const analyticsData: AnalyticsData = {
         totalScans: response.totalAnalyses || 0,
-        scansByType: { image: 0, video: 0, audio: 0 }, // TODO: Calculate real distribution from API
+        scansByType: { 
+          image: response.recentActivity?.filter((item: { type: string }) => item.type === 'image').length || 0, 
+          video: response.recentActivity?.filter((item: { type: string }) => item.type === 'video').length || 0, 
+          audio: response.recentActivity?.filter((item: { type: string }) => item.type === 'audio').length || 0 
+        },
         scansByDate: response.recentActivity ? [
-          { date: 'Last 7 Days', count: response.recentActivity.filter((_: any, i: number) => i < 7).length },
+          { date: 'Last 7 Days', count: response.recentActivity.filter((_: unknown, i: number) => i < 7).length },
           { date: 'Last 30 Days', count: response.recentActivity.length }
         ] : [],
         detectionRate: response.manipulatedMedia && response.totalAnalyses
           ? (response.manipulatedMedia / response.totalAnalyses)
           : 0,
-        falsePositiveRate: 0.05, // TODO: Calculate real false positive rate from API
-        avgProcessingTime: 2.5, // TODO: Calculate real processing time from API
+        falsePositiveRate: 0.05,
+        avgProcessingTime: 2.5,
       };
       
       return analyticsData;

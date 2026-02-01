@@ -152,7 +152,7 @@ export function pollAnalysisResult(
     try {
       metrics.totalRequests++;
       
-      const response = await api.get(`/api/v2/results/${jobId}`, {
+      const response = await api.get(`/results/${jobId}`, {
         timeout: 10000, // 10 second timeout per request
         headers: {
           'X-Request-ID': `poll-${jobId}-${Date.now()}`,

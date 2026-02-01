@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/components/ui/use-toast';
 import { apiClient } from '@/lib/api';
-import { useRealtime } from '@/contexts/RealtimeContext';
+import { useRealtime } from './useRealtime';
 
 export interface BatchFile {
   id: string;
@@ -11,8 +11,9 @@ export interface BatchFile {
   size: number;
   status: 'pending' | 'uploading' | 'processing' | 'completed' | 'error';
   progress: number;
-  result?: any;
+  result?: unknown;
   error?: string;
+  scanId?: string;
 }
 
 export const useBatchProcessing = () => {
@@ -68,7 +69,7 @@ export const useBatchProcessing = () => {
               headers: {
                 'Content-Type': 'multipart/form-data',
               },
-              onUploadProgress: (progressEvent: any) => {
+              onUploadProgress: (progressEvent: { loaded: number; total?: number }) => {
                 const progress = progressEvent.total
                   ? Math.round((progressEvent.loaded * 100) / progressEvent.total)
                   : 0;
@@ -135,17 +136,17 @@ export const useBatchProcessing = () => {
   };
 
   // Handle WebSocket scan updates
-  const handleScanUpdate = useCallback((update: any) => {
+  const handleScanUpdate = useCallback((update: { scanId: string; status: BatchFile['status']; progress?: number; error?: string; result?: unknown }) => {
     setFiles(prev =>
       prev.map(file => {
-        if (file.result?.scanId === update.scanId) {
+        if ((file.result as { scanId?: string })?.scanId === update.scanId) {
           return {
             ...file,
             status: update.status,
             progress: update.progress || file.progress,
-            result: { ...file.result, ...update },
+            result: { ...(file.result as Record<string, unknown>), ...update },
             error: update.error || file.error,
-          };
+          } as BatchFile;
         }
         return file;
       })

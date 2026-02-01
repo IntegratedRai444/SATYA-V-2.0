@@ -21,7 +21,7 @@ export interface AnalysisResult {
 // Get analysis history from the server
 export const getAnalysisHistory = async (): Promise<AnalysisResult[]> => {
   try {
-    const response = await apiClient.get('/api/v2/history');
+    const response = await apiClient.get('/history');
     return response.data.data?.jobs || [];
   } catch (error) {
     console.error('Error fetching analysis history:', error);
@@ -32,7 +32,7 @@ export const getAnalysisHistory = async (): Promise<AnalysisResult[]> => {
 // Clear analysis history
 export const clearAnalysisHistory = async (): Promise<void> => {
   try {
-    await apiClient.delete('/api/v2/history');
+    await apiClient.delete('/history');
   } catch (error) {
     console.error('Error clearing analysis history:', error);
     throw error;
@@ -42,7 +42,7 @@ export const clearAnalysisHistory = async (): Promise<void> => {
 // Get analysis result by ID
 export const getAnalysisResult = async (id: string): Promise<AnalysisResult> => {
   try {
-    const response = await apiClient.get(`/api/v2/results/${id}`);
+    const response = await apiClient.get(`/results/${id}`);
     return response.data.data;
   } catch (error) {
     console.error(`Error fetching analysis result ${id}:`, error);
@@ -57,7 +57,7 @@ export const submitAnalysis = async (file: File, type: 'image' | 'video' | 'audi
     formData.append('file', file);
     formData.append('type', type);
     
-    const response = await apiClient.post(`/api/v2/analysis/${type}`, formData, {
+    const response = await apiClient.post(`/analysis/${type}`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },

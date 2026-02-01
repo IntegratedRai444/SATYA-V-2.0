@@ -1,9 +1,10 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useBaseWebSocket, WebSocketMessage } from './useBaseWebSocket';
+import logger from '../lib/logger';
 
-interface JobProgress {
+export interface JobProgress {
   id: string;
-  status: string;
+  status: 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
   stage: string;
   percentage: number;
   message: string;
@@ -12,36 +13,113 @@ interface JobProgress {
   estimatedTimeRemaining?: number;
   result?: unknown;
   error?: string;
+  metrics?: {
+    processingTime?: number;
+    modelVersion?: string;
+    confidence?: number;
+  };
 }
 
 interface UseWebSocketOptions {
   autoConnect?: boolean;
   reconnectAttempts?: number;
   reconnectInterval?: number;
+  enableMessageRouting?: boolean;
+}
+
+// Type guard functions
+function isJobProgressMessage(message: WebSocketMessage): message is WebSocketMessage & {
+  payload: { jobId: string; status?: string; stage?: string; progress?: number; message?: string; startTime?: string; endTime?: string; estimatedTimeRemaining?: number; result?: unknown; error?: string; }
+} {
+  return ['JOB_PROGRESS', 'JOB_COMPLETED', 'JOB_FAILED', 'JOB_STARTED', 'JOB_STAGE_UPDATE', 'JOB_METRICS'].includes(message.type) &&
+         typeof message.payload === 'object' &&
+         message.payload !== null &&
+         'jobId' in message.payload &&
+         typeof (message.payload as { jobId: unknown }).jobId === 'string';
+}
+
+function isDashboardUpdateMessage(message: WebSocketMessage): boolean {
+  return message.type === 'DASHBOARD_UPDATE';
+}
+
+function isNotificationMessage(message: WebSocketMessage): boolean {
+  return message.type === 'notification';
+}
+
+function isSystemAlertMessage(message: WebSocketMessage): boolean {
+  return message.type === 'system_alert';
+}
+
+// Message router singleton
+class WebSocketMessageRouter {
+  private static instance: WebSocketMessageRouter;
+  private handlers = new Map<string, Set<(message: WebSocketMessage) => void>>();
+  
+  static getInstance(): WebSocketMessageRouter {
+    if (!WebSocketMessageRouter.instance) {
+      WebSocketMessageRouter.instance = new WebSocketMessageRouter();
+    }
+    return WebSocketMessageRouter.instance;
+  }
+  
+  register(type: string, handler: (message: WebSocketMessage) => void): () => void {
+    if (!this.handlers.has(type)) {
+      this.handlers.set(type, new Set());
+    }
+    this.handlers.get(type)!.add(handler);
+    
+    return () => {
+      this.handlers.get(type)?.delete(handler);
+    };
+  }
+  
+  route(message: WebSocketMessage): void {
+    const handlers = this.handlers.get(message.type);
+    if (handlers) {
+      handlers.forEach(handler => {
+        try {
+          handler(message);
+        } catch (error) {
+          logger.error('Error in message handler', error as Error);
+        }
+      });
+    }
+  }
 }
 
 export function useWebSocket(options: UseWebSocketOptions = {}) {
+  const { enableMessageRouting = true, autoConnect, reconnectAttempts, reconnectInterval } = options;
   const [jobUpdates, setJobUpdates] = useState<Map<string, JobProgress>>(new Map());
+  const routerRef = useRef(WebSocketMessageRouter.getInstance());
+  const cleanupRef = useRef<(() => void) | null>(null);
 
   // Handle incoming WebSocket messages
   const handleMessage = useCallback((message: WebSocketMessage) => {
-    if (message.type === 'JOB_PROGRESS' || message.type === 'JOB_COMPLETED' || message.type === 'JOB_FAILED') {
-      const payload = message.payload as Record<string, unknown>;
-      const jobId = payload?.jobId as string;
-      if (jobId) {
-        const progressData = {
+    try {
+      // Route message if routing is enabled
+      if (enableMessageRouting) {
+        routerRef.current.route(message);
+      }
+      
+      // Handle job-related messages
+      if (isJobProgressMessage(message)) {
+        const payload = message.payload;
+        const jobId = payload.jobId;
+        
+        const progressData: JobProgress = {
           id: jobId,
           status: message.type === 'JOB_COMPLETED' ? 'completed' : 
                  message.type === 'JOB_FAILED' ? 'failed' : 
-                 (payload?.status as string) || 'processing',
-          stage: (payload?.stage as string) || 'processing',
-          percentage: (payload?.progress as number) || 0,
-          message: (payload?.message as string) || '',
-          startTime: (payload?.startTime as string) || new Date().toISOString(),
-          endTime: payload?.endTime as string,
-          estimatedTimeRemaining: payload?.estimatedTimeRemaining as number,
-          result: payload?.result,
-          error: payload?.error as string
+                 message.type === 'JOB_STARTED' ? 'processing' :
+                 (payload.status || 'processing') as JobProgress['status'],
+          stage: payload.stage || 'processing',
+          percentage: payload.progress || 0,
+          message: payload.message || '',
+          startTime: payload.startTime || new Date().toISOString(),
+          endTime: payload.endTime,
+          estimatedTimeRemaining: payload.estimatedTimeRemaining,
+          result: payload.result,
+          error: payload.error
         };
 
         setJobUpdates(prev => {
@@ -50,42 +128,55 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
           return newMap;
         });
       }
+      
+      // Log other message types for debugging
+      if (isDashboardUpdateMessage(message)) {
+        logger.debug('Dashboard update received', message);
+      } else if (isNotificationMessage(message)) {
+        logger.debug('Notification received', message);
+      } else if (isSystemAlertMessage(message)) {
+        logger.debug('System alert received', message);
+      }
+    } catch (error) {
+      logger.error('Error handling WebSocket message', error as Error);
     }
-  }, []);
+  }, [enableMessageRouting]);
 
   // Use base WebSocket with authentication
   const base = useBaseWebSocket({
-    autoConnect: options.autoConnect,
-    reconnectAttempts: options.reconnectAttempts,
-    reconnectInterval: options.reconnectInterval,
+    autoConnect,
+    reconnectAttempts,
+    reconnectInterval,
     onMessage: handleMessage,
   });
 
   // Subscribe to a specific job
   const subscribeToJob = useCallback((jobId: string) => {
     if (!base.isConnected) {
-      console.warn('WebSocket not connected, cannot subscribe to job');
-      return;
+      logger.warn('WebSocket not connected, cannot subscribe to job', { jobId });
+      return false;
     }
     
-    base.sendMessage({
+    return base.sendMessage({
       type: 'SUBSCRIBE_JOB',
-      jobId,
-      timestamp: new Date().toISOString()
+      payload: { jobId },
+      timestamp: new Date().toISOString(),
+      id: crypto.randomUUID()
     });
   }, [base]);
 
   // Unsubscribe from a specific job
   const unsubscribeFromJob = useCallback((jobId: string) => {
     if (!base.isConnected) {
-      console.warn('WebSocket not connected, cannot unsubscribe from job');
-      return;
+      logger.warn('WebSocket not connected, cannot unsubscribe from job', { jobId });
+      return false;
     }
     
-    base.sendMessage({
+    return base.sendMessage({
       type: 'UNSUBSCRIBE_JOB',
-      jobId,
-      timestamp: new Date().toISOString()
+      payload: { jobId },
+      timestamp: new Date().toISOString(),
+      id: crypto.randomUUID()
     });
   }, [base]);
 
@@ -103,6 +194,21 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     });
   }, []);
 
+  // Register message handler for external hooks
+  const registerMessageHandler = useCallback((type: string, handler: (message: WebSocketMessage) => void) => {
+    return routerRef.current.register(type, handler);
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    const cleanup = cleanupRef.current;
+    return () => {
+      if (cleanup) {
+        cleanup();
+      }
+    };
+  }, []);
+
   return {
     isConnected: base.isConnected,
     jobUpdates,
@@ -115,6 +221,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     connectionStatus: base.connectionStatus,
     connect: base.connect,
     disconnect: base.disconnect,
+    registerMessageHandler,
+    router: routerRef.current
   };
 }
 

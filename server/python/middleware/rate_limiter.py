@@ -20,7 +20,7 @@ from config import settings
 logger = logging.getLogger(__name__)
 
 
-class RateLimiterMiddleware(BaseHTTPMiddleware):
+class RateLimitMiddleware(BaseHTTPMiddleware):
     """
     Enhanced rate limiting middleware with Redis support for distributed environments.
 
@@ -319,7 +319,7 @@ class RateLimiter:
         return True
 
 # Global rate limiter instance
-rate_limiter = RateLimiterMiddleware(
+rate_limiter = RateLimitMiddleware(
     app=None,
     redis_url=settings.REDIS_URL,
     default_rate_limit="100/minute",
@@ -343,3 +343,6 @@ def _initialize_rate_limiters():
 
 # Initialize on import
 _initialize_rate_limiters()
+
+# Backward compatibility alias
+RateLimiterMiddleware = RateLimitMiddleware

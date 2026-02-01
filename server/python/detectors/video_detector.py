@@ -1005,8 +1005,9 @@ class VideoDetector:
 
         # Specific recommendations
         if results.get("suspicious_frames"):
+            timestamps = [f"{f['timestamp']:.1f}s" for f in results['suspicious_frames'][:3]]
             recommendations.append(
-                f"Review suspicious frames at timestamps: {', '.join([f'{f['timestamp']:.1f}s' for f in results['suspicious_frames'][:3]])}"
+                f"Review suspicious frames at timestamps: {', '.join(timestamps)}"
             )
 
         return recommendations

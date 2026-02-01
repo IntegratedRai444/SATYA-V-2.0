@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import logger from '../lib/logger';
+import { getAccessToken } from '../lib/auth/getAccessToken';
 
 export interface WebSocketMessage {
     type: string;
@@ -7,6 +8,8 @@ export interface WebSocketMessage {
     payload?: unknown;
     error?: string;
     timestamp?: string;
+    id?: string;
+    jobId?: string;
 }
 
 export interface BaseWebSocketOptions {
@@ -46,14 +49,30 @@ export function useBaseWebSocket(options: BaseWebSocketOptions = {}) {
     const messageHandlersRef = useRef<Set<(message: WebSocketMessage) => void>>(new Set());
     const isMountedRef = useRef(true);
 
-    // Get WebSocket URL
-    const getWebSocketUrl = useCallback(() => {
+    // Get WebSocket URL with authentication
+    const getWebSocketUrl = useCallback(async () => {
         if (url) return url;
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        // Use backend server instead of frontend host
-        const wsHost = import.meta.env.VITE_WS_URL?.replace(/^ws:\/\//, '')?.replace(/^wss:\/\//, '') || 'localhost:5001';
-        return `${protocol}//${wsHost}/api/v2/dashboard/ws`;
+        const configured = import.meta.env.VITE_WS_URL;
+        
+        // Get authentication token
+        const token = await getAccessToken();
+        if (!token) {
+            throw new Error('No authentication token available');
+        }
+
+        if (configured) {
+            const hasProtocol = /^wss?:\/\//i.test(configured);
+            const baseUrl = hasProtocol ? configured : `${protocol}//${configured}`;
+            const wsUrl = new URL(baseUrl);
+            const path = wsUrl.pathname && wsUrl.pathname !== '/' ? wsUrl.pathname : '/api/v2/dashboard/ws';
+            wsUrl.pathname = path;
+            wsUrl.searchParams.set('token', token);
+            return wsUrl.toString();
+        }
+
+        return `${protocol}//localhost:5001/api/v2/dashboard/ws?token=${encodeURIComponent(token)}`;
     }, [url]);
 
     // Handle incoming messages
@@ -87,7 +106,7 @@ export function useBaseWebSocket(options: BaseWebSocketOptions = {}) {
     }, [onError]);
 
     // Connect to WebSocket
-    const connect = useCallback(() => {
+    const connect = useCallback(async () => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
             return;
         }
@@ -98,18 +117,30 @@ export function useBaseWebSocket(options: BaseWebSocketOptions = {}) {
 
         try {
             setConnectionStatus('connecting');
-            const wsUrl = getWebSocketUrl();
+            const wsUrl = await getWebSocketUrl();
+            logger.debug('Connecting to WebSocket', { url: wsUrl.replace(/token=[^&]+/, 'token=***') });
             const ws = new WebSocket(wsUrl);
 
             ws.onopen = () => {
                 if (!isMountedRef.current) return;
 
-                logger.info('WebSocket connected');
+                logger.info('WebSocket connected successfully');
                 setIsConnected(true);
                 setConnectionError(null);
                 setConnectionStatus('connected');
                 reconnectCountRef.current = 0;
                 onConnected?.();
+                
+                // Send initial ping to verify connection
+                ws.send(JSON.stringify({
+                    type: 'ping',
+                    payload: { 
+                        clientTime: new Date().toISOString(),
+                        timestamp: new Date().toISOString()
+                    },
+                    timestamp: new Date().toISOString(),
+                    id: crypto.randomUUID()
+                }));
             };
 
             ws.onmessage = handleMessage;
@@ -159,7 +190,11 @@ export function useBaseWebSocket(options: BaseWebSocketOptions = {}) {
 
         reconnectTimeoutRef.current = setTimeout(() => {
             if (isMountedRef.current) {
-                connect();
+                connect().catch((error: Error) => {
+                    logger.error('Reconnection attempt failed', error);
+                    setConnectionError('Reconnection failed');
+                    setConnectionStatus('error');
+                });
             }
         }, delay);
     }, [connect, reconnectInterval, reconnectAttempts]);
@@ -184,10 +219,21 @@ export function useBaseWebSocket(options: BaseWebSocketOptions = {}) {
     // Send message through WebSocket
     const sendMessage = useCallback((message: unknown) => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
-            wsRef.current.send(JSON.stringify(message));
-            return true;
+            try {
+                const messageWithId: Record<string, unknown> = {
+                    ...(typeof message === 'object' ? message : {}),
+                    timestamp: new Date().toISOString(),
+                    id: crypto.randomUUID()
+                };
+                wsRef.current.send(JSON.stringify(messageWithId));
+                logger.debug('WebSocket message sent', { type: typeof message === 'object' && message !== null && 'type' in message ? (message as { type?: string }).type : 'unknown' });
+                return true;
+            } catch (error) {
+                logger.error('Failed to send WebSocket message', error instanceof Error ? error : new Error(String(error)));
+                return false;
+            }
         } else {
-            logger.warn('WebSocket is not connected');
+            logger.warn('WebSocket is not connected, cannot send message');
             return false;
         }
     }, []);
@@ -226,7 +272,11 @@ export function useBaseWebSocket(options: BaseWebSocketOptions = {}) {
         isConnected,
         connectionError,
         connectionStatus,
-        connect,
+        connect: () => connect().catch((error: Error) => {
+            logger.error('Connection failed', error);
+            setConnectionError('Connection failed');
+            setConnectionStatus('error');
+        }),
         disconnect,
         sendMessage,
         subscribe,

@@ -118,11 +118,13 @@ except ImportError as e:
     MIDDLEWARE_AVAILABLE = False
 
 # Import ML services
-# Force enable ML models for development
-ENABLE_ML_MODELS = True
+# Enable ML models based on environment configuration
+ENABLE_ML_MODELS = os.getenv('ENABLE_ML_MODELS', 'true').lower() == 'true'
+ENABLE_ADVANCED_MODELS = os.getenv('ENABLE_ADVANCED_MODELS', 'false').lower() == 'true'
 
 # Initialize ML_AVAILABLE flag
 ML_AVAILABLE = False
+ADVANCED_ML_AVAILABLE = False
 
 if ENABLE_ML_MODELS:
     try:
@@ -130,14 +132,29 @@ if ENABLE_ML_MODELS:
         import torch
         logger.info(f"✅ PyTorch available: {torch.__version__}")
         
-        # Now try to import detectors
+        # Now try to import basic detectors
         from detectors.audio_detector import AudioDetector
         from detectors.image_detector import ImageDetector
         from detectors.video_detector import VideoDetector
         from detectors.text_nlp_detector import TextNLPDetector
         from detectors.multimodal_fusion_detector import MultimodalFusionDetector
         ML_AVAILABLE = True
-        logger.info("✅ All ML detectors imported successfully")
+        logger.info("✅ Basic ML detectors imported successfully")
+        
+        # Try to import advanced models if enabled
+        if ENABLE_ADVANCED_MODELS:
+            try:
+                from detectors.advanced.deepfake_detector_advanced import AdvancedDeepfakeDetector
+                from detectors.advanced.ensemble_detector import EnsembleDetector
+                from detectors.advanced.adversarial_detector import AdversarialDetector
+                ADVANCED_ML_AVAILABLE = True
+                logger.info("✅ Advanced ML models imported successfully")
+            except ImportError as e:
+                logger.warning(f"Advanced ML models not available: {e}")
+                ADVANCED_ML_AVAILABLE = False
+        else:
+            logger.info("ℹ️ Advanced ML models disabled by ENABLE_ADVANCED_MODELS flag")
+            
     except ImportError as e:
         logger.warning(f"ML services not available: {e}")
         ML_AVAILABLE = False

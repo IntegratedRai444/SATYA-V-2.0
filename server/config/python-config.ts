@@ -7,7 +7,7 @@ export const pythonConfig = {
   apiUrl: process.env.PYTHON_URL || process.env.PYTHON_SERVER_URL || 'http://localhost:8000',
   
   // API Key for authenticating with the Python service
-  apiKey: process.env.PYTHON_SERVICE_API_KEY || 'your-secret-api-key',
+  apiKey: process.env.PYTHON_SERVICE_API_KEY || 'python-service-api-key-set-in-env',
   
   // Timeout for API requests (in milliseconds) - increased for ML operations
   requestTimeout: parseInt(process.env.PYTHON_SERVICE_TIMEOUT || '300000', 10), // 5 minutes
