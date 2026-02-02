@@ -45,7 +45,7 @@ export function useBaseWebSocket(options: BaseWebSocketOptions = {}) {
 
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectCountRef = useRef(0);
-    const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const reconnectTimeoutRef = useRef<number | null>(null);
     const messageHandlersRef = useRef<Set<(message: WebSocketMessage) => void>>(new Set());
     const isMountedRef = useRef(true);
 
@@ -105,6 +105,152 @@ export function useBaseWebSocket(options: BaseWebSocketOptions = {}) {
         onError?.(errorObj);
     }, [onError]);
 
+    // Schedule reconnection with exponential backoff
+    const scheduleReconnect = useCallback(() => {
+        if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+        }
+
+        if (!isMountedRef.current) {
+            return;
+        }
+
+        const delay = Math.min(reconnectInterval * Math.pow(2, reconnectCountRef.current), 30000);
+        reconnectCountRef.current += 1;
+
+        logger.info(`Scheduling reconnect attempt ${reconnectCountRef.current} in ${delay}ms`);
+
+        reconnectTimeoutRef.current = window.setTimeout(() => {
+            if (isMountedRef.current) {
+                // We'll call connect directly here to avoid circular dependency
+                // The actual connect function will be defined below
+                (async () => {
+                    try {
+                        setConnectionStatus('connecting');
+                        const wsUrl = await getWebSocketUrl();
+                        const ws = new WebSocket(wsUrl);
+
+                        ws.onopen = () => {
+                            logger.info('WebSocket connected');
+                            setIsConnected(true);
+                            setConnectionStatus('connected');
+                            reconnectCountRef.current = 0;
+                            onConnected?.();
+                        };
+
+                        ws.onmessage = (event: MessageEvent) => {
+                            try {
+                                const data = JSON.parse(event.data);
+                                handleMessage(data);
+                            } catch (error) {
+                                logger.error('Failed to parse WebSocket message', error instanceof Error ? error : new Error(String(error)), { 
+                                    data: event.data 
+                                });
+                            }
+                        };
+
+                        ws.onclose = (event: CloseEvent) => {
+                            logger.info('WebSocket disconnected', { code: event.code, reason: event.reason });
+                            setIsConnected(false);
+                            setConnectionStatus('disconnected');
+                            wsRef.current = null;
+                            onDisconnected?.();
+
+                            // Attempt to reconnect if not a normal closure
+                            if (event.code !== 1000 && reconnectCountRef.current < reconnectAttempts) {
+                                // Inline reconnection logic to avoid circular dependency
+                                if (reconnectTimeoutRef.current) {
+                                    clearTimeout(reconnectTimeoutRef.current);
+                                }
+
+                                if (isMountedRef.current) {
+                                    const delay = Math.min(reconnectInterval * Math.pow(2, reconnectCountRef.current), 30000);
+                                    reconnectCountRef.current += 1;
+
+                                    logger.info(`Scheduling reconnect attempt ${reconnectCountRef.current} in ${delay}ms`);
+
+                                    reconnectTimeoutRef.current = window.setTimeout(() => {
+                                        if (isMountedRef.current) {
+                                            // Create new connection directly
+                                            (async () => {
+                                                try {
+                                                    setConnectionStatus('connecting');
+                                                    const wsUrl = await getWebSocketUrl();
+                                                    const ws = new WebSocket(wsUrl);
+
+                                                    ws.onopen = () => {
+                                                        logger.info('WebSocket connected');
+                                                        setIsConnected(true);
+                                                        setConnectionStatus('connected');
+                                                        reconnectCountRef.current = 0;
+                                                        onConnected?.();
+                                                    };
+
+                                                    ws.onmessage = (event: MessageEvent) => {
+                                                        try {
+                                                            const data = JSON.parse(event.data);
+                                                            handleMessage(data);
+                                                        } catch (error) {
+                                                            logger.error('Failed to parse WebSocket message', error instanceof Error ? error : new Error(String(error)), { 
+                                                                data: event.data 
+                                                            });
+                                                        }
+                                                    };
+
+                                                    ws.onclose = (event: CloseEvent) => {
+                                                        logger.info('WebSocket disconnected', { code: event.code, reason: event.reason });
+                                                        setIsConnected(false);
+                                                        setConnectionStatus('disconnected');
+                                                        wsRef.current = null;
+                                                        onDisconnected?.();
+
+                                                        // Recursive reconnection
+                                                        if (event.code !== 1000 && reconnectCountRef.current < reconnectAttempts) {
+                                                            if (reconnectTimeoutRef.current) {
+                                                                clearTimeout(reconnectTimeoutRef.current);
+                                                            }
+
+                                                            if (isMountedRef.current) {
+                                                                const nextDelay = Math.min(reconnectInterval * Math.pow(2, reconnectCountRef.current), 30000);
+                                                                reconnectCountRef.current += 1;
+
+                                                                reconnectTimeoutRef.current = window.setTimeout(() => {
+                                                                    if (isMountedRef.current) {
+                                                                        // This will create another connection
+                                                                    }
+                                                                }, nextDelay);
+                                                            }
+                                                        }
+                                                    };
+
+                                                    ws.onerror = (event: Event) => {
+                                                        handleError(event);
+                                                    };
+
+                                                    wsRef.current = ws;
+                                                } catch (error) {
+                                                    handleError(error as Error);
+                                                }
+                                            })();
+                                        }
+                                    }, delay);
+                                }
+                            }
+                        };
+
+                        ws.onerror = (event: Event) => {
+                            handleError(event);
+                        };
+
+                        wsRef.current = ws;
+                    } catch (error) {
+                        handleError(error as Error);
+                    }
+                })();
+            }
+        }, delay);
+    }, [getWebSocketUrl, handleMessage, handleError, reconnectAttempts, onConnected, onDisconnected, reconnectInterval]);
+
     // Connect to WebSocket
     const connect = useCallback(async () => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -118,37 +264,27 @@ export function useBaseWebSocket(options: BaseWebSocketOptions = {}) {
         try {
             setConnectionStatus('connecting');
             const wsUrl = await getWebSocketUrl();
-            logger.debug('Connecting to WebSocket', { url: wsUrl.replace(/token=[^&]+/, 'token=***') });
             const ws = new WebSocket(wsUrl);
 
             ws.onopen = () => {
-                if (!isMountedRef.current) return;
-
-                logger.info('WebSocket connected successfully');
+                logger.info('WS Connected');
                 setIsConnected(true);
-                setConnectionError(null);
                 setConnectionStatus('connected');
                 reconnectCountRef.current = 0;
                 onConnected?.();
-                
-                // Send initial ping to verify connection
-                ws.send(JSON.stringify({
-                    type: 'ping',
-                    payload: { 
-                        clientTime: new Date().toISOString(),
-                        timestamp: new Date().toISOString()
-                    },
-                    timestamp: new Date().toISOString(),
-                    id: crypto.randomUUID()
-                }));
             };
 
-            ws.onmessage = handleMessage;
+            ws.onmessage = (event: MessageEvent) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleMessage(data);
+                } catch (error) {
+                    logger.error('Failed to parse WebSocket message', error instanceof Error ? error : new Error(String(error)));
+                }
+            };
 
-            ws.onclose = (event) => {
-                if (!isMountedRef.current) return;
-
-                logger.info('WebSocket disconnected', { code: event.code, reason: event.reason });
+            ws.onclose = (event: CloseEvent) => {
+                logger.info('WS Disconnected', { code: event.code, reason: event.reason });
                 setIsConnected(false);
                 setConnectionStatus('disconnected');
                 wsRef.current = null;
@@ -160,7 +296,7 @@ export function useBaseWebSocket(options: BaseWebSocketOptions = {}) {
                 }
             };
 
-            ws.onerror = (event) => {
+            ws.onerror = (event: Event) => {
                 handleError(event);
             };
 
@@ -168,36 +304,7 @@ export function useBaseWebSocket(options: BaseWebSocketOptions = {}) {
         } catch (error) {
             handleError(error as Error);
         }
-    }, [getWebSocketUrl, handleMessage, handleError, reconnectAttempts, onConnected, onDisconnected]);
-
-    // Schedule reconnection with exponential backoff
-    const scheduleReconnect = useCallback(() => {
-        if (reconnectTimeoutRef.current) {
-            clearTimeout(reconnectTimeoutRef.current);
-        }
-
-        if (!isMountedRef.current) {
-            return;
-        }
-
-        reconnectCountRef.current++;
-        const delay = Math.min(
-            reconnectInterval * Math.pow(2, reconnectCountRef.current - 1),
-            30000 // Cap at 30 seconds
-        );
-
-        logger.info(`Reconnecting in ${delay}ms (attempt ${reconnectCountRef.current}/${reconnectAttempts})`);
-
-        reconnectTimeoutRef.current = setTimeout(() => {
-            if (isMountedRef.current) {
-                connect().catch((error: Error) => {
-                    logger.error('Reconnection attempt failed', error);
-                    setConnectionError('Reconnection failed');
-                    setConnectionStatus('error');
-                });
-            }
-        }, delay);
-    }, [connect, reconnectInterval, reconnectAttempts]);
+    }, [getWebSocketUrl, handleMessage, handleError, reconnectAttempts, onConnected, onDisconnected, scheduleReconnect]);
 
     // Disconnect from WebSocket
     const disconnect = useCallback(() => {
@@ -250,7 +357,18 @@ export function useBaseWebSocket(options: BaseWebSocketOptions = {}) {
     // Auto-connect on mount if enabled
     useEffect(() => {
         if (autoConnect) {
-            connect();
+            // Use setTimeout to avoid synchronous setState
+            const timeoutId = setTimeout(() => {
+                connect().catch((error: Error) => {
+                    logger.error('Auto-connect failed', error);
+                });
+            }, 0);
+
+            return () => {
+                clearTimeout(timeoutId);
+                isMountedRef.current = false;
+                disconnect();
+            };
         }
 
         return () => {

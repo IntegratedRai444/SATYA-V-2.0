@@ -6,6 +6,18 @@ import type {
 } from 'express';
 import { URL } from 'url';
 
+// Global error handlers for production monitoring
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('UNHANDLED PROMISE REJECTION:', reason);
+  console.error('Promise:', promise);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('UNCAUGHT EXCEPTION:', error);
+  console.error('Stack:', error.stack);
+  process.exit(1);
+});
+
 // Type-safe Python bridge import
 // import { pythonBridge } from './services/python-http-bridge';
 
@@ -31,6 +43,10 @@ import {
   requestIdMiddleware,
   errorHandler
 } from './middleware/error-handler';
+import { securityHeaders } from './middleware/security-headers';
+import { sanitizeInput } from './middleware/input-sanitization';
+import { ipSecurity } from './middleware/ip-security';
+import { enhancedAuditLogger } from './middleware/audit-logger';
 
 // Import routes
 import { router as apiRouter } from './routes/index';
@@ -393,6 +409,50 @@ app.get('/health', async (_req, res) => {
   }
 });
 
+// Additional health endpoints
+app.get('/health/ready', async (_req, res) => {
+  try {
+    const dbStatus = await checkDatabaseConnection();
+    const pythonStatus = await checkPythonServer();
+    const fsStatus = await checkFileSystem();
+    
+    const isReady = [dbStatus, pythonStatus, fsStatus].every(s => s.status === 'healthy');
+    
+    res.status(isReady ? 200 : 503).json({
+      status: isReady ? 'ready' : 'not ready',
+      checks: { database: dbStatus, python: pythonStatus, filesystem: fsStatus },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'not ready',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+app.get('/health/live', async (_req, res) => {
+  try {
+    const memoryStatus = checkMemoryUsage();
+    const fsStatus = await checkFileSystem();
+    
+    const isLive = memoryStatus.status !== 'unhealthy' && fsStatus.status === 'healthy';
+    
+    res.status(isLive ? 200 : 503).json({
+      status: isLive ? 'live' : 'not live',
+      checks: { memory: memoryStatus, filesystem: fsStatus },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'not live',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Authentication middleware - REMOVED GLOBAL APPLICATION
 // authenticate is now imported and used in routes/index.ts for protected routes only
 
@@ -439,13 +499,20 @@ app.use('/api/analyze', analysisRateLimit);
 app.use('/api/upload', uploadRateLimit);
 app.use('/api/', apiRateLimit);
 
+// Apply security middleware
+app.use(securityHeaders.middleware());
+app.use(ipSecurity());
+app.use(sanitizeInput);
+const userLoginAction = 'user_login' as const;
+app.use(enhancedAuditLogger(userLoginAction));
+
 // Apply middleware
 app.use(requestIdMiddleware);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 app.use(versionMiddleware as any);
 
 // API routes
-app.use('/api', apiRouter);
+app.use('/api/v2', apiRouter);
 
 // 404 Handler for undefined routes
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

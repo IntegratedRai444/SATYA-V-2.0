@@ -1,4 +1,4 @@
-import { api } from '@/lib/api/client';
+import api from '@/lib/api';
 import { useState, useEffect } from 'react';
 import { metrics } from './metrics';
 
@@ -24,11 +24,11 @@ export interface HealthCheckResult {
       system: number;
     };
   };
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
 }
 
 class HealthService {
-  private checkInterval: NodeJS.Timeout | null = null;
+  private checkInterval: ReturnType<typeof setInterval> | null = null;
   private lastCheck: HealthCheckResult | null = null;
   private listeners: Array<(result: HealthCheckResult) => void> = [];
   private readonly CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes

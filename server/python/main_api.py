@@ -279,33 +279,43 @@ async def lifespan(app: FastAPI):
                 logger.error(f"❌ Database initialization failed: {e}")
                 logger.warning("⚠️ Continuing without database - some features may be limited")
 
-        # Load ML models (lazy loading - models will be initialized on first use)
+        # Load ML models (CRITICAL - must succeed for production)
         if ML_AVAILABLE:
-            logger.info("🤖 ML/DL models available (will load on first use)...")
+            logger.info("🤖 Loading ML models - CRITICAL for production...")
             
             # Initialize SentinelAgent with all detectors
             try:
                 from sentinel_agent import SentinelAgent
                 app.state.sentinel_agent = SentinelAgent()
-                logger.info("✅ SentinelAgent initialized with ML capabilities")
+                
+                # CRITICAL: Validate that models are actually loaded
+                if not hasattr(app.state.sentinel_agent, 'image_detector') or not app.state.sentinel_agent.image_detector:
+                    raise RuntimeError("Image detector failed to initialize")
+                if not hasattr(app.state.sentinel_agent, 'video_detector') or not app.state.sentinel_agent.video_detector:
+                    raise RuntimeError("Video detector failed to initialize")
+                if not hasattr(app.state.sentinel_agent, 'audio_detector') or not app.state.sentinel_agent.audio_detector:
+                    raise RuntimeError("Audio detector failed to initialize")
+                
+                logger.info("✅ SentinelAgent initialized with all ML models - CRITICAL validation passed")
             except Exception as e:
-                logger.error(f"❌ Failed to initialize SentinelAgent: {e}")
-                ML_AVAILABLE = False
+                logger.critical(f"❌ CRITICAL: ML model initialization failed: {e}")
+                logger.critical("❌ Server cannot start without ML models - exiting")
+                raise SystemExit("CRITICAL: Cannot start without ML models")
             
-            # Initialize unified detector for consistent interface
+            # Initialize unified detector for consistent interface (non-critical)
             if UNIFIED_DETECTOR_AVAILABLE and not hasattr(app.state, 'unified_detector'):
                 try:
                     import torch  # Import torch here for availability check
                     config = {
                         "MODEL_PATH": "models",
-                        "ENABLE_GPU": torch.cuda.is_available(),  # Auto-enable GPU if available
+                        "ENABLE_GPU": torch.cuda.is_available(),
                         "ENABLE_FORENSICS": True,
                         "ENABLE_MULTIMODAL": True
                     }
                     app.state.unified_detector = get_unified_detector(config)
                     logger.info("✅ Unified detector initialized with consistent interface")
                 except Exception as e:
-                    logger.error(f"❌ Failed to initialize unified detector: {e}")
+                    logger.warning(f"⚠️ Unified detector initialization failed (non-critical): {e}")
                     app.state.unified_detector = None
             
             # Initialize SatyaAI Core with multi-modal fusion (only if unified detector not available)
@@ -322,23 +332,19 @@ async def lifespan(app: FastAPI):
                     app.state.satyaai_core = SatyaAICore(config)
                     logger.info("✅ SatyaAI Core initialized with multi-modal fusion")
                 except Exception as e:
-                    logger.error(f"❌ Failed to initialize SatyaAI Core: {e}")
+                    logger.warning(f"⚠️ SatyaAI Core initialization failed (non-critical): {e}")
                     app.state.satyaai_core = None
             
             # Only initialize model placeholders if ML is still available
             if ML_AVAILABLE:
-                # Models will be initialized lazily when first needed
-                app.state.image_detector = None
-                app.state.video_detector = None
-                app.state.audio_detector = None
-                app.state.text_nlp_detector = None
-                app.state.multimodal_detector = None
-                logger.info("✅ ML models configured for lazy loading")
+                # Models are already loaded via SentinelAgent
+                logger.info("✅ All ML models loaded via SentinelAgent")
         else:
             logger.warning("⚠️ ML models not available - analysis features disabled")
             # Ensure app state has ML flags set to False
             app.state.sentinel_agent = None
             app.state.satyaai_core = None
+            app.state.unified_detector = None
             app.state.image_detector = None
             app.state.video_detector = None
             app.state.audio_detector = None

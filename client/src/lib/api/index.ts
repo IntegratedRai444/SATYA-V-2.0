@@ -1,5 +1,5 @@
-// Core API client
-export { api as default, apiClient, authApiClient } from './client';
+// Core API client - Consolidated single client implementation
+export { api as default, apiClient, authApiClient, analysisApiClient } from './client';
 export type { ApiResponse, DashboardStats, ExtendedDashboardStats } from './client';
 
 // Services

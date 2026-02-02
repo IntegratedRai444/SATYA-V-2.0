@@ -23,6 +23,11 @@ const v2Router = Router();
 // Dashboard routes (PROTECTED)
 v2Router.use('/dashboard', authenticate, dashboardRouter);
 
+// Test route without authentication
+v2Router.get('/test', (req: Request, res: Response) => {
+  res.json({ message: 'Test route working', timestamp: new Date().toISOString() });
+});
+
 // History routes (PROTECTED)
 v2Router.use('/history', authenticate, historyRouter);
 
@@ -45,7 +50,7 @@ v2Router.use('/results', authenticate, resultsRouter);
 v2Router.use('/models', modelsRouter);
 
 // Versioned API routes
-router.use('/api/v2', v2Router);
+router.use('/', v2Router);
 
 // Default version (v2)
 router.use('/api', (req, res) => {

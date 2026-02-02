@@ -24,6 +24,10 @@ from torchvision.models import EfficientNet_V2_S_Weights, efficientnet_v2_s
 from torchvision.models.swin_transformer import Swin_S_Weights, SwinTransformer
 from torchvision.ops import FeaturePyramidNetwork, SqueezeExcitation
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # HuggingFace Transformers
 try:
     from transformers import (
@@ -35,10 +39,6 @@ try:
 except ImportError:
     TRANSFORMERS_AVAILABLE = False
     logger.warning("HuggingFace Transformers not available")
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # Constants
 DEFAULT_IMAGE_SIZE = 384

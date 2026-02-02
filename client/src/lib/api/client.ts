@@ -158,6 +158,23 @@ const createEnhancedAxiosInstance = (baseURL: string): AxiosInstance => {
         source: createCancellableSource()
       };
 
+      // Set appropriate timeout based on request type and content
+      if (config.timeout === undefined) {
+        const method = config.method?.toUpperCase() || 'GET';
+        const isUpload = config.data instanceof FormData;
+        const isVideoAnalysis = config.url?.includes('/video') || config.url?.includes('/batch');
+        
+        if (isUpload) {
+          config.timeout = 120000; // 2 minutes for uploads
+        } else if (isVideoAnalysis) {
+          config.timeout = 300000; // 5 minutes for video analysis
+        } else if (method === 'GET') {
+          config.timeout = 30000; // 30 seconds for normal GET requests
+        } else {
+          config.timeout = 60000; // 1 minute for other requests
+        }
+      }
+
       // Add CSRF token to all non-GET requests
       if (config.method?.toUpperCase() !== 'GET') {
         try {
@@ -287,7 +304,61 @@ export const setAuthService = () => {
 // Default export is the analysis client for backward compatibility
 const apiClient = createEnhancedAxiosInstance(import.meta.env.VITE_API_URL);
 
-// Request batching
+// Token refresh state management
+let isRefreshing = false;
+let refreshPromise: Promise<string> | null = null;
+const refreshQueue: Array<{ resolve: (token: string) => void; reject: (error: Error) => void }> = [];
+
+// Enhanced token refresh with race condition prevention
+const refreshTokenWithQueue = async (): Promise<string> => {
+  if (isRefreshing) {
+    // If already refreshing, wait for the current refresh to complete
+    if (refreshPromise) {
+      return refreshPromise;
+    }
+    
+    // Queue this request
+    return new Promise((resolve, reject) => {
+      refreshQueue.push({ resolve, reject });
+    });
+  }
+
+  isRefreshing = true;
+  
+  try {
+    refreshPromise = (async () => {
+      const refreshToken = localStorage.getItem('refresh_token');
+      if (!refreshToken) {
+        throw new Error('No refresh token available');
+      }
+      
+      const response = await axios.post(
+        `${API_CONFIG.BASE_URL}/auth/refresh-token`,
+        { refreshToken },
+        { withCredentials: true }
+      );
+      
+      const { accessToken } = response.data;
+      localStorage.setItem('access_token', accessToken);
+      
+      // Resolve all queued requests
+      refreshQueue.forEach(({ resolve }) => resolve(accessToken));
+      refreshQueue.length = 0;
+      
+      return accessToken;
+    })();
+    
+    return await refreshPromise;
+  } catch (error) {
+    // Reject all queued requests
+    refreshQueue.forEach(({ reject }) => reject(error as Error));
+    refreshQueue.length = 0;
+    throw error;
+  } finally {
+    isRefreshing = false;
+    refreshPromise = null;
+  }
+};
 const batchInterval = 100; // 100ms
 let batchQueue: Array<{
   key: string;
@@ -501,20 +572,8 @@ apiClient.interceptors.response.use(
     originalRequest._retry = true;
     
     try {
-      // Try to refresh the token
-      const refreshToken = localStorage.getItem('refresh_token');
-      if (!refreshToken) {
-        throw new Error('No refresh token available');
-      }
-      
-      const response = await axios.post(
-        `${API_CONFIG.BASE_URL}/auth/refresh-token`,
-        { refreshToken },
-        { withCredentials: true }
-      );
-      
-      const { accessToken } = response.data;
-      localStorage.setItem('access_token', accessToken);
+      // Try to refresh the token with race condition prevention
+      const accessToken = await refreshTokenWithQueue();
       
       // Update the authorization header
       originalRequest.headers = originalRequest.headers || {};

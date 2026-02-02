@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import dashboardService, { ApiDashboardStats } from '@/lib/api/services/dashboardService';
+import dashboardService from '@/lib/api/services/dashboardService';
+import type { ApiDashboardStats } from '@/lib/api/services/dashboardService';
 
 const fetchDashboardStats = async (): Promise<ApiDashboardStats> => {
   try {

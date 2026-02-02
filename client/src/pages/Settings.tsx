@@ -3,7 +3,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { User, Camera, Lock, Trash2, Save } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import apiClient from '@/lib/api';
+import { apiClient } from '@/lib/api';
 import { useSupabaseAuth } from '../hooks/useSupabaseAuth';
 import { supabase } from '../lib/supabaseSingleton';
 

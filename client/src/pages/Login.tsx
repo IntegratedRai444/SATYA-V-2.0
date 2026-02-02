@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Eye, EyeOff, Shield, AlertTriangle, Lock, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Shield, AlertTriangle, Loader2, Mail, Key, Sparkles, Zap } from 'lucide-react';
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 
 export default function Login() {
@@ -63,7 +63,7 @@ export default function Login() {
 
       // Use real authentication
       await signIn(formData.email, formData.password);
-      navigate('/dashboard');
+      // Navigation will be handled by the useEffect hook when auth state changes
     } catch (err: unknown) {
       console.error('Login error details:', {
         message: err instanceof Error ? err.message : 'Unknown error',
@@ -148,183 +148,181 @@ export default function Login() {
 
   return (
     <ErrorBoundary>
-      <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
-        {/* Background Effects */}
-        <div className="absolute inset-0">
-          {/* Radial gradient highlights */}
-          <div className="absolute top-0 left-0 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl"></div>
-          <div className="absolute bottom-0 right-0 w-96 h-96 bg-cyan-500/20 rounded-full blur-3xl"></div>
-          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl"></div>
-          
-          {/* Vignette effect */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/50"></div>
+      <div className="min-h-screen relative overflow-hidden">
+        {/* Animated gradient background */}
+        <div className="absolute inset-0 bg-gradient-to-br from-purple-600 via-pink-500 to-orange-400 animate-gradient-shift">
+          <div className="absolute inset-0 bg-gradient-to-tr from-blue-600/20 via-transparent to-purple-600/20"></div>
+          <div className="absolute inset-0 bg-gradient-to-bl from-green-400/10 via-transparent to-yellow-400/10"></div>
         </div>
-
-        {/* Content */}
-        <div className="relative z-10 w-full max-w-md px-4">
-          {/* Header */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full mb-6 shadow-lg shadow-blue-500/25">
-              <Shield className="w-10 h-10 text-white" />
-            </div>
-            <h1 className="text-4xl font-bold text-white mb-2 tracking-tight">SatyaAI</h1>
-            <p className="text-blue-200 text-lg font-medium">Deepfake Detection System</p>
-            <p className="text-gray-400 text-sm mt-2 max-w-sm mx-auto">
-              Secure access to AI-powered deepfake analysis and media verification tools
-            </p>
-          </div>
-
-          {/* Glass Card */}
-          <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-3xl p-8 shadow-2xl shadow-black/20">
-            {/* Secure Login Header */}
-            <div className="flex items-center justify-center gap-2 mb-8">
-              <Lock className="w-5 h-5 text-cyan-400" />
-              <h2 className="text-2xl font-semibold text-white">Secure Login</h2>
+        
+        {/* Floating decorative elements */}
+        <div className="absolute top-20 left-20 w-72 h-72 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob"></div>
+        <div className="absolute top-40 right-20 w-72 h-72 bg-yellow-500 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-2000"></div>
+        <div className="absolute -bottom-8 left-40 w-72 h-72 bg-pink-500 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-4000"></div>
+        
+        {/* Main content */}
+        <div className="relative z-10 min-h-screen flex items-center justify-center px-4">
+          <div className="w-full max-w-md">
+            {/* Logo and branding */}
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center justify-center w-20 h-20 bg-white/20 backdrop-blur-md rounded-2xl mb-4 border border-white/30 shadow-2xl">
+                <Shield className="w-10 h-10 text-white" />
+              </div>
+              <h1 className="text-4xl font-bold text-white mb-2 tracking-tight">SatyaAI</h1>
+              <p className="text-white/80 text-lg font-medium">Deepfake Detection Platform</p>
             </div>
 
-            {renderError()}
-
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Email Address */}
-              <div className="space-y-2">
-                <label htmlFor="email" className="block text-sm font-medium text-gray-300">
-                  Email Address
-                </label>
-                <div className="relative">
-                  <input
-                    id="email"
-                    name="email"
-                    type="email"
-                    autoComplete="email"
-                    required
-                    className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:border-cyan-400/50 transition-all duration-200"
-                    placeholder="Enter your email"
-                    value={formData.email}
-                    onChange={handleInputChange}
-                    ref={emailInputRef}
-                  />
-                </div>
-                {formErrors.email && (
-                  <p className="text-red-400 text-sm mt-1">{formErrors.email}</p>
-                )}
+            {/* Login form glass card */}
+            <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl">
+              <div className="flex items-center justify-center mb-6">
+                <Sparkles className="w-5 h-5 text-yellow-300 mr-2" />
+                <h2 className="text-2xl font-bold text-white">Welcome Back</h2>
+                <Zap className="w-5 h-5 text-blue-300 ml-2" />
               </div>
 
-              {/* Password */}
-              <div className="space-y-2">
-                <label htmlFor="password" className="block text-sm font-medium text-gray-300">
-                  Password
-                </label>
-                <div className="relative">
-                  <input
-                    id="password"
-                    name="password"
-                    type={showPassword ? 'text' : 'password'}
-                    autoComplete="current-password"
-                    required
-                    className="w-full pl-11 pr-12 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:border-cyan-400/50 transition-all duration-200"
-                    placeholder="Enter your password"
-                    value={formData.password}
-                    onChange={handleInputChange}
-                    ref={passwordInputRef}
-                  />
-                  <button
-                    type="button"
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {showPassword ? <EyeOff className="w-5 h-5 text-gray-400" /> : <Eye className="w-5 h-5 text-gray-400" />}
-                  </button>
-                </div>
-                {formErrors.password && (
-                  <p className="text-red-400 text-sm mt-1">{formErrors.password}</p>
-                )}
-              </div>
+              {renderError()}
 
-              <div className="space-y-4">
+              <form onSubmit={handleSubmit} className="space-y-5">
+                {/* Email field */}
+                <div>
+                  <label className="block text-white/90 text-sm font-medium mb-2">Email Address</label>
+                  <div className="relative">
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/60" />
+                    <input
+                      id="email"
+                      name="email"
+                      type="email"
+                      autoComplete="email"
+                      required
+                      className="w-full pl-12 pr-4 py-4 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-transparent transition-all duration-300 backdrop-blur-sm"
+                      placeholder="Enter your email"
+                      value={formData.email}
+                      onChange={handleInputChange}
+                      ref={emailInputRef}
+                    />
+                  </div>
+                  {formErrors.email && (
+                    <p className="text-red-300 text-sm mt-2 flex items-center">
+                      <AlertTriangle className="w-4 h-4 mr-1" />
+                      {formErrors.email}
+                    </p>
+                  )}
+                </div>
+
+                {/* Password field */}
+                <div>
+                  <label className="block text-white/90 text-sm font-medium mb-2">Password</label>
+                  <div className="relative">
+                    <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/60" />
+                    <input
+                      id="password"
+                      name="password"
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      required
+                      className="w-full pl-12 pr-12 py-4 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-transparent transition-all duration-300 backdrop-blur-sm"
+                      placeholder="Enter your password"
+                      value={formData.password}
+                      onChange={handleInputChange}
+                      ref={passwordInputRef}
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-white/60 hover:text-white transition-colors"
+                      onClick={() => setShowPassword(!showPassword)}
+                    >
+                      {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
+                  {formErrors.password && (
+                    <p className="text-red-300 text-sm mt-2 flex items-center">
+                      <AlertTriangle className="w-4 h-4 mr-1" />
+                      {formErrors.password}
+                    </p>
+                  )}
+                </div>
+
+                {/* Submit button */}
                 <Button
                   type="submit"
-                  className="w-full flex justify-center py-3 px-4 border border-transparent rounded-full text-sm font-medium text-white bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:ring-offset-2 focus:ring-offset-transparent disabled:opacity-75 transition-all duration-200 shadow-lg shadow-cyan-500/25 hover:shadow-cyan-500/40 hover:-translate-y-0.5"
+                  className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-4 px-6 rounded-xl transition-all duration-300 transform hover:scale-[1.02] shadow-lg disabled:opacity-50 disabled:transform-none border border-white/20"
                   disabled={loading}
                 >
                   {loading ? (
                     <>
-                      <Loader2 className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" />
-                      Signing in...
+                      <Loader2 className="animate-spin -ml-1 mr-3 h-5 w-5" />
+                      Authenticating...
                     </>
                   ) : (
-                    'Secure Login'
+                    <>
+                      <Shield className="w-5 h-5 mr-2" />
+                      Secure Login
+                    </>
                   )}
                 </Button>
 
-                <div className="text-center space-y-2">
-                  <div className="text-sm text-gray-400">
-                    <button
-                      type="button"
-                      className="font-medium text-cyan-400 hover:text-cyan-300 transition-colors"
-                      onClick={async (e) => {
-                        e.preventDefault();
-                        const email = formData.email;
-                        if (!email) {
-                          setFormErrors({
-                            ...formErrors,
-                            general: 'Please enter your email address first, then click "Forgot Password".'
-                          });
-                          return;
-                        }
+                {/* Links */}
+                <div className="text-center space-y-3 pt-4">
+                  <button
+                    type="button"
+                    className="text-white/80 hover:text-white transition-colors text-sm font-medium"
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      const email = formData.email;
+                      if (!email) {
+                        setFormErrors({
+                          ...formErrors,
+                          general: 'Please enter your email address first, then click "Forgot Password".'
+                        });
+                        return;
+                      }
+                      
+                      try {
+                        setFormErrors({ ...formErrors, general: 'Sending reset email...' });
                         
-                        try {
-                          setFormErrors({ ...formErrors, general: 'Sending reset email...' });
-                          
-                          const { supabase } = await import('@/lib/supabaseSingleton');
-                          const { error } = await supabase.auth.resetPasswordForEmail(email, {
-                            redirectTo: `${window.location.origin}/reset-password`,
-                          });
-                          
-                          if (error) {
-                            setFormErrors({
-                              ...formErrors,
-                              general: `Failed to send reset email: ${error.message}`
-                            });
-                          } else {
-                            setFormErrors({
-                              ...formErrors,
-                              general: 'Password reset email sent! Check your inbox.'
-                            });
-                          }
-                        } catch (error) {
+                        const { supabase } = await import('@/lib/supabaseSingleton');
+                        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                          redirectTo: `${window.location.origin}/reset-password`,
+                        });
+                        
+                        if (error) {
                           setFormErrors({
                             ...formErrors,
-                            general: 'Failed to send reset email. Please try again.'
+                            general: `Failed to send reset email: ${error.message}`
+                          });
+                        } else {
+                          setFormErrors({
+                            ...formErrors,
+                            general: 'Password reset email sent! Check your inbox.'
                           });
                         }
-                      }}
-                    >
-                      Forgot your password?
-                    </button>
-                  </div>
-                  <div className="text-sm text-gray-400">
+                      } catch (err) {
+                        console.warn('Password reset error:', err);
+                        setFormErrors({
+                          ...formErrors,
+                          general: 'Failed to send reset email. Please try again.'
+                        });
+                      }
+                    }}
+                  >
+                    Forgot your password?
+                  </button>
+                  <div className="text-white/60 text-sm">
                     Don't have an account?{' '}
                     <a
                       href="/register"
-                      className="font-medium text-cyan-400 hover:text-cyan-300 transition-colors"
+                      className="text-white hover:text-white/80 transition-colors font-medium"
                       onClick={(e) => {
                         e.preventDefault();
                         navigate('/register');
                       }}
                     >
-                      Register
+                      Sign up
                     </a>
                   </div>
                 </div>
-              </div>
-            </form>
-
-            <p className="text-center text-gray-500 text-xs mt-6">
-              By signing in, you agree to our Terms of Service and Privacy Policy
-            </p>
-            <p className="text-center text-gray-500 text-xs">
-              Protected by enterprise-grade security
-            </p>
+              </form>
+            </div>
           </div>
         </div>
       </div>

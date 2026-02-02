@@ -1,5 +1,10 @@
-// Authentication constants
-export const JWT_SECRET = process.env.JWT_SECRET || 'jwt-secret-key-set-in-env';
+// Authentication constants - CRITICAL: No fallback defaults for production security
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required for security');
+}
+
+export const JWT_SECRET_FINAL = JWT_SECRET;
 export const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1d';
 
 // WebSocket configuration

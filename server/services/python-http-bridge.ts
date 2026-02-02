@@ -9,12 +9,13 @@ declare module 'axios' {
 import { logger } from '../config/logger';
 import { pythonConfig } from '../config/python-config';
 import { PythonApiError, RetryConfig, ApiResponse } from '../types/python-api';
+import { pythonServiceCircuitBreaker } from './circuit-breaker';
 
 
 // Default configuration with increased timeout for ML operations
 const DEFAULT_CONFIG: AxiosRequestConfig = {
   baseURL: pythonConfig.apiUrl,
-  timeout: pythonConfig.requestTimeout,
+  timeout: pythonConfig.requestTimeout, // 5 minutes for ML operations
   headers: {
     'Content-Type': 'application/json',
     'X-API-Key': pythonConfig.apiKey,
@@ -35,6 +36,7 @@ class PythonHttpBridge {
   private lastCheck: number = 0;
   private readonly CHECK_INTERVAL = 30000; // 30 seconds
   private readonly retryConfig: RetryConfig;
+  public executeWithCircuitBreaker: <T>(operation: () => Promise<T>) => Promise<T>;
 
   constructor(config: AxiosRequestConfig = {}, retryConfig: Partial<RetryConfig> = {}) {
     this.retryConfig = { ...DEFAULT_RETRY_CONFIG, ...retryConfig };
@@ -43,6 +45,11 @@ class PythonHttpBridge {
       ...DEFAULT_CONFIG,
       ...config,
     });
+
+    // Add circuit breaker protection
+    this.executeWithCircuitBreaker = async <T>(operation: () => Promise<T>): Promise<T> => {
+      return pythonServiceCircuitBreaker.execute(operation);
+    };
 
     // Add request interceptor for authentication
     this.client.interceptors.request.use(
@@ -233,10 +240,21 @@ class PythonHttpBridge {
   }
 
   /**
-   * Make a request to the Python service
+   * Make a request to the Python service with user context
    */
-  private async request<T = unknown>(config: AxiosRequestConfig): Promise<AxiosResponse<ApiResponse<T>>> {
+  private async requestWithUser<T = unknown>(
+    config: AxiosRequestConfig, 
+    user?: { id: string; email: string; role?: string }
+  ): Promise<AxiosResponse<ApiResponse<T>>> {
     try {
+      // Add user context to headers if available
+      if (user) {
+        config.headers = config.headers || {};
+        config.headers['X-User-ID'] = user.id;
+        config.headers['X-User-Email'] = user.email;
+        config.headers['X-User-Role'] = user.role || 'user';
+      }
+      
       const response = await this.client.request<ApiResponse<T>>({
         ...config,
         retryCount: 0, // Initialize retry count
@@ -247,23 +265,33 @@ class PythonHttpBridge {
     }
   }
 
+  public async postWithUser<T = unknown, D = unknown>(
+    url: string, 
+    data?: D, 
+    user?: { id: string; email: string; role?: string },
+    config?: AxiosRequestConfig
+  ): Promise<T> {
+    const response = await this.requestWithUser<T>({ ...config, method: 'POST', url, data }, user);
+    return this.handleResponse(response);
+  }
+
   public async get<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<T> {
-    const response = await this.request<T>({ ...config, method: 'GET', url });
+    const response = await this.requestWithUser<T>({ ...config, method: 'GET', url });
     return this.handleResponse(response);
   }
 
   public async post<T = unknown, D = unknown>(url: string, data?: D, config?: AxiosRequestConfig): Promise<T> {
-    const response = await this.request<T>({ ...config, method: 'POST', url, data });
+    const response = await this.requestWithUser<T>({ ...config, method: 'POST', url, data });
     return this.handleResponse(response);
   }
 
   public async put<T = unknown, D = unknown>(url: string, data?: D, config?: AxiosRequestConfig): Promise<T> {
-    const response = await this.request<T>({ ...config, method: 'PUT', url, data });
+    const response = await this.requestWithUser<T>({ ...config, method: 'PUT', url, data });
     return this.handleResponse(response);
   }
 
   public async delete<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<T> {
-    const response = await this.request<T>({ ...config, method: 'DELETE', url });
+    const response = await this.requestWithUser<T>({ ...config, method: 'DELETE', url });
     return this.handleResponse(response);
   }
 
@@ -275,9 +303,16 @@ class PythonHttpBridge {
     const error = new Error(response.data?.error?.message || 'Request failed') as Error & {
       code?: number | string;
       details?: Record<string, unknown>;
+      isTimeout?: boolean;
     };
     error.code = response.data?.error?.code || 500;
     error.details = response.data?.error?.details || {};
+    
+    // Mark as timeout if it's a timeout error
+    if (response.status === 408 || String(response.data?.error?.code) === 'TIMEOUT' || response.data?.error?.code === 408) {
+      error.isTimeout = true;
+    }
+    
     throw error;
   }
 
@@ -290,13 +325,13 @@ class PythonHttpBridge {
     }
 
     try {
-      const response = await this.request({
+      const response = await this.requestWithUser({
         url: '/health',
         method: 'GET',
         timeout: 5000,
       });
       
-      this.isAvailable = response.status === 200 && ((response.data as any)?.status === 'healthy' || response.data?.success === true);
+      this.isAvailable = response.status === 200 && ((response.data as { status?: string })?.status === 'healthy' || response.data?.success === true);
     } catch (error) {
       logger.error('Python service health check failed', { 
         error: error instanceof Error ? error.message : 'Unknown error' 

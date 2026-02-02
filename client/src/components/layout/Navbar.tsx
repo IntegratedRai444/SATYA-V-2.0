@@ -5,7 +5,7 @@ import {
   LogOut,
   Settings,
   Home,
-  Zap,
+  Bot,
   Clock,
   HelpCircle
 } from 'lucide-react';
@@ -52,7 +52,7 @@ const Navbar = () => {
 
   const navItems = [
     { icon: Home, label: 'Home', path: '/dashboard' },
-    { icon: Zap, label: 'Scan', path: '/scan' },
+    { icon: Bot, label: 'AI Assistant', path: '/ai-assistant' },
     { icon: Clock, label: 'History', path: '/history' },
     { icon: Settings, label: 'Settings', path: '/settings' },
     { icon: HelpCircle, label: 'Help', path: '/help' },

@@ -2,6 +2,9 @@ import { Request, Response } from 'express';
 import { logger } from '../config/logger';
 import { checkDatabaseConnection } from '../services/database';
 import { checkPythonService } from '../services/python-http-bridge';
+import { circuitBreakerRegistry } from '../services/circuit-breaker';
+import { errorMetrics } from '../services/error-metrics';
+import webSocketManager from '../services/websocket-manager';
 
 /**
  * Health check controller
@@ -13,7 +16,11 @@ export const healthCheck = async (req: Request, res: Response) => {
   const checks = {
     database: false,
     pythonService: false,
-    // Add more checks as needed
+    webSocket: false,
+    circuitBreakers: false,
+    memory: false,
+    disk: false,
+    errorRate: false
   };
 
   try {
@@ -27,40 +34,80 @@ export const healthCheck = async (req: Request, res: Response) => {
       checks.pythonService = true; // Skip check if not enabled
     }
 
+    // Check WebSocket service
+    checks.webSocket = webSocketManager.isHealthy();
+
+    // Check circuit breakers
+    const circuitBreakerHealth = circuitBreakerRegistry.getAllHealthStatus();
+    checks.circuitBreakers = circuitBreakerHealth.every(cb => cb.isHealthy);
+
+    // Check memory usage
+    const memUsage = process.memoryUsage();
+    const memoryThreshold = 1024 * 1024 * 1024; // 1GB
+    checks.memory = memUsage.heapUsed < memoryThreshold;
+
+    // Check disk space (basic check)
+    const diskUsage = process.resourceUsage();
+    checks.disk = diskUsage.userCPUTime < 10000000000; // 10 seconds CPU time
+
+    // Check error rate
+    const errorRate = errorMetrics.getErrorRate(5); // Last 5 minutes
+    checks.errorRate = errorRate < 10; // Less than 10 errors per minute
+
     const isHealthy = Object.values(checks).every(Boolean);
-    const uptime = process.uptime();
     const responseTime = Date.now() - startTime;
 
-    const healthData = {
-      status: isHealthy ? 'healthy' : 'degraded',
+    // Detailed health information
+    const healthInfo = {
+      status: isHealthy ? 'healthy' : 'unhealthy',
       timestamp: new Date().toISOString(),
-      uptime: Math.floor(uptime * 1000), // Convert to milliseconds
-      version: process.env.npm_package_version || 'unknown',
+      responseTime: `${responseTime}ms`,
+      uptime: `${Math.floor(process.uptime())}s`,
+      version: process.env.npm_package_version || '1.0.0',
+      environment: process.env.NODE_ENV || 'development',
       checks,
-      responseTime: `${responseTime}ms`
+      details: {
+        memory: {
+          used: `${Math.round(memUsage.heapUsed / 1024 / 1024)}MB`,
+          total: `${Math.round(memUsage.heapTotal / 1024 / 1024)}MB`,
+          rss: `${Math.round(memUsage.rss / 1024 / 1024)}MB`
+        },
+        circuitBreakers: circuitBreakerHealth.map(cb => ({
+          name: cb.name,
+          state: cb.state,
+          failures: cb.failures,
+          isHealthy: cb.isHealthy
+        })),
+        errorMetrics: {
+          errorRate: `${errorRate.toFixed(2)}/min`,
+          totalErrors: errorMetrics.getMetricsSummary().totalErrors,
+          topErrors: errorMetrics.getMetricsSummary().topErrors.slice(0, 5)
+        },
+        webSocket: {
+          connectedClients: webSocketManager.getConnectedClientsCount(),
+          isHealthy: webSocketManager.isHealthy()
+        }
+      }
     };
 
-    // Log health check
-    logger.info('Health check', {
-      ...healthData,
-      ip: req.ip,
-      userAgent: req.get('user-agent')
-    });
-
-    // Return appropriate status code based on health status
-    return res.status(isHealthy ? 200 : 503).json(healthData);
+    if (isHealthy) {
+      res.status(200).json(healthInfo);
+    } else {
+      res.status(503).json({
+        ...healthInfo,
+        status: 'unhealthy',
+        issues: Object.entries(checks)
+          .filter(([, healthy]) => !healthy)
+          .map(([name]) => name)
+      });
+    }
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    logger.error('Health check failed', { 
-      error: errorMessage,
-      stack: error instanceof Error ? error.stack : undefined
-    });
-
-    return res.status(503).json({
-      status: 'unhealthy',
+    logger.error('Health check failed', error);
+    res.status(500).json({
+      status: 'error',
       timestamp: new Date().toISOString(),
-      error: 'Service Unavailable',
-      details: process.env.NODE_ENV === 'production' ? undefined : errorMessage
+      error: 'Health check failed',
+      details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 };

@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import api from '@/lib/api/client';
+import api from '@/lib/api';
 
 // Types
 export type MetricType = 'analysis' | 'error' | 'performance' | 'auth' | 'api' | 'health';
@@ -8,7 +8,7 @@ export interface MetricPayload {
   type: MetricType;
   name: string;
   value: number;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   timestamp?: number;
   sessionId?: string;
   userId?: string | null;
@@ -21,11 +21,11 @@ class MetricsService {
   private isProcessing = false;
   private readonly BATCH_SIZE = 10;
   private readonly FLUSH_INTERVAL = 30000; // 30 seconds
-  private flushTimer: NodeJS.Timeout | null = null;
+  private flushTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     this.sessionId = this.getOrCreateSessionId();
-    this.enabled = process.env.NODE_ENV === 'production';
+    this.enabled = import.meta.env.PROD;
     this.initialize();
   }
 
@@ -100,7 +100,7 @@ class MetricsService {
     } catch (error: unknown) {
       console.error('Failed to send metrics:', error);
       // Requeue failed metrics (except in case of client errors)
-      const status = (error as any)?.response?.status;
+      const status = (error as { response?: { status?: number } })?.response?.status;
       if (status && status >= 500) {
         this.queue.unshift(...batch);
       }
@@ -150,7 +150,7 @@ export const trackAnalysis = (
   duration: number, 
   type: 'image' | 'video' | 'audio' | 'multimodal',
   success: boolean,
-  metadata: Record<string, any> = {}
+  metadata: Record<string, unknown> = {}
 ) => {
   metrics.track({
     type: 'analysis',
@@ -166,7 +166,7 @@ export const trackAnalysis = (
 export const trackError = (
   error: Error,
   context: string,
-  metadata: Record<string, any> = {}
+  metadata: Record<string, unknown> = {}
 ) => {
   metrics.track({
     type: 'error',
@@ -184,7 +184,7 @@ export const trackError = (
 export const trackPerformance = (
   name: string,
   duration: number,
-  metadata: Record<string, any> = {}
+  metadata: Record<string, unknown> = {}
 ) => {
   metrics.track({
     type: 'performance',

@@ -6,10 +6,13 @@ Comprehensive health monitoring for all system components
 import os
 import time
 from datetime import datetime
+import logging
 
 import psutil
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -130,10 +133,18 @@ async def detailed_health_check(request: Request):
     # Model status
     model_status = ensure_models_available()
     
-    # Overall health calculation
+    # Overall health calculation - CRITICAL: require all services for production
     healthy_services = sum(1 for service in services.values() if service.get('status') == 'available' or service.get('status') == 'connected')
     total_services = len(services)
-    overall_health = 'healthy' if healthy_services == total_services else 'degraded' if healthy_services > 0 else 'unhealthy'
+    
+    # For production, require ALL services to be healthy
+    overall_health = 'healthy' if healthy_services == total_services else 'unhealthy'
+    
+    # If ML models are not loaded, mark as unhealthy
+    if model_status.get('status') != 'success':
+        overall_health = 'unhealthy'
+    
+    logger.info(f"[HEALTH CHECK] Services: {healthy_services}/{total_services}, Models: {model_status.get('status')}")
     
     return {
         "status": overall_health,
@@ -156,7 +167,8 @@ async def detailed_health_check(request: Request):
         },
         "services": services,
         "models": model_status,
-        "service_health_ratio": f"{healthy_services}/{total_services}"
+        "service_health_ratio": f"{healthy_services}/{total_services}",
+        "production_ready": overall_health == 'healthy'
     }
 
 

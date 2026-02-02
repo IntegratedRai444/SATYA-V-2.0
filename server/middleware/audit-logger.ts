@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { supabase } from '../config/supabase';
 import { AuthenticatedRequest } from '../types/auth';
+import { logger } from '../config/logger';
+import crypto from 'crypto';
 
 // Types of actions to audit
 type AuditAction = 
@@ -23,9 +25,33 @@ type AuditAction =
   | 'admin_action'
   | 'sensitive_data_access';
 
+// Risk scoring levels
+type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
+
+// Audit entry interface
+interface AuditEntry {
+  id: string;
+  timestamp: string;
+  userId?: string;
+  action: AuditAction;
+  resource?: string;
+  method: string;
+  url: string;
+  ip: string;
+  userAgent: string;
+  statusCode: number;
+  riskLevel: RiskLevel;
+  responseTime: number;
+  requestData?: Record<string, unknown>;
+  responseData?: unknown;
+  metadata: Record<string, unknown>;
+}
+
 // Audit logging middleware
 export const auditLogger = (action: AuditAction, resource?: string) => {
   return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    const startTime = Date.now();
+    
     // Store original res.json method
     const originalJson = res.json;
     
@@ -33,7 +59,7 @@ export const auditLogger = (action: AuditAction, resource?: string) => {
     res.json = function(data: unknown) {
       // Log the audit entry after response is sent
       setTimeout(async () => {
-        await logAuditEntry(req, res, action, resource, data);
+        await logEnhancedAuditEntry(req, res, action, resource, data, startTime);
       }, 0);
       
       // Call original json method
@@ -44,50 +70,120 @@ export const auditLogger = (action: AuditAction, resource?: string) => {
   };
 };
 
-// Function to log audit entries
-async function logAuditEntry(
+// Risk scoring function
+function calculateRiskLevel(action: AuditAction, statusCode: number): RiskLevel {
+  // Critical actions
+  if (action.includes('delete') || action.includes('admin')) {
+    return 'critical';
+  }
+  
+  // High risk actions
+  if (action.includes('sensitive_data') || action.includes('auth_attempt_failed')) {
+    return 'high';
+  }
+  
+  // Medium risk actions
+  if (action.includes('profile_update') || action.includes('file_upload')) {
+    return 'medium';
+  }
+  
+  // Failed requests
+  if (statusCode >= 400) {
+    return 'medium';
+  }
+  
+  return 'low';
+}
+
+// Enhanced audit logging middleware with risk scoring
+export const enhancedAuditLogger = (action: AuditAction, resource?: string) => {
+  return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    const startTime = Date.now();
+    
+    // Store original res.json method
+    const originalJson = res.json;
+    
+    // Override res.json to capture response data
+    res.json = function(data: unknown) {
+      // Log the audit entry after response is sent
+      setTimeout(async () => {
+        await logEnhancedAuditEntry(req, res, action, resource, data, startTime);
+      }, 0);
+      
+      // Call original json method
+      return originalJson.call(this, data);
+    };
+    
+    next();
+  };
+};
+
+// Function to log enhanced audit entries with risk scoring
+async function logEnhancedAuditEntry(
   req: AuthenticatedRequest, 
   res: Response, 
   action: AuditAction, 
   resource?: string, 
-  responseData?: unknown
+  responseData?: unknown,
+  startTime?: number
 ): Promise<void> {
   try {
     const userId = req.user?.id;
     const userEmail = req.user?.email;
+    const responseTime = startTime ? Date.now() - startTime : 0;
     
-    // Prepare audit data
-    const auditData = {
-      user_id: userId || null,
+    // Calculate risk level
+    const riskLevel = calculateRiskLevel(action, res.statusCode);
+    
+    // Prepare enhanced audit data
+    const auditEntry: AuditEntry = {
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+      userId: userId || undefined,
       action,
-      resource: resource || `${req.method} ${req.route?.path || req.path}`,
+      resource,
       method: req.method,
-      path: req.path,
-      ip_address: getClientIP(req),
-      user_agent: req.get('User-Agent') || null,
-      status_code: res.statusCode,
-      success: res.statusCode >= 200 && res.statusCode < 300,
+      url: req.url,
+      ip: getClientIP(req),
+      userAgent: req.get('User-Agent') || 'unknown',
+      statusCode: res.statusCode,
+      riskLevel,
+      responseTime,
+      requestData: sanitizeRequestData(req),
+      responseData: responseData ? sanitizeResponseData(responseData) : undefined,
       metadata: {
         email: userEmail,
-        timestamp: new Date().toISOString(),
-        request_id: req.id || generateRequestId(),
-        response_summary: getResponseSummary(responseData),
-        request_params: sanitizeRequestParams(req),
-        session_id: (req as { session?: { id?: string | null } }).session?.id || null
+        requestId: (req as { id?: string }).id || generateRequestId(),
+        sessionId: (req as { session?: { id?: string } }).session?.id,
+        geoLocation: (req as { geo?: unknown }).geo,
+        deviceFingerprint: generateDeviceFingerprint(req)
       }
     };
+    
+    // Log to console for immediate visibility
+    logger.info('Audit Log', {
+      action: auditEntry.action,
+      userId: auditEntry.userId,
+      riskLevel: auditEntry.riskLevel,
+      ip: auditEntry.ip,
+      responseTime: auditEntry.responseTime
+    });
     
     // Insert audit log into database
     const { error } = await supabase
       .from('audit_logs')
-      .insert(auditData);
+      .insert(auditEntry);
     
     if (error) {
-      console.error('Failed to log audit entry:', error);
-      // Don't throw error to avoid breaking the main flow
+      logger.error('Failed to log audit entry:', error);
+    }
+    
+    // Trigger alerts for high-risk activities
+    if (riskLevel === 'critical' || riskLevel === 'high') {
+      await triggerSecurityAlert(auditEntry);
     }
   } catch (error) {
-    console.error('Audit logging error:', error);
+    logger.error('Enhanced audit logging error:', error);
   }
 }
 
@@ -108,19 +204,68 @@ function generateRequestId(): string {
   return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
-// Helper function to get response summary
-function getResponseSummary(responseData: unknown): string {
-  if (!responseData) return 'No response data';
+// Helper function to sanitize request data
+function sanitizeRequestData(req: Request): Record<string, unknown> {
+  const sanitized: Record<string, unknown> = {
+    method: req.method,
+    url: req.url,
+    query: req.query,
+    params: req.params
+  };
   
+  // Remove sensitive data from request body
+  if (req.body) {
+    const bodyCopy = { ...req.body } as Record<string, unknown>;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { password, token, ...safeBody } = bodyCopy;
+    sanitized.body = safeBody;
+  }
+  
+  return sanitized;
+}
+
+// Helper function to sanitize response data
+function sanitizeResponseData(data: unknown): unknown {
+  if (!data || typeof data !== 'object') {
+    return data;
+  }
+  
+  // Remove sensitive fields from response
+  const dataCopy = { ...data } as Record<string, unknown>;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { token: _token, password: _password, apiKey: _apiKey, ...safeData } = dataCopy;
+  return safeData;
+}
+
+// Helper function to generate device fingerprint
+function generateDeviceFingerprint(req: Request): string {
+  const userAgent = req.get('User-Agent') || 'unknown';
+  const acceptLanguage = req.get('Accept-Language') || 'unknown';
+  const acceptEncoding = req.get('Accept-Encoding') || 'unknown';
+  
+  return crypto
+    .createHash('sha256')
+    .update(`${userAgent}-${acceptLanguage}-${acceptEncoding}`)
+    .digest('hex')
+    .substring(0, 16);
+}
+
+// Helper function to trigger security alerts
+async function triggerSecurityAlert(auditEntry: AuditEntry): Promise<void> {
   try {
-    // If response is too large, truncate it
-    const responseStr = JSON.stringify(responseData);
-    if (responseStr.length > 500) {
-      return responseStr.substring(0, 500) + '...';
-    }
-    return responseStr;
-  } catch {
-    return 'Response data not serializable';
+    logger.warn('SECURITY ALERT', {
+      type: 'HIGH_RISK_ACTIVITY',
+      action: auditEntry.action,
+      userId: auditEntry.userId,
+      ip: auditEntry.ip,
+      riskLevel: auditEntry.riskLevel,
+      timestamp: auditEntry.timestamp
+    });
+    
+    // TODO: Integrate with alerting system (email, Slack, etc.)
+    // await sendSecurityAlert(auditEntry);
+  } catch (error) {
+    logger.error('Failed to trigger security alert:', error);
   }
 }
 
@@ -131,10 +276,9 @@ function sanitizeRequestParams(req: Request): Record<string, unknown> {
   // Include query parameters (excluding sensitive ones)
   if (req.query) {
     const queryCopy = { ...req.query } as Record<string, unknown>;
-    delete queryCopy.password;
-    delete queryCopy.token;
-    delete queryCopy.api_key;
-    sanitized.query = queryCopy;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { password, token, ...safeQuery } = queryCopy;
+    Object.assign(sanitized, safeQuery);
   }
   
   // Include limited body parameters for POST/PUT requests

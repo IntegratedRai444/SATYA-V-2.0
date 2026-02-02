@@ -1,7 +1,7 @@
 
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '../lib/api/apiClient';
+import { apiClient } from '../lib/api';
 import { analysisService } from '../lib/api/services/analysisService';
 
 // Types
@@ -221,7 +221,7 @@ export const useDashboardStats = () => {
     queryKey: ['dashboard-stats'],
     queryFn: async () => {
       const response = await apiClient.get('/dashboard/stats');
-      return response as DashboardStats;
+      return response.data as DashboardStats;
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchInterval: 30 * 1000, // 30 seconds
@@ -240,7 +240,7 @@ export const useUserAnalytics = () => {
     queryKey: ['user-analytics'],
     queryFn: async () => {
       const response = await apiClient.get('/user/analytics');
-      return response as UserAnalytics;
+      return response.data as UserAnalytics;
     },
     staleTime: 10 * 60 * 1000, // 10 minutes
   });

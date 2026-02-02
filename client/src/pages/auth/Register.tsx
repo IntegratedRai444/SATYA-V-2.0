@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Eye, EyeOff, Shield, AlertTriangle, Loader2, UserPlus, User, Lock } from 'lucide-react';
+import { Eye, EyeOff, Shield, AlertTriangle, Loader2, User, Lock, Mail } from 'lucide-react';
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 
 export default function Register() {
@@ -145,39 +145,21 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
-      {/* Background Effects */}
-      <div className="absolute inset-0">
-        {/* Radial gradient highlights */}
-        <div className="absolute top-0 left-0 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-0 right-0 w-96 h-96 bg-cyan-500/20 rounded-full blur-3xl"></div>
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl"></div>
-        
-        {/* Vignette effect */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/50"></div>
-      </div>
-
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900">
       {/* Content */}
-      <div className="relative z-10 w-full max-w-md px-4">
+      <div className="w-full max-w-md px-4">
         {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full mb-6 shadow-lg shadow-blue-500/25">
-            <Shield className="w-10 h-10 text-white" />
+        <div className="text-center mb-6">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-full mb-4">
+            <Shield className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-4xl font-bold text-white mb-2 tracking-tight">SatyaAI</h1>
-          <p className="text-blue-200 text-lg font-medium">Deepfake Detection System</p>
-          <p className="text-gray-400 text-sm mt-2 max-w-sm mx-auto">
-            Secure access to AI-powered deepfake analysis and media verification tools
-          </p>
+          <h1 className="text-2xl font-bold text-white mb-1">SatyaAI</h1>
+          <p className="text-blue-300 text-sm">Cyber Intelligence Platform</p>
         </div>
 
-        {/* Glass Card */}
-        <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-3xl p-8 shadow-2xl shadow-black/20">
-          {/* Secure Registration Header */}
-          <div className="flex items-center justify-center gap-2 mb-8">
-            <UserPlus className="w-5 h-5 text-cyan-400" />
-            <h2 className="text-2xl font-semibold text-white">Secure Registration</h2>
-          </div>
+        {/* Register Form */}
+        <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-6">
+          <h2 className="text-xl font-semibold text-white text-center mb-6">Secure Registration</h2>
 
           {renderError()}
 
@@ -194,17 +176,11 @@ export default function Register() {
           )}
 
           {!registrationSuccess && (
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-4">
               {/* Full Name */}
-              <div className="space-y-2">
-                <label htmlFor="name" className="block text-sm font-medium text-gray-300">
-                  Full Name
-                  {formErrors.name && (
-                    <span className="text-red-400 text-xs ml-2">{formErrors.name}</span>
-                  )}
-                </label>
-                <div className="mt-1 relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <div>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <Input
                     id="name"
                     name="name"
@@ -213,24 +189,19 @@ export default function Register() {
                     required
                     value={formData.name}
                     onChange={handleInputChange}
-                    className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:border-cyan-400/50 transition-all duration-200"
-                    placeholder="Enter your full name"
-                    aria-invalid={!!formErrors.name}
-                    aria-describedby={formErrors.name ? 'name-error' : undefined}
+                    className="w-full pl-10 pr-4 py-2 bg-gray-700/50 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                    placeholder="Full Name"
                   />
                 </div>
+                {formErrors.name && (
+                  <p className="text-red-400 text-xs mt-1">{formErrors.name}</p>
+                )}
               </div>
 
               {/* Email */}
-              <div className="space-y-2">
-                <label htmlFor="email" className="block text-sm font-medium text-gray-300">
-                  Email Address
-                  {formErrors.email && (
-                    <span className="text-red-400 text-xs ml-2">{formErrors.email}</span>
-                  )}
-                </label>
-                <div className="mt-1 relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <div>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <Input
                     id="email"
                     name="email"
@@ -239,24 +210,19 @@ export default function Register() {
                     required
                     value={formData.email}
                     onChange={handleInputChange}
-                    className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:border-cyan-400/50 transition-all duration-200"
-                    placeholder="Enter your email address"
-                    aria-invalid={!!formErrors.email}
-                    aria-describedby={formErrors.email ? 'email-error' : undefined}
+                    className="w-full pl-10 pr-4 py-2 bg-gray-700/50 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                    placeholder="Email Address"
                   />
                 </div>
+                {formErrors.email && (
+                  <p className="text-red-400 text-xs mt-1">{formErrors.email}</p>
+                )}
               </div>
 
               {/* Password */}
-              <div className="space-y-2">
-                <label htmlFor="password" className="block text-sm font-medium text-gray-300">
-                  Password
-                  {formErrors.password && (
-                    <span className="text-red-400 text-xs ml-2">{formErrors.password}</span>
-                  )}
-                </label>
-                <div className="mt-1 relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <div>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <Input
                     id="password"
                     name="password"
@@ -265,34 +231,29 @@ export default function Register() {
                     required
                     value={formData.password}
                     onChange={handleInputChange}
-                    className="w-full pl-11 pr-12 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:border-cyan-400/50 transition-all duration-200"
-                    placeholder="Create a strong password"
-                    aria-invalid={!!formErrors.password}
-                    aria-describedby={formErrors.password ? 'password-error' : undefined}
+                    className="w-full pl-10 pr-10 py-2 bg-gray-700/50 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                    placeholder="Password"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-cyan-400 transition-colors"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
                   >
-                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                <p className="text-xs text-gray-500">
+                {formErrors.password && (
+                  <p className="text-red-400 text-xs mt-1">{formErrors.password}</p>
+                )}
+                <p className="text-xs text-gray-500 mt-1">
                   Must contain at least 8 characters, including uppercase, lowercase, and numbers
                 </p>
               </div>
 
               {/* Confirm Password */}
-              <div className="space-y-2">
-                <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-300">
-                  Confirm Password
-                  {formErrors.confirmPassword && (
-                    <span className="text-red-400 text-xs ml-2">{formErrors.confirmPassword}</span>
-                  )}
-                </label>
-                <div className="mt-1 relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <div>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <Input
                     id="confirmPassword"
                     name="confirmPassword"
@@ -301,52 +262,52 @@ export default function Register() {
                     required
                     value={formData.confirmPassword}
                     onChange={handleInputChange}
-                    className="w-full pl-11 pr-12 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:border-cyan-400/50 transition-all duration-200"
-                    placeholder="Confirm your password"
-                    aria-invalid={!!formErrors.confirmPassword}
-                    aria-describedby={formErrors.confirmPassword ? 'confirmPassword-error' : undefined}
+                    className="w-full pl-10 pr-10 py-2 bg-gray-700/50 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                    placeholder="Confirm Password"
                   />
                   <button
                     type="button"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-cyan-400 transition-colors"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
                   >
-                    {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+                {formErrors.confirmPassword && (
+                  <p className="text-red-400 text-xs mt-1">{formErrors.confirmPassword}</p>
+                )}
               </div>
 
               {/* Register Button */}
-              <div className="space-y-4">
-                <Button
-                  type="submit"
-                  className="w-full flex justify-center py-3 px-4 border border-transparent rounded-full text-sm font-medium text-white bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:ring-offset-2 focus:ring-offset-transparent disabled:opacity-75 transition-all duration-200 shadow-lg shadow-cyan-500/25 hover:shadow-cyan-500/40 hover:-translate-y-0.5"
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" />
-                      Creating account...
-                    </>
-                  ) : (
-                    'Create Account'
-                  )}
-                </Button>
+              <Button
+                type="submit"
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded transition-colors disabled:opacity-50"
+                disabled={loading}
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="animate-spin -ml-1 mr-2 h-4 w-4" />
+                    Creating account...
+                  </>
+                ) : (
+                  'Create Account'
+                )}
+              </Button>
 
-                <div className="text-center space-y-2">
-                  <div className="text-sm text-gray-400">
-                    Already have an account?{' '}
-                    <a
-                      href="/dashboard"
-                      className="font-medium text-cyan-400 hover:text-cyan-300 transition-colors"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        navigate('/dashboard');
-                      }}
-                    >
-                      Go to Dashboard
-                    </a>
-                  </div>
+              {/* Links */}
+              <div className="text-center space-y-2 pt-4">
+                <div className="text-sm text-gray-400">
+                  Already have an account?{' '}
+                  <a
+                    href="/dashboard"
+                    className="text-blue-400 hover:text-blue-300 transition-colors"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      navigate('/dashboard');
+                    }}
+                  >
+                    Go to Dashboard
+                  </a>
                 </div>
               </div>
             </form>

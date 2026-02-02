@@ -1,5 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
+import { logger } from '../config/logger';
 import crypto from 'crypto';
+import { setInterval } from 'timers';
 
 type CSPDirectiveValue = string | ((req: Request) => string);
 
@@ -54,18 +56,34 @@ const defaultSecurityConfig: SecurityConfig = {
   contentTypeOptions: true,
   referrerPolicy: 'strict-origin-when-cross-origin',
   permissionsPolicy: {
-    'camera': ["'self'"],
-    'microphone': ["'self'"],
-    'geolocation': ["'none'"],
-    'payment': ["'none'"],
-    'usb': ["'none'"],
-    'magnetometer': ["'none'"],
-    'gyroscope': ["'none'"],
-    'accelerometer': ["'none'"]
+    'camera': [],
+    'microphone': [],
+    'geolocation': [],
+    'payment': [],
+    'usb': [],
+    'magnetometer': [],
+    'gyroscope': [],
+    'accelerometer': [],
+    'ambient-light-sensor': [],
+    'autoplay': [],
+    'clipboard-read': [],
+    'clipboard-write': [],
+    'fullscreen': [],
+    'gamepad': [],
+    'hid': [],
+    'idle-detection': [],
+    'local-fonts': [],
+    'midi': [],
+    'picture-in-picture': [],
+    'publickey-credentials-get': [],
+    'screen-wake-lock': [],
+    'serial': [],
+    'speaker-selection': [],
+    'xr-spatial-tracking': []
   },
-  crossOriginEmbedderPolicy: 'require-corp',
-  crossOriginOpenerPolicy: 'same-origin',
-  crossOriginResourcePolicy: 'same-origin'
+  crossOriginEmbedderPolicy: process.env.NODE_ENV === 'production' ? 'require-corp' : undefined,
+  crossOriginOpenerPolicy: process.env.NODE_ENV === 'production' ? 'same-origin' : undefined,
+  crossOriginResourcePolicy: process.env.NODE_ENV === 'production' ? 'same-site' : 'cross-origin'
 };
 
 class SecurityHeaders {
@@ -82,7 +100,7 @@ class SecurityHeaders {
   }
 
   // Build CSP header value
-  private buildCSPHeader(nonce: string): string {
+  private buildCSPHeader(nonce: string, req: Request): string {
     if (!this.config.contentSecurityPolicy?.enabled || !this.config.contentSecurityPolicy.directives) {
       return '';
     }
@@ -97,7 +115,7 @@ class SecurityHeaders {
       }
 
       const processedValues = values.map(value => 
-        typeof value === 'function' ? value({} as Request) : value
+        typeof value === 'function' ? value(req) : value
       );
 
       let directiveValues = processedValues.join(' ');
@@ -148,7 +166,7 @@ class SecurityHeaders {
 
       // Content Security Policy
       if (this.config.contentSecurityPolicy?.enabled) {
-        const cspHeader = this.buildCSPHeader(nonce);
+        const cspHeader = this.buildCSPHeader(nonce, req);
         if (cspHeader) {
           res.setHeader('Content-Security-Policy', cspHeader);
         }
@@ -242,8 +260,8 @@ export class CSRFProtection {
       this.tokenExpiry = tokenExpiry;
     }
 
-    // Clean up expired tokens every 10 minutes
-    setInterval(() => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const timer = setInterval(() => {
       this.cleanup();
     }, 10 * 60 * 1000);
   }
@@ -263,6 +281,7 @@ export class CSRFProtection {
 
   // Generate CSRF token for session
   generateTokenForSession(sessionId: string): string {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const token = this.generateToken();
     this.tokens.set(sessionId, {
       token,

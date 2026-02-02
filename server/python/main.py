@@ -265,10 +265,10 @@ async def lifespan(app: FastAPI):
                 max_retries = 3
                 for attempt in range(max_retries):
                     try:
-                        # Test connection with timeout
+                        # Test connection with increased timeout (30 seconds)
                         connection_result = await asyncio.wait_for(
                             db_manager.test_connection(), 
-                            timeout=10.0  # 10 second timeout
+                            timeout=30.0  # Increased from 10 to 30 seconds
                         )
                         
                         if connection_result:
@@ -298,18 +298,42 @@ async def lifespan(app: FastAPI):
                 logger.error(f"❌ Database initialization failed: {e}")
                 logger.warning("⚠️ Continuing without database - some features may be limited")
 
-        # Load ML models (lazy loading - models will be initialized on first use)
+        # Load ML models (CRITICAL - must succeed for production)
         if ML_AVAILABLE:
-            logger.info("🤖 ML/DL models available (will load on first use)...")
+            logger.info("🤖 Loading ML models - CRITICAL for production...")
             
-            # Initialize SentinelAgent with all detectors
+            # Initialize SentinelAgent with graceful failure handling
             try:
                 from sentinel_agent import SentinelAgent
                 app.state.sentinel_agent = SentinelAgent()
-                logger.info("✅ SentinelAgent initialized with ML capabilities")
+                
+                # Validate that models are actually loaded
+                if not hasattr(app.state.sentinel_agent, 'image_detector') or not app.state.sentinel_agent.image_detector:
+                    logger.warning("⚠️ Image detector failed to initialize - marking as unavailable")
+                    app.state.sentinel_agent.image_detector = None
+                if not hasattr(app.state.sentinel_agent, 'video_detector') or not app.state.sentinel_agent.video_detector:
+                    logger.warning("⚠️ Video detector failed to initialize - marking as unavailable")
+                    app.state.sentinel_agent.video_detector = None
+                if not hasattr(app.state.sentinel_agent, 'audio_detector') or not app.state.sentinel_agent.audio_detector:
+                    logger.warning("⚠️ Audio detector failed to initialize - marking as unavailable")
+                    app.state.sentinel_agent.audio_detector = None
+                
+                # Check if at least one detector is available
+                available_detectors = [
+                    app.state.sentinel_agent.image_detector,
+                    app.state.sentinel_agent.video_detector,
+                    app.state.sentinel_agent.audio_detector
+                ]
+                
+                if not any(available_detectors):
+                    logger.error("❌ No ML detectors could be initialized - continuing with limited functionality")
+                    app.state.sentinel_agent = None
+                else:
+                    logger.info(f"✅ SentinelAgent initialized with {sum(1 for d in available_detectors if d)} ML detectors")
             except Exception as e:
-                logger.error(f"❌ Failed to initialize SentinelAgent: {e}")
-                ML_AVAILABLE = False
+                logger.error(f"❌ ML model initialization failed: {e}")
+                logger.warning("⚠️ Continuing without ML models - analysis endpoints will return errors")
+                app.state.sentinel_agent = None
             
             # Initialize unified detector for consistent interface
             if UNIFIED_DETECTOR_AVAILABLE and not hasattr(app.state, 'unified_detector'):

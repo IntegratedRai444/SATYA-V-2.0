@@ -1,70 +1,126 @@
 import type { RequestHandler, Request } from 'express';
-import { RateLimiterMemory, IRateLimiterOptions, RateLimiterRes } from 'rate-limiter-flexible';
+import { RateLimiterMemory, RateLimiterRedis, IRateLimiterOptions, RateLimiterRes } from 'rate-limiter-flexible';
+import { createClient } from 'redis';
 import { errorResponse } from '../utils/apiResponse';
 import { logger } from '../config/logger';
 
 type RateLimiterType = 'general' | 'auth' | 'sensitive' | 'api';
 type RateLimitScope = 'ip' | 'user' | 'global';
 
-// Rate limiting options
+// Rate limiting options with environment-based configuration
+const getEnvNumber = (key: string, defaultValue: number): number => {
+  const value = process.env[key];
+  return value ? parseInt(value, 10) : defaultValue;
+};
+
 const rateLimiterOptions: Record<RateLimiterType, IRateLimiterOptions> = {
-  // General API rate limiting (1000 requests per 15 minutes per IP)
+  // General API rate limiting
   general: {
-    points: 1000, // Increased for general API use
-    duration: 15 * 60, // Per 15 minutes
-    blockDuration: 60 * 60, // Block for 1 hour if limit exceeded
+    points: getEnvNumber('RATE_LIMIT_GENERAL_POINTS', 1000),
+    duration: getEnvNumber('RATE_LIMIT_GENERAL_DURATION', 15 * 60),
+    blockDuration: getEnvNumber('RATE_LIMIT_GENERAL_BLOCK', 60 * 60),
     keyPrefix: 'rl_general',
   },
   
-  // Authentication endpoints (5 requests per minute per IP)
+  // Authentication endpoints
   auth: {
-    points: 5, // Reduced for auth endpoints
-    duration: 60, // Per minute
-    blockDuration: 15 * 60, // Block for 15 minutes
+    points: getEnvNumber('RATE_LIMIT_AUTH_POINTS', 5),
+    duration: getEnvNumber('RATE_LIMIT_AUTH_DURATION', 60),
+    blockDuration: getEnvNumber('RATE_LIMIT_AUTH_BLOCK', 15 * 60),
     keyPrefix: 'rl_auth',
   },
   
-  // Sensitive operations (password reset, etc.)
+  // Sensitive operations
   sensitive: {
-    points: 3, // Very strict for sensitive operations
-    duration: 60 * 60, // Per hour
-    blockDuration: 6 * 60 * 60, // Block for 6 hours
+    points: getEnvNumber('RATE_LIMIT_SENSITIVE_POINTS', 3),
+    duration: getEnvNumber('RATE_LIMIT_SENSITIVE_DURATION', 60 * 60),
+    blockDuration: getEnvNumber('RATE_LIMIT_SENSITIVE_BLOCK', 6 * 60 * 60),
     keyPrefix: 'rl_sensitive',
   },
   
-  // API endpoints (higher limits for authenticated users)
+  // API endpoints
   api: {
-    points: 300, // Higher limit for API endpoints
-    duration: 15 * 60, // Per 15 minutes
-    blockDuration: 60 * 60, // Block for 1 hour
+    points: getEnvNumber('RATE_LIMIT_API_POINTS', 300),
+    duration: getEnvNumber('RATE_LIMIT_API_DURATION', 15 * 60),
+    blockDuration: getEnvNumber('RATE_LIMIT_API_BLOCK', 60 * 60),
     keyPrefix: 'rl_api',
   },
 };
 
+// Redis client for distributed rate limiting
+let redisClient: ReturnType<typeof createClient> | null = null;
+
+// Initialize Redis client
+const initializeRedis = async () => {
+  if (process.env.REDIS_URL && !redisClient) {
+    try {
+      redisClient = createClient({
+        url: process.env.REDIS_URL,
+        socket: {
+          reconnectStrategy: (retries) => Math.min(retries * 100, 5000)
+        }
+      });
+      
+      await redisClient.connect();
+      logger.info('Redis client connected for rate limiting');
+    } catch (error) {
+      logger.error('Failed to connect Redis for rate limiting:', error);
+      redisClient = null;
+    }
+  }
+};
+
+// Initialize Redis on startup
+initializeRedis();
+
 // Create rate limiters for different scopes
 const createLimiters = (type: RateLimiterType) => {
   const options = rateLimiterOptions[type];
-  const points = options.points ?? 100; // Default to 100 points if undefined
+  const points = options.points ?? 100;
   const baseConfig = {
     duration: options.duration,
     blockDuration: options.blockDuration,
     keyPrefix: options.keyPrefix,
   };
 
+  // Use Redis if available, otherwise fall back to memory
+  const store = redisClient ? new RateLimiterRedis({
+    redis: redisClient,
+    sendCommand: (...args: unknown[]) => (redisClient as any).sendCommand(...args),
+  }) : null;
+
   return {
-    ip: new RateLimiterMemory({
+    ip: store ? new RateLimiterRedis({
+      ...baseConfig,
+      points,
+      keyPrefix: `${options.keyPrefix}_ip`,
+      redis: redisClient,
+      sendCommand: (...args: unknown[]) => (redisClient as any).sendCommand(...args),
+    }) : new RateLimiterMemory({
       ...baseConfig,
       points,
       keyPrefix: `${options.keyPrefix}_ip`,
     }),
-    user: new RateLimiterMemory({
+    user: store ? new RateLimiterRedis({
+      ...baseConfig,
+      points,
+      keyPrefix: `${options.keyPrefix}_user`,
+      redis: redisClient,
+      sendCommand: (...args: unknown[]) => (redisClient as any).sendCommand(...args),
+    }) : new RateLimiterMemory({
       ...baseConfig,
       points,
       keyPrefix: `${options.keyPrefix}_user`,
     }),
-    global: new RateLimiterMemory({
+    global: store ? new RateLimiterRedis({
       ...baseConfig,
-      points: points * 5, // Higher limit for global
+      points: points * 5,
+      keyPrefix: `${options.keyPrefix}_global`,
+      redis: redisClient,
+      sendCommand: (...args: unknown[]) => (redisClient as any).sendCommand(...args),
+    }) : new RateLimiterMemory({
+      ...baseConfig,
+      points: points * 5,
       keyPrefix: `${options.keyPrefix}_global`,
     }),
   };

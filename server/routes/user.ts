@@ -3,6 +3,7 @@ import { body, validationResult } from 'express-validator';
 import { supabase } from '../config/supabase';
 import rateLimit from 'express-rate-limit';
 import { auditLogger } from '../middleware/audit-logger';
+import { logger } from '../config/logger';
 
 const router = Router();
 
@@ -65,7 +66,11 @@ router.get('/profile', userRateLimit, auditLogger('sensitive_data_access', 'user
     });
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Failed to fetch user profile';
-    console.error('Get profile error:', error);
+    logger.error('Get profile error:', {
+      error: error instanceof Error ? error.message : error,
+      stack: error instanceof Error ? error.stack : undefined,
+      userId: req.user?.id
+    });
     res.status(500).json({
       success: false,
       error: errorMessage
@@ -124,7 +129,11 @@ router.put('/profile', [
     });
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Failed to update user profile';
-    console.error('Update profile error:', error);
+    logger.error('Update profile error:', {
+      error: error instanceof Error ? error.message : error,
+      stack: error instanceof Error ? error.stack : undefined,
+      userId: req.user?.id
+    });
     res.status(500).json({
       success: false,
       error: errorMessage
@@ -184,7 +193,11 @@ router.put('/preferences', [
     });
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Failed to update user preferences';
-    console.error('Update preferences error:', error);
+    logger.error('Update preferences error:', {
+      error: error instanceof Error ? error.message : error,
+      stack: error instanceof Error ? error.stack : undefined,
+      userId: req.user?.id
+    });
     res.status(500).json({
       success: false,
       error: errorMessage
@@ -243,7 +256,11 @@ router.delete('/account', userRateLimit, auditLogger('user_delete', 'user_accoun
     });
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Failed to delete user account';
-    console.error('Delete account error:', error);
+    logger.error('Delete account error:', {
+      error: error instanceof Error ? error.message : error,
+      stack: error instanceof Error ? error.stack : undefined,
+      userId: req.user?.id
+    });
     res.status(500).json({
       success: false,
       error: errorMessage
@@ -287,7 +304,11 @@ router.get('/stats', userRateLimit, auditLogger('sensitive_data_access', 'user_s
     });
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Failed to fetch user statistics';
-    console.error('Get user stats error:', error);
+    logger.error('Get user stats error:', {
+      error: error instanceof Error ? error.message : error,
+      stack: error instanceof Error ? error.stack : undefined,
+      userId: req.user?.id
+    });
     res.status(500).json({
       success: false,
       error: errorMessage
@@ -316,7 +337,10 @@ router.get('/analytics', userRateLimit, auditLogger('sensitive_data_access', 'us
       .limit(50); // Recent 50 activities
 
     if (tasksError) {
-      console.error('User analytics error:', tasksError);
+      logger.error('User analytics error:', {
+        error: tasksError,
+        userId: req.user?.id
+      });
       return res.status(500).json({
         success: false,
         error: 'Failed to fetch user analytics'
@@ -353,7 +377,11 @@ router.get('/analytics', userRateLimit, auditLogger('sensitive_data_access', 'us
     });
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Failed to fetch user analytics';
-    console.error('Get user analytics error:', error);
+    logger.error('Get user analytics error:', {
+      error: error instanceof Error ? error.message : error,
+      stack: error instanceof Error ? error.stack : undefined,
+      userId: req.user?.id
+    });
     res.status(500).json({
       success: false,
       error: errorMessage

@@ -3,11 +3,12 @@ import { Server, IncomingMessage } from 'http';
 import { verify } from 'jsonwebtoken';
 import { z } from 'zod';
 import { logger } from '../../config/logger';
-import { JWT_SECRET, WS_MAX_MESSAGES_PER_SECOND, WS_HEARTBEAT_INTERVAL } from '../../config/constants';
+import { JWT_SECRET_FINAL, WS_MAX_MESSAGES_PER_SECOND, WS_HEARTBEAT_INTERVAL } from '../../config/constants';
 import { RateLimiterMemory } from 'rate-limiter-flexible';
 import { v4 as uuidv4 } from 'uuid';
 import { metrics } from '../../monitoring/metrics';
-import { trace, context, SpanStatusCode } from '@opentelemetry/api';
+import { URL } from 'url';
+import { setInterval, clearInterval } from 'timers';
 
 import { WebSocketMetrics } from './WebSocketMetrics';
 
@@ -32,7 +33,7 @@ type ValidatedMessage = z.infer<typeof messageSchema>;
 interface TokenPayload {
   userId: string;
   sessionId: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface AuthenticatedWebSocket extends WebSocket {
@@ -54,12 +55,12 @@ interface AuthenticatedWebSocket extends WebSocket {
   errorCount: number;
   userAgent?: string;
   clientVersion?: string;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 }
 
 interface WebSocketMessage {
   type: string;
-  data?: any;
+  data?: unknown;
   error?: string;
   timestamp?: number;
   requestId?: string;
@@ -73,7 +74,7 @@ class WebSocketManager {
   private wss: WebSocketServer | null = null;
   private clients: Map<string, AuthenticatedWebSocket> = new Map();
   private channelSubscribers: Map<string, Set<string>> = new Map();
-  private heartbeatInterval: NodeJS.Timeout | null = null;
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
   /**
    * Get WebSocket connection statistics
@@ -126,7 +127,7 @@ class WebSocketManager {
         // Verify JWT token
         let decoded: TokenPayload;
         try {
-          decoded = verify(token, JWT_SECRET) as TokenPayload;
+          decoded = verify(token, JWT_SECRET_FINAL) as TokenPayload;
         } catch (error) {
           socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
           socket.destroy();
@@ -248,10 +249,11 @@ class WebSocketManager {
         seconds + nanoseconds / 1e9
       );
     } catch (error) {
-      if ((error as any).msBeforeNext) {
+      if (error && typeof error === 'object' && 'msBeforeNext' in error) {
         // Rate limit exceeded
         this.sendError(ws, 'rate_limit_exceeded', 'Too many messages', ws.requestId);
-        WebSocketMetrics.errorOccurred('rate_limit', error as Error);
+        const rateLimitError = new Error('Rate limit exceeded');
+        WebSocketMetrics.errorOccurred('rate_limit', rateLimitError);
       } else {
         this.handleError(ws, error as Error, 'message_processing');
       }
@@ -516,7 +518,7 @@ class WebSocketManager {
   private sendError(
     ws: AuthenticatedWebSocket, 
     message: string, 
-    details?: any, 
+    details?: unknown, 
     requestId?: string
   ) {
     const errorResponse: WebSocketMessage = {

@@ -21,12 +21,23 @@ class Settings(BaseSettings):
     APP_ENV: str = Field(default="development", env=["ENVIRONMENT", "NODE_ENV"])
     NODE_ENV: str = "development"
     DEBUG: bool = Field(default=False, env="DEBUG")
-    SECRET_KEY: str = Field(
-        default_factory=lambda: secrets.token_urlsafe(32), env="SECRET_KEY"
-    )
+    # CRITICAL: Security Configuration - No fallback defaults for production
+    SECRET_KEY: str = Field(env="SECRET_KEY")
+    JWT_SECRET: str = Field(env="JWT_SECRET")
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    REFRESH_TOKEN_EXPIRES_IN: str = Field(default="30d", env="REFRESH_TOKEN_EXPIRES_IN")
+    REFRESH_TOKEN_EXPIRES_IN: str = Field(default="30d", env="REFRESH_TOKEN_EXPIRE_IN")
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRES_IN: str = "24h"
+
+    def __post_init__(self):
+        """CRITICAL: Validate required secrets on startup"""
+        if not self.SECRET_KEY:
+            raise RuntimeError("SECRET_KEY environment variable is required for security")
+        if not self.JWT_SECRET:
+            raise RuntimeError("JWT_SECRET environment variable is required for security")
+        
+        logger.info("✅ Security secrets validated successfully")
 
     # Server Configuration
     PORT: int = Field(default=8000, env=["PORT", "SERVER_PORT"])
@@ -45,11 +56,6 @@ class Settings(BaseSettings):
     ALLOWED_FILE_TYPES: str = (
         "image/jpeg,image/png,image/webp,video/mp4,video/webm,video/avi,video/mov,video/mkv,audio/mp3,audio/wav,audio/mpeg,audio/ogg"
     )
-
-    # JWT Configuration
-    JWT_SECRET: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
-    JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRES_IN: str = "24h"
 
     # API Settings
     API_V1_STR: str = "/api/v1"

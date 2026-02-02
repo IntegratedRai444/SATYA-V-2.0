@@ -70,7 +70,7 @@ const initializeRateLimitStore = async () => {
       // Note: Type incompatibility between ioredis and rate-limit-redis
       const redisStore = new RedisStore({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        client: redisClient as any,
+sendCommand: (...args: unknown[]) => (redisClient as any).sendCommand(...args),
         prefix: 'ratelimit:'
       });
       

@@ -1,4 +1,4 @@
-import api from "@/lib/api/apiClient"
+import api from "@/lib/api"
 
 
 

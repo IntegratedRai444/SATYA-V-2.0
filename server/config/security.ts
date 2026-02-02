@@ -1,5 +1,4 @@
 import type { Request, Response } from 'express';
-import { logger } from './logger';
 
 // Rate limiting configuration
 export interface RateLimitRule {
@@ -178,11 +177,17 @@ if (missingVars.length > 0 && process.env.NODE_ENV === 'production') {
   throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
 }
 
+// CRITICAL: JWT Secret validation - no fallback defaults for production security
+const jwtSecret = process.env.JWT_SECRET;
+if (!jwtSecret) {
+  throw new Error('JWT_SECRET environment variable is required for security');
+}
+
 // Default security configuration
 export const defaultSecurityConfig: SecurityConfig = {
   // JWT Configuration
   jwt: {
-    secret: process.env.JWT_SECRET || 'dev-secret-key-change-in-production',
+    secret: jwtSecret,
     accessTokenExpiry: process.env.JWT_ACCESS_EXPIRY || '15m', // 15 minutes
     refreshTokenExpiry: process.env.JWT_REFRESH_EXPIRY || '7d', // 7 days
     issuer: process.env.JWT_ISSUER || 'satya-ai',

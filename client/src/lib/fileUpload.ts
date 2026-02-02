@@ -67,7 +67,12 @@ export class FileUploadManager {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
+        let errorData: { message?: string } = {};
+        try {
+          errorData = await response.json();
+        } catch (parseError) {
+          console.error("Failed to parse error response:", parseError);
+        }
         throw new Error(errorData.message || 'Upload failed');
       }
 

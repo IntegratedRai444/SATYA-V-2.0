@@ -204,10 +204,13 @@ class WebSocketService {
         try {
           handler(message);
         } catch (handlerError) {
-          logger.error('Error in message handler: ' + 
-            (handlerError instanceof Error ? handlerError.message : String(handlerError)) +
-            (message?.type ? ` (message type: ${message.type})` : '')
-          );
+          const errorMessage = `Error in message handler: ${
+            handlerError instanceof Error ? handlerError.message : String(handlerError)
+          }${message?.type ? ` (message type: ${message.type})` : ''}`;
+          logger.error(errorMessage);
+          
+          // Emit error event instead of swallowing
+          this.emit('error', new Error(errorMessage));
         }
       });
       
@@ -343,6 +346,7 @@ class WebSocketService {
       } catch (error) {
         const errorMessage = error instanceof Error ? error : new Error('Unknown error during cleanup');
         logger.error('Error during WebSocket cleanup', errorMessage);
+        this.emit('error', errorMessage as Error);
       } finally {
         this.socket = null;
       }
@@ -520,6 +524,7 @@ class WebSocketService {
       if (this.connectionState === 'disconnected' && this.reconnectAttempts < this.maxReconnectAttempts) {
         this.connect().catch((error) => {
           logger.error('Failed to reconnect for queued message', error);
+          this.emit('error', error as Error);
         });
       }
     }
@@ -570,10 +575,17 @@ class WebSocketService {
           logger.debug('Queued message sent', { type: queuedMessage.message.type });
         } catch (error) {
           logger.error('Failed to send queued message', error as Error);
+          this.emit('error', error as Error);
+          
           // Re-queue if retries available
           if (queuedMessage.retries < 3) {
             queuedMessage.retries++;
             this.messageQueue.push(queuedMessage);
+          } else {
+            // Max retries exceeded, remove from queue
+            logger.error('Max retries exceeded for queued message');
+            logger.error(`Message type: ${queuedMessage.message.type}`);
+            logger.error(`Retries: ${queuedMessage.retries}`);
           }
         }
       } else {

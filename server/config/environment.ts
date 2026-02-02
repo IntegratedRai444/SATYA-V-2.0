@@ -144,6 +144,26 @@ function loadEnvironment(): Environment {
         );
       }
 
+      // Production safety checks - no fallback secrets allowed
+      const weakSecrets = [
+        'jwt-secret-key-set-in-env',
+        'session-secret-key-set-in-env',
+        'csrf-secret-key-set-in-env',
+        'your-secret-key-here',
+        'change-me-in-production',
+        'default-secret-key'
+      ];
+      
+      const secrets = ['JWT_SECRET', 'SESSION_SECRET', 'CSRF_SECRET'];
+      for (const secret of secrets) {
+        const value = process.env[secret];
+        if (value && weakSecrets.some(weak => value.toLowerCase().includes(weak.toLowerCase()))) {
+          throw new ConfigurationError(
+            `Weak or default secret detected for ${secret}. Please use a cryptographically secure secret.`
+          );
+        }
+      }
+
       return {
         NODE_ENV: 'development' as const,
         PORT: parseInt(process.env.PORT || '5001'),

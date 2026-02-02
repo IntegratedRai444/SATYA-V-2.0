@@ -82,7 +82,7 @@ export class AnalysisService extends BaseService {
     options: AnalysisOptions = {}
   ): Promise<string> {
     const formData = new FormData();
-    formData.append('image', file);
+    formData.append('file', file);
 
     // Add request metadata
     if (options.metadata) {
@@ -95,6 +95,7 @@ export class AnalysisService extends BaseService {
           'Content-Type': 'multipart/form-data',
         },
         signal: options.signal,
+        timeout: 360000, // 6 minutes timeout
       });
 
       if (!response.success || !response.jobId) {
@@ -134,7 +135,7 @@ export class AnalysisService extends BaseService {
     options: AnalysisOptions = {}
   ): Promise<string> {
     const formData = new FormData();
-    formData.append('video', file);
+    formData.append('file', file);
 
     try {
       const response = await this.post<JobStartResponse>('/analysis/video', formData, {
@@ -142,6 +143,7 @@ export class AnalysisService extends BaseService {
           'Content-Type': 'multipart/form-data',
         },
         signal: options.signal,
+        timeout: 360000, // 6 minutes timeout
       });
 
       if (!response.success || !response.jobId) {
@@ -160,7 +162,7 @@ export class AnalysisService extends BaseService {
     options: AnalysisOptions = {}
   ): Promise<string> {
     const formData = new FormData();
-    formData.append('audio', file);
+    formData.append('file', file);
 
     try {
       const response = await this.post<JobStartResponse>('/analysis/audio', formData, {
@@ -168,6 +170,7 @@ export class AnalysisService extends BaseService {
           'Content-Type': 'multipart/form-data',
         },
         signal: options.signal,
+        timeout: 360000, // 6 minutes timeout
       });
 
       if (!response.success || !response.jobId) {
@@ -201,6 +204,7 @@ export class AnalysisService extends BaseService {
           'Content-Type': 'multipart/form-data',
         },
         signal: options.signal,
+        timeout: 360000, // 6 minutes timeout
       });
 
       if (!response.success || !response.jobId) {

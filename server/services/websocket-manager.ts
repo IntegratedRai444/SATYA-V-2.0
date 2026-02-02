@@ -1,31 +1,14 @@
 import { WebSocketServer, WebSocket, RawData } from 'ws';
 import { Server, IncomingMessage } from 'http';
-import { RateLimiterMemory } from 'rate-limiter-flexible';
 import { logger } from '../config/logger';
 import { z } from 'zod';
-import { EventEmitter } from 'events';
 import { supabase } from '../config/supabase';
 
-// Rate limiting configurations
-const rateLimitRules = {
-  websocket: {
-    windowMs: 60 * 1000, // 1 minute window
-    maxConnections: 10, // Max connections per IP
-    messageRate: 100, // Max messages per minute per connection
-    blockDuration: 5 * 60 * 1000, // 5 minutes block duration
-  },
-  api: {
-    windowMs: 60 * 1000, // 1 minute window
-    max: 100, // Max requests per windowMs
-  },
-};
+// Timer imports
+import { setInterval, clearInterval } from 'timers';
 
-// Rate limiting configuration
-const rateLimiter = new RateLimiterMemory({
-  points: rateLimitRules.websocket.messageRate, // messages per minute
-  duration: 60, // per 60 seconds per IP
-  blockDuration: rateLimitRules.websocket.blockDuration / 1000, // Convert to seconds
-});
+// Timer types for compatibility
+type Timer = ReturnType<typeof setInterval> & { ref?: () => void; unref?: () => void; };
 
 // Message size limits
 const MESSAGE_LIMITS = {
@@ -57,12 +40,14 @@ const WebSocketMessageType = {
   JOB_STATUS: 'job_status',
   UNSUBSCRIPTION_CONFIRMED: 'unsubscription_confirmed',
   RECONNECT_REQUIRED: 'reconnect_required',
-  JOB_STARTED: 'job_started',
-  JOB_COMPLETED: 'job_completed',
+  JOB_STARTED: 'JOB_STARTED',
+  JOB_COMPLETED: 'JOB_COMPLETED',
+  JOB_FAILED: 'JOB_FAILED',
+  JOB_ERROR: 'JOB_ERROR',
   DASHBOARD_UPDATE: 'dashboard_update',
-  JOB_PROGRESS: 'job_progress',
-  JOB_STAGE_UPDATE: 'job_stage_update',
-  JOB_METRICS: 'job_metrics',
+  JOB_PROGRESS: 'JOB_PROGRESS',
+  JOB_STAGE_UPDATE: 'JOB_STAGE_UPDATE',
+  JOB_METRICS: 'JOB_METRICS',
   SUBSCRIBE_JOB: 'subscribe_job',
   UNSUBSCRIBE_JOB: 'unsubscribe_job',
   MESSAGE_ACK: 'message_ack'
@@ -81,23 +66,10 @@ type WebSocketMessage = {
     message: string;
     timestamp?: number;
     requestId?: string;
-    details?: any;
+    details?: unknown;
   };
   data?: unknown;
 };
-
-// Helper to extract token from URL query
-function extractTokenFromQuery(url: string): string | null {
-  try {
-    const queryString = url.split('?')[1];
-    if (!queryString) return null;
-    
-    const params = new URLSearchParams(queryString);
-    return params.get('token');
-  } catch (e) {
-    return null;
-  }
-}
 
 // Supabase Auth Service
 const supabaseAuthService = {
@@ -119,75 +91,11 @@ const supabaseAuthService = {
   }
 };
 
-// Define ProcessingJob interface
-interface ProcessingJob {
-  id: string;
-  userId?: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
-  progress: number;
-  result?: any;
-  error?: string;
-  startedAt: Date;
-  completedAt?: Date;
-  createdAt?: Date;
-  metadata?: Record<string, any>;
-}
-
-// File processor implementation with event emission
-class FileProcessor extends EventEmitter {
-  private jobs = new Map<string, ProcessingJob>();
-
-  getJob(jobId: string): ProcessingJob | null {
-    return this.jobs.get(jobId) || null;
-  }
-
-  updateJob(jobId: string, updates: Partial<ProcessingJob>): ProcessingJob | null {
-    const job = this.getJob(jobId);
-    if (!job) return null;
-    
-    const updatedJob = { ...job, ...updates, updatedAt: new Date() };
-    this.jobs.set(jobId, updatedJob);
-    return updatedJob;
-  }
-
-  createJob(initialData: Partial<ProcessingJob>): ProcessingJob {
-    const job: ProcessingJob = {
-      id: `job_${Date.now()}`,
-      status: 'pending',
-      progress: 0,
-      startedAt: new Date(),
-      ...initialData
-    };
-    
-    this.jobs.set(job.id, job);
-    return job;
-  }
-
-  deleteJob(jobId: string): boolean {
-    return this.jobs.delete(jobId);
-  }
-}
-
-// Create a singleton instance
-const fileProcessor = new FileProcessor();
-
-// Rate limiting for WebSocket messages
-const messageRateLimiter = new RateLimiterMemory({
-  points: 100, // 100 messages
-  duration: 1, // per second per connection
-});
-
-// Rate limiting for connection attempts
-const connectionRateLimiter = new RateLimiterMemory({
-  points: 5, // 5 connection attempts
-  duration: 60, // per minute per IP
-});
-
 // Define WebSocket message schema
 const messageSchema = z.object({
   type: z.enum(['subscribe', 'unsubscribe', 'message', 'ping', 'pong']),
   channel: z.string().optional(),
-  payload: z.record(z.string(), z.any()).optional(),
+  payload: z.record(z.string(), z.unknown()).optional(),
   requestId: z.string().uuid().optional(),
   timestamp: z.number().int().positive().optional(),
   jobId: z.string().optional(),
@@ -196,18 +104,16 @@ const messageSchema = z.object({
     message: z.string(),
     timestamp: z.number().optional()
   }).optional(),
-  data: z.any().optional()
+  data: z.unknown().optional()
 });
-
-type ValidatedMessage = z.infer<typeof messageSchema>;
 
 interface WebSocketClient extends WebSocket {
   reconnectAttempts: number;
   maxReconnectAttempts: number;
-  reconnectTimeout: NodeJS.Timeout | null;
+  reconnectTimeout: number | null;
   isAlive: boolean;
   lastActivity: number;
-  messageQueue: Array<{ data: any; timestamp: number }>;
+  messageQueue: Array<{ data: unknown; timestamp: number }>;
   maxQueueSize: number;
   userId: string;
   username?: string;
@@ -219,14 +125,21 @@ interface WebSocketClient extends WebSocket {
   messageCount: number;
   lastMessageTime: number;
   jobId?: string;
-  [key: string]: any; // Index signature for dynamic properties
+  connectionTime: number;
+  [key: string]: unknown; // Index signature for dynamic properties
 }
 
-import { WebSocketAuthenticatedRequest } from '../types/auth';
-
-// WebSocket message type is defined by webSocketMessageSchema
-
 export class WebSocketManager {
+  private wss: WebSocketServer | null = null;
+  private clients = new Map<string, Set<WebSocketClient>>();
+  private blockedIPs = new Map<string, number>();
+  private messageRates = new Map<string, { count: number; resetTime: number }>();
+  private pingInterval: Timer | null = null;
+
+  constructor() {
+    this.setupPingInterval();
+  }
+
   // Generate a unique client ID
   private generateClientId(): string {
     return `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -248,367 +161,190 @@ export class WebSocketManager {
 
   // Add missing method implementations
   private handleDisconnect(ws: WebSocketClient): void {
-    if (!ws.userId) return;
-
-    const userClients = this.clients.get(ws.userId);
-    if (userClients) {
-      userClients.delete(ws);
-      if (userClients.size === 0) {
-        this.clients.delete(ws.userId);
-      }
-    }
-
-    logger.info('Client disconnected', {
+    logger.info('[WS DISCONNECT] Client disconnected', {
       clientId: ws.clientId,
       userId: ws.userId,
-      remainingConnections: this.getTotalConnections()
-    });
-  }
-
-  private handleSubscribe(ws: WebSocketClient, channel: string): void {
-    if (!ws.subscribedChannels) {
-      ws.subscribedChannels = new Set();
-    }
-    ws.subscribedChannels.add(channel);
-
-    logger.debug('Client subscribed to channel', {
-      clientId: ws.clientId,
-      userId: ws.userId,
-      channel
-    });
-  }
-
-  private handleUnsubscribe(ws: WebSocketClient, channel: string): void {
-    if (ws.subscribedChannels) {
-      ws.subscribedChannels.delete(channel);
-
-      logger.debug('Client unsubscribed from channel', {
-        clientId: ws.clientId,
-        userId: ws.userId,
-        channel
-      });
-    }
-  }
-
-  // Constants for throttling and rate limiting
-  private static readonly MAX_THROTTLE_ENTRIES = 10000; // Maximum number of throttle entries to keep
-  private static readonly THROTTLE_CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
-  private static readonly THROTTLE_MAX_AGE = 15 * 60 * 1000; // 15 minutes
-  private static readonly PROGRESS_THROTTLE_MS = 100;
-
-  private wss: WebSocketServer | null = null;
-  private clients: Map<string, Set<WebSocketClient>> = new Map();
-  private heartbeatInterval: NodeJS.Timeout | null = null;
-  private connectionAttempts: Map<string, { count: number; lastAttempt: number }> = new Map();
-  private messageRates: Map<string, number> = new Map();
-  private count: number = 0;
-  private lastAttempt: number = 0;
-  private fileProcessor: FileProcessor;
-
-  private progressThrottle = new Map<string, number>();
-  private throttleCleanupInterval: NodeJS.Timeout | null = null;
-  private readonly PROGRESS_THROTTLE_MS = 100;
-  private readonly MAX_THROTTLE_ENTRIES = 1000;
-  private cleanupCallbacks: Array<() => void> = [];
-
-  constructor(fileProcessor: FileProcessor) {
-    this.fileProcessor = fileProcessor;
-    this.setupThrottleCleanup();
-    this.setupProcessHandlers();
-    this.setupFileProcessorListeners();
-  }
-
-  private setupThrottleCleanup(): void {
-    // Clean up old throttle entries periodically
-    this.throttleCleanupInterval = setInterval(() => {
-      const now = Date.now();
-      for (const [key, timestamp] of this.progressThrottle.entries()) {
-        if (now - timestamp > WebSocketManager.PROGRESS_THROTTLE_MS * 10) {
-          this.progressThrottle.delete(key);
-        }
-      }
-
-      // Clean up rate limiting
-      const nowMs = Date.now();
-      const ipAddresses = Array.from(this.connectionAttempts.keys());
-      for (const ip of ipAddresses) {
-        const attempt = this.connectionAttempts.get(ip);
-        if (attempt && (nowMs - attempt.lastAttempt) > MESSAGE_LIMITS.BLOCK_DURATION_MS) {
-          this.connectionAttempts.delete(ip);
-        }
-      }
-    }, 60000); // Cleanup every minute
-  }
-
-  private setupProcessHandlers(): void {
-    // Handle process events for graceful shutdown
-    const shutdown = (signal: string) => {
-      logger.info(`Received ${signal}, shutting down gracefully...`);
-      this.shutdown();
-      process.exit(0);
-    };
-
-    process.on('SIGTERM', () => shutdown('SIGTERM'));
-    process.on('SIGINT', () => shutdown('SIGINT'));
-
-    // Handle uncaught exceptions
-    process.on('uncaughtException', (error) => {
-      logger.error('Uncaught exception in WebSocketManager:', error);
+      username: ws.username
     });
 
-    // Handle unhandled promise rejections
-    process.on('unhandledRejection', (reason, promise) => {
-      logger.error('Unhandled rejection at:', promise, 'reason:', reason);
-    });
-  }
-
-  private setupFileProcessorListeners(): void {
-    // Setup file processor event listeners
-    this.fileProcessor.on('progress', (job: ProcessingJob) => {
-      if (job.userId) {
-        this.sendToUser(job.userId, {
-          type: WebSocketMessageType.JOB_PROGRESS,
-          jobId: job.id,
-          payload: {
-            progress: job.progress,
-            status: job.status,
-            message: job.status === 'processing' ? 'Processing...' : 'Completed'
-          }
-        });
-      }
-    });
-  }
-
-  private startHeartbeat(): void {
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-    }
-
-    this.heartbeatInterval = setInterval(() => {
-      const now = Date.now();
-      const disconnectedClients: WebSocketClient[] = [];
-
-      // Check all clients for timeouts
-      for (const clientSet of this.clients.values()) {
-        for (const client of clientSet) {
-          if (now - client.lastActivity > 30000) { // 30 seconds timeout
-            if (client.isAlive) {
-              client.isAlive = false;
-              client.ping();
-            } else {
-              disconnectedClients.push(client);
-            }
-          }
-        }
-      }
-
-      // Clean up disconnected clients
-      for (const client of disconnectedClients) {
-        client.terminate();
-      }
-    }, 10000); // Check every 10 seconds
-  }
-
-
-  private sendError(ws: WebSocketClient, error: { code: string; message: string; requestId?: string; details?: any }): void {
-    this.sendToClient(ws, {
-      type: WebSocketMessageType.ERROR,
-      error: {
-        code: error.code,
-        message: error.message,
-        timestamp: Date.now()
-      }
-    });
+    this.removeClient(ws);
   }
 
   private sendToClient(ws: WebSocketClient, message: WebSocketMessage): void {
-    try {
-      if (ws.readyState === WebSocket.OPEN) {
-        const messageStr = JSON.stringify(message);
-        ws.send(messageStr);
+    if (ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(JSON.stringify(message));
+      } catch (error) {
+        logger.error('Error sending message to client', {
+          clientId: ws.clientId,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
       }
-    } catch (error) {
-      logger.error('Error sending message to client:', {
-        error: error instanceof Error ? error.message : String(error),
-        clientId: ws.clientId,
-        messageType: message?.type
-      });
     }
   }
 
-  /**
-   * Initialize WebSocket server
-   */
-  initialize(server: Server): void {
+  private setupPingInterval(): void {
+    this.pingInterval = setInterval(() => {
+      this.clients.forEach((clientSet) => {
+        clientSet.forEach((ws) => {
+          if (ws.isAlive === false) {
+            ws.terminate();
+            return;
+          }
+          ws.isAlive = false;
+          ws.ping();
+        });
+      });
+    }, MESSAGE_LIMITS.PING_INTERVAL);
+  }
+
+  // Public methods
+  public initialize(server: Server): void {
     this.wss = new WebSocketServer({ 
-      server,
+      server, 
       path: '/api/v2/dashboard/ws',
-      verifyClient: (info, callback) => {
-        this.verifyClientAsync(info)
-          .then(result => {
-            if (result.valid) {
-              // Attach user info to request for later use
-              const authReq: WebSocketAuthenticatedRequest = {
-                userId: result.userId,
-                username: result.username || '',
-                sessionId: '',
-                ipAddress: info.req.socket.remoteAddress || 'unknown',
-                token: undefined,
-                ...info.req as any
-              };
-              if (result.userId) {
-                authReq.userId = result.userId;
-                authReq.username = result.username || ''; // Provide default empty string
-                authReq.sessionId = ''; // Set default empty string for sessionId
-                authReq.ipAddress = info.req.socket.remoteAddress || 'unknown';
-                callback(true);
-              } else {
-                callback(false, 401, 'Invalid user ID');
-              }
-            } else {
-              logger.warn('WebSocket authentication failed', {
-                reason: result.reason,
-                ip: info.req.headers['x-forwarded-for'] || info.req.socket.remoteAddress
-              });
-              callback(false, 401, result.reason || 'Authentication failed');
-            }
-          })
-          .catch(error => {
-            logger.error('WebSocket verification error', {
-              error: error.message
-            });
-            callback(false, 500, 'Internal server error');
-          });
+      verifyClient: async (info: { req: IncomingMessage; origin: string; secure: boolean; }, callback: (res: boolean, code?: number, message?: string) => void) => {
+        const token = info.req.headers['authorization']?.replace('Bearer ', '');
+        
+        if (!token) {
+          callback(false, 401, 'Unauthorized');
+          return;
+        }
+
+        const user = await supabaseAuthService.verifyToken(token);
+        if (!user) {
+          callback(false, 401, 'Invalid token');
+          return;
+        }
+
+        callback(true);
       }
     });
 
-    this.wss.on('connection', this.handleConnection.bind(this));
-    this.startHeartbeat();
-    this.setupFileProcessorListeners();
+    this.wss.on('connection', (ws: WebSocketClient, req: IncomingMessage) => {
+      this.handleConnection(ws, req);
+    });
 
-    logger.info('WebSocket server initialized at /api/v2/dashboard/ws');
+    logger.info('[WS SERVER] WebSocket server initialized');
   }
 
-  /**
-   * Verify client connection (authentication) - async version
-   */
-  private async verifyClientAsync(info: any): Promise<{ 
-    valid: boolean; 
-    userId?: string; 
-    username?: string; 
-    sessionId?: string;
-    reason?: string; 
-  }> {
-    // Check connection count per IP
-    const ip = info.req.headers['x-forwarded-for'] || info.req.connection.remoteAddress;
-    const now = Date.now();
-    
-    // Initialize or update connection attempt count
-    let attempt = this.connectionAttempts.get(ip) || { count: 0, lastAttempt: 0 };
-    
-    // Reset counter if last attempt was more than block duration ago
-    if (now - attempt.lastAttempt > MESSAGE_LIMITS.BLOCK_DURATION_MS) {
-      attempt.count = 0;
-    }
-    
-    // Check connection limit
-    if (attempt.count >= MESSAGE_LIMITS.MAX_CONNECTIONS_PER_IP) {
-      logger.warn(`Connection limit reached for IP: ${ip}`);
-      return { 
-        valid: false, 
-        reason: 'Connection limit exceeded. Please try again later.' 
-      };
-    }
-    
-    // Update attempt counter
-    attempt.count++;
-    attempt.lastAttempt = now;
-    this.connectionAttempts.set(ip, attempt);
-    
-    // Validate token
-    const token = this.extractToken(info);
-    if (!token) {
-      return { 
-        valid: false, 
-        reason: 'Authentication token is required' 
-      };
+  private async handleConnection(ws: WebSocketClient, req: IncomingMessage): Promise<void> {
+    const token = req.headers['authorization']?.replace('Bearer ', '');
+    const user = token ? await supabaseAuthService.verifyToken(token) : null;
+
+    if (!user) {
+      ws.close(1008, 'Authentication failed');
+      return;
     }
 
-    try {
-      const decoded = await supabaseAuthService.verifyToken(token);
-      if (!decoded || !decoded.userId) {
-        throw new Error('Invalid token payload');
+    // Initialize client properties
+    ws.clientId = this.generateClientId();
+    ws.userId = user.userId;
+    ws.username = user.username;
+    ws.sessionId = user.sessionId;
+    ws.ipAddress = req.socket.remoteAddress || 'unknown';
+    ws.connectedAt = Date.now();
+    ws.connectionTime = Date.now();
+    ws.isAlive = true;
+    ws.lastActivity = Date.now();
+    ws.messageQueue = [];
+    ws.maxQueueSize = MESSAGE_LIMITS.MAX_QUEUE_SIZE;
+    ws.subscribedChannels = new Set();
+    ws.messageCount = 0;
+    ws.lastMessageTime = 0;
+    ws.reconnectAttempts = 0;
+    ws.maxReconnectAttempts = 5;
+    ws.reconnectTimeout = null;
+
+    // Add to clients map
+    if (!this.clients.has(user.userId)) {
+      this.clients.set(user.userId, new Set());
+    }
+    this.clients.get(user.userId)!.add(ws);
+
+    logger.info('[WS CONNECT] New WebSocket connection', {
+      clientId: ws.clientId,
+      userId: user.userId,
+      username: user.username,
+      ipAddress: ws.ipAddress
+    });
+
+    // Setup event handlers
+    ws.on('pong', () => {
+      ws.isAlive = true;
+      ws.lastActivity = Date.now();
+    });
+
+    ws.on('message', (data: RawData) => {
+      this.handleMessage(ws, data);
+    });
+
+    ws.on('close', () => {
+      this.handleDisconnect(ws);
+    });
+
+    ws.on('error', (error) => {
+      logger.error('WebSocket error:', error);
+      this.handleDisconnect(ws);
+    });
+
+    // Send welcome message
+    this.sendToClient(ws, {
+      type: WebSocketMessageType.CONNECTED,
+      timestamp: Date.now(),
+      payload: {
+        clientId: ws.clientId,
+        userId: ws.userId,
+        message: 'Connection established successfully'
       }
+    });
+  }
+
+  private handleMessage(ws: WebSocketClient, data: RawData): void {
+    const message = this.parseMessage(data);
+    if (!message) return;
+
+    ws.lastActivity = Date.now();
+    ws.messageCount++;
+    ws.lastMessageTime = Date.now();
+
+    switch (message.type) {
+      case 'ping':
+        this.sendToClient(ws, {
+          type: 'pong',
+          timestamp: Date.now()
+        });
+        break;
       
-      return { 
-        valid: true, 
-        userId: decoded.userId,
-        username: decoded.username,
-        sessionId: decoded.sessionId
-      };
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      logger.error('WebSocket authentication failed:', { 
-        error: errorMessage,
-        ip,
-        userAgent: info.req.headers['user-agent']
-      });
-      return { 
-        valid: false, 
-        reason: 'Authentication failed. Please log in again.' 
-      };
+      case 'subscribe':
+        if (message.channel) {
+          ws.subscribedChannels.add(message.channel);
+          this.sendToClient(ws, {
+            type: 'subscription_confirmed',
+            channel: message.channel,
+            timestamp: Date.now()
+          });
+        }
+        break;
+      
+      case 'unsubscribe':
+        if (message.channel) {
+          ws.subscribedChannels.delete(message.channel);
+          this.sendToClient(ws, {
+            type: 'unsubscription_confirmed',
+            channel: message.channel,
+            timestamp: Date.now()
+          });
+        }
+        break;
+      
+      default:
+        logger.warn('Unknown message type', { type: message.type });
     }
   }
 
-  private async handleMessage(ws: WebSocketClient, data: RawData): Promise<void> {
-    try {
-      const message = this.parseMessage(data);
-      if (!message) {
-        throw new Error('Failed to parse message');
-      }
-      await this.validateMessage(ws, message);
-      await this.processMessage(ws, message);
-    } catch (error) {
-      this.handleMessageError(ws, error);
-    }
-  }
-
-  private async validateMessage(ws: WebSocketClient, message: WebSocketMessage): Promise<void> {
-    // TO DO: Implement message validation logic
-  }
-
-  private async processMessage(ws: WebSocketClient, message: WebSocketMessage): Promise<void> {
-    // TO DO: Implement message processing logic
-  }
-
-  private handleMessageError(ws: WebSocketClient, error: unknown): void {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const errorStack = error instanceof Error ? error.stack : undefined;
-    
-    logger.error('WebSocket message error:', { 
-      error: errorMessage,
-      stack: errorStack,
-      clientId: ws?.clientId || 'unknown'
-    });
-
-    try {
-      this.sendError(ws, {
-        code: 'MESSAGE_PROCESSING_ERROR',
-        message: 'Failed to process message',
-        details: errorMessage
-      });
-    } catch (sendError) {
-      logger.error('Failed to send error message to client:', {
-        error: sendError instanceof Error ? sendError.message : String(sendError),
-        clientId: ws?.clientId || 'unknown'
-      });
-    }
-  }
-
-  /**
-   * Get total number of connections across all users
-   */
-  getTotalConnections(): number {
+  // Health monitoring methods
+  public getConnectedClientsCount(): number {
     let count = 0;
     for (const clientSet of this.clients.values()) {
       count += clientSet.size;
@@ -616,173 +352,81 @@ export class WebSocketManager {
     return count;
   }
 
-  /**
-   * Get connection statistics
-   */
-  getStats(): {
-    totalConnections: number;
-    connectedUsers: number;
-    averageConnectionsPerUser: number;
-  } {
-    const totalConnections = this.getTotalConnections();
-    const connectedUsers = this.clients.size;
+  public isHealthy(): boolean {
+    const now = Date.now();
+    const fiveMinutesAgo = now - 5 * 60 * 1000;
+    let totalConnections = 0;
+    let healthyConnections = 0;
 
-    return {
-      totalConnections,
-      connectedUsers,
-      averageConnectionsPerUser: connectedUsers > 0 ? totalConnections / connectedUsers : 0
-    };
-  }
-
-  /**
-   * Shutdown WebSocket server
-   */
-  shutdown(): void {
-    logger.info('Shutting down WebSocket server...');
-
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-      this.heartbeatInterval = null;
-    }
-
-    if (this.throttleCleanupInterval) {
-      clearInterval(this.throttleCleanupInterval);
-      this.throttleCleanupInterval = null;
-    }
-
-    // Close all client connections
     for (const clientSet of this.clients.values()) {
       for (const client of clientSet) {
-        client.terminate();
+        totalConnections++;
+        if (client.lastActivity > fiveMinutesAgo && client.isAlive) {
+          healthyConnections++;
+        }
       }
     }
-    this.clients.forEach((clientSet) => {
-      clientSet.forEach(ws => {
-        ws.close(1001, 'Server shutting down');
-      });
-    });
 
-    this.clients.clear();
-
-    if (this.wss) {
-      this.wss.close();
-    }
-
-    logger.info('WebSocket server shutdown completed');
+    if (totalConnections === 0) return true;
+    const healthRatio = healthyConnections / totalConnections;
+    return healthRatio >= 0.95;
   }
 
-  private extractToken(info: { req: { url: string } }): string | null {
-    try {
-      const urlParts = info.req.url?.split('?');
-      if (!urlParts || urlParts.length < 2) return null;
-      
-      const params = new URLSearchParams(urlParts[1]);
-      return params.get('token');
-    } catch (e) {
-      logger.error('Failed to extract token:', e);
-      return null;
+  public removeClient(client: WebSocketClient): void {
+    const userClients = this.clients.get(client.userId);
+    if (userClients) {
+      userClients.delete(client);
+      if (userClients.size === 0) {
+        this.clients.delete(client.userId);
+      }
     }
   }
 
-  private handleCustomMessage(ws: WebSocketClient, message: WebSocketMessage): void {
-    logger.debug('Received custom message', { 
-      type: message.type,
-      userId: ws.userId,
-      clientId: ws.clientId
-    });
-    
-    // Echo the message back as an example
-    this.sendToClient(ws, {
-      type: 'message_ack',
-      timestamp: Date.now(),
-      requestId: message.requestId,
-      data: { received: true }
-    });
-  }
+  public getConnectionStats(): {
+    totalConnections: number;
+    activeConnections: number;
+    connectionsByUser: Record<string, number>;
+    averageConnectionTime: number;
+  } {
+    const now = Date.now();
+    const stats = {
+      totalConnections: 0,
+      activeConnections: 0,
+      connectionsByUser: {} as Record<string, number>,
+      averageConnectionTime: 0
+    };
 
-  private handleConnection(ws: WebSocketClient, req: IncomingMessage): void {
-    try {
-      const clientId = this.generateClientId();
-      const authReq: WebSocketAuthenticatedRequest = {
-        userId: '',
-        username: '',
-        sessionId: '',
-        ipAddress: req.socket.remoteAddress || 'unknown',
-        ...req as any
-      };
-      
-      // Initialize client properties
-      ws.clientId = clientId;
-      ws.userId = authReq.userId;
-      ws.username = authReq.username || '';
-      ws.sessionId = authReq.sessionId;
-      ws.ipAddress = authReq.ipAddress || '';
-      ws.isAlive = true;
-      ws.lastActivity = Date.now();
-      ws.messageQueue = [];
-      ws.maxQueueSize = MESSAGE_LIMITS.MAX_QUEUE_SIZE;
-      ws.subscribedChannels = new Set();
-      ws.messageCount = 0;
-      ws.lastMessageTime = Date.now();
+    let totalConnectionTime = 0;
+    let connectionCount = 0;
 
-      // Add client to tracking
-      const userClients = this.clients.get(ws.userId) || new Set<WebSocketClient>();
-      userClients.add(ws);
-      this.clients.set(ws.userId, userClients);
+    for (const [userId, clientSet] of this.clients.entries()) {
+      const userConnectionCount = clientSet.size;
+      stats.connectionsByUser[userId] = userConnectionCount;
+      stats.totalConnections += userConnectionCount;
 
-      logger.info('New WebSocket connection established', { 
-        clientId,
-        userId: ws.userId,
-        username: ws.username,
-        sessionId: ws.sessionId,
-        ipAddress: ws.ipAddress
-      });
-
-      // Setup ping/pong for connection health
-      ws.on('pong', () => {
-        ws.isAlive = true;
-        ws.lastActivity = Date.now();
-      });
-
-      // Handle incoming messages
-      ws.on('message', (data: RawData) => {
-        this.handleMessage(ws, data).catch(error => {
-          logger.error('Error handling WebSocket message:', error);
-        });
-      });
-
-      // Handle connection close
-      ws.on('close', () => {
-        this.handleDisconnect(ws);
-      });
-
-      // Handle errors
-      ws.on('error', (error) => {
-        logger.error('WebSocket error:', error);
-        this.handleDisconnect(ws);
-      });
-
-      // Send welcome message
-      this.sendToClient(ws, {
-        type: WebSocketMessageType.CONNECTED,
-        timestamp: Date.now(),
-        payload: {
-          clientId,
-          userId: ws.userId,
-          message: 'Connection established successfully'
+      for (const client of clientSet) {
+        if (client.isAlive) {
+          stats.activeConnections++;
         }
-      });
-    } catch (error) {
-      logger.error('Error in WebSocket connection handler:', error);
-      ws.terminate();
+
+        const connectionTime = now - client.connectionTime;
+        totalConnectionTime += connectionTime;
+        connectionCount++;
+      }
     }
+
+    if (connectionCount > 0) {
+      stats.averageConnectionTime = totalConnectionTime / connectionCount;
+    }
+
+    return stats;
   }
 
   private sendToUser(userId: string, message: WebSocketMessage): void {
     const userClients = this.clients.get(userId);
     if (userClients) {
       let sentCount = 0;
-      userClients.forEach(ws => {
+      userClients.forEach((ws) => {
         try {
           if (ws.readyState === WebSocket.OPEN) {
             this.sendToClient(ws, message);
@@ -790,7 +434,6 @@ export class WebSocketManager {
           }
         } catch (error) {
           logger.error('Error sending message to client:', {
-            error: error instanceof Error ? error.message : String(error),
             clientId: ws.clientId,
             userId,
             messageType: message.type
@@ -801,27 +444,44 @@ export class WebSocketManager {
       logger.debug('Message sent to user clients', {
         userId,
         messageType: message.type,
-        recipients: sentCount,
+        sentCount,
         totalClients: userClients.size
       });
     }
   }
+
+  public sendEventToUser(userId: string, message: WebSocketMessage): void {
+    this.sendToUser(userId, message);
+  }
+
+  public shutdown(): void {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+
+    if (this.wss) {
+      this.wss.close();
+      this.wss = null;
+    }
+
+    this.clients.clear();
+    logger.info('[WS SERVER] WebSocket server shutdown complete');
+  }
 }
 
-// Create and export a single instance
-const webSocketManager = new WebSocketManager(fileProcessor);
+// Export singleton instance
+const webSocketManager = new WebSocketManager();
 export default webSocketManager;
 
-// Add global error handler for uncaught exceptions
+// Add global error handlers
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught exception in WebSocket manager', {
     error: error instanceof Error ? error.message : String(error),
     stack: error instanceof Error ? error.stack : undefined
   });
-  // Don't exit the process, let the application handle it
 });
 
-// Add global promise rejection handler
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled promise rejection in WebSocket manager', {
     reason,
@@ -829,7 +489,6 @@ process.on('unhandledRejection', (reason, promise) => {
   });
 });
 
-// Add event listeners for process cleanup
 // Handle graceful shutdown
 const shutdown = (signal: string) => {
   logger.info(`${signal} received, cleaning up WebSocket manager...`);

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useBaseWebSocket, WebSocketMessage } from './useBaseWebSocket';
 import logger from '../lib/logger';
 
@@ -90,7 +90,7 @@ class WebSocketMessageRouter {
 export function useWebSocket(options: UseWebSocketOptions = {}) {
   const { enableMessageRouting = true, autoConnect, reconnectAttempts, reconnectInterval } = options;
   const [jobUpdates, setJobUpdates] = useState<Map<string, JobProgress>>(new Map());
-  const routerRef = useRef(WebSocketMessageRouter.getInstance());
+  const [router] = useState(() => WebSocketMessageRouter.getInstance());
   const cleanupRef = useRef<(() => void) | null>(null);
 
   // Handle incoming WebSocket messages
@@ -98,7 +98,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     try {
       // Route message if routing is enabled
       if (enableMessageRouting) {
-        routerRef.current.route(message);
+        router.route(message);
       }
       
       // Handle job-related messages
@@ -140,7 +140,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     } catch (error) {
       logger.error('Error handling WebSocket message', error as Error);
     }
-  }, [enableMessageRouting]);
+  }, [enableMessageRouting, router]);
 
   // Use base WebSocket with authentication
   const base = useBaseWebSocket({
@@ -196,8 +196,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
   // Register message handler for external hooks
   const registerMessageHandler = useCallback((type: string, handler: (message: WebSocketMessage) => void) => {
-    return routerRef.current.register(type, handler);
-  }, []);
+    return router.register(type, handler);
+  }, [router]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -208,6 +208,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       }
     };
   }, []);
+
+  // Memoize router value to avoid ref access during render
+  const routerValue = useMemo(() => router, [router]);
 
   return {
     isConnected: base.isConnected,
@@ -222,7 +225,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     connect: base.connect,
     disconnect: base.disconnect,
     registerMessageHandler,
-    router: routerRef.current
+    router: routerValue
   };
 }
 
