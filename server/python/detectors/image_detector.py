@@ -933,7 +933,8 @@ class ImageDetector:
             processing_time = time.time() - start_time
             result['technical_details']['processing_time_seconds'] = processing_time
             
-            logger.debug(f"Comprehensive image analysis completed in {processing_time:.2f}s")
+            if os.environ.get('PYTHON_ENV') == 'development':
+                logger.debug(f"Comprehensive image analysis completed in {processing_time:.2f}s")
             return result
             
         except Exception as e:

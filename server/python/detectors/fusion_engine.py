@@ -258,9 +258,10 @@ class FusionEngine:
             # Weighted combination
             overall_sync = sum(score * weight for _, score, weight in sync_scores)
 
-            logger.debug(
-                f"Audio-visual sync scores: {[(name, score) for name, score, _ in sync_scores]}"
-            )
+            if os.environ.get('PYTHON_ENV') == 'development':
+                logger.debug(
+                    f"Audio-visual sync scores: {[(name, score) for name, score, _ in sync_scores]}"
+                )
 
             return max(0.0, min(1.0, overall_sync))
 

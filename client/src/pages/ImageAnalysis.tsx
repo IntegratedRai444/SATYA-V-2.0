@@ -100,7 +100,9 @@ const ImageAnalysis = () => {
       setJobId(response.jobId);
       setAnalysisStatus('processing');
     } catch (err) {
-      console.error('Analysis failed:', err);
+      if (import.meta.env.DEV) {
+        console.error('Analysis failed:', err);
+      }
       setError(err instanceof Error ? err.message : 'Failed to analyze image. Please try again.');
       setAnalysisStatus('failed');
     }

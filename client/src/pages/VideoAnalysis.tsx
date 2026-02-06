@@ -121,7 +121,9 @@ export default function VideoAnalysis() {
       setJobId(response.jobId);
       setAnalysisStatus('processing');
     } catch (err) {
-      console.error('Video analysis failed:', err);
+      if (import.meta.env.DEV) {
+        console.error('Video analysis failed:', err);
+      }
       setError(err instanceof Error ? err.message : 'Failed to analyze video. Please try again.');
       setAnalysisStatus('failed');
     }
@@ -135,10 +137,14 @@ export default function VideoAnalysis() {
         {
           onProgress: (progress: number) => {
             // Update progress if needed
-            console.log(`Analysis progress: ${progress}%`);
+            if (import.meta.env.DEV) {
+              console.log(`Analysis progress: ${progress}%`);
+            }
           },
           onStatusChange: (status: string) => {
-            console.log(`Analysis status: ${status}`);
+            if (import.meta.env.DEV) {
+              console.log(`Analysis status: ${status}`);
+            }
           }
         }
       );

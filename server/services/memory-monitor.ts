@@ -1,5 +1,8 @@
 import { logger } from '../config/logger';
 import { cacheManager } from './cache-manager';
+import { setInterval, clearInterval } from 'timers';
+
+type Timer = ReturnType<typeof setInterval>;
 
 interface MemoryStats {
   heapUsed: number;
@@ -14,7 +17,7 @@ interface MemoryStats {
 }
 
 class MemoryMonitor {
-  private monitorInterval: NodeJS.Timeout | null = null;
+  private monitorInterval: Timer | null = null;
   private highMemoryThreshold: number = 1024; // 1GB in MB
   private criticalMemoryThreshold: number = 1536; // 1.5GB in MB
   private lastGCTime: number = Date.now();
@@ -72,13 +75,15 @@ class MemoryMonitor {
   private checkMemory(): void {
     const stats = this.getStats();
     
-    // Log memory stats periodically
-    logger.debug('Memory stats', {
-      heapUsedMB: stats.heapUsedMB,
-      heapTotalMB: stats.heapTotalMB,
-      heapUsagePercent: stats.heapUsagePercent,
-      rssMB: stats.rssMB
-    });
+    // Log memory stats periodically in development
+    if (process.env.NODE_ENV === 'development') {
+      logger.debug('Memory stats', {
+        heapUsedMB: stats.heapUsedMB,
+        heapTotalMB: stats.heapTotalMB,
+        heapUsagePercent: stats.heapUsagePercent,
+        rssMB: stats.rssMB
+      });
+    }
 
     // Check for high memory usage
     if (stats.heapUsedMB > this.criticalMemoryThreshold) {
@@ -110,7 +115,9 @@ class MemoryMonitor {
     
     // Check GC cooldown
     if (now - this.lastGCTime < this.gcCooldown) {
-      logger.debug('Skipping cleanup - in cooldown period');
+      if (process.env.NODE_ENV === 'development') {
+        logger.debug('Skipping cleanup - in cooldown period');
+      }
       return;
     }
 

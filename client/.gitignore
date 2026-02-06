@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+dist/
+
+# Build outputs
+*.tsbuildinfo
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Vite
+.vite/
+
+# Test coverage
+coverage/
+*.lcov
+
+# Temporary files
+*.tmp
+*.temp
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.tar.gz
+*-report.json
+
+# Lock files (optional - uncomment if you want to ignore lock files)
+# package-lock.json
+# yarn.lock

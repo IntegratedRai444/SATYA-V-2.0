@@ -153,9 +153,10 @@ class ProgressTracker:
         # Send update to all listeners
         self._broadcast_update(update)
 
-        logger.debug(
-            f"Progress update for {task_id}: {task['progress']*100:.1f}% - {message}"
-        )
+        if os.environ.get('PYTHON_ENV') == 'development':
+            logger.debug(
+                f"Progress update for {task_id}: {task['progress']*100:.1f}% - {message}"
+            )
 
     def increment_progress(
         self,
@@ -380,7 +381,8 @@ class ProgressTracker:
 
         if task_id in self.active_tasks:
             del self.active_tasks[task_id]
-            logger.debug(f"Cleaned up task: {task_id}")
+            if os.environ.get('PYTHON_ENV') == 'development':
+                logger.debug(f"Cleaned up task: {task_id}")
 
         # Clean up callbacks
         if task_id in self.callbacks:

@@ -103,7 +103,9 @@ export class CacheManager extends EventEmitter {
     this.cache.set(key, entry);
     this.emit('set', key, value);
 
-    logger.debug('Cache set', { key, ttl: actualTTL });
+    if (process.env.NODE_ENV === 'development') {
+      logger.debug('Cache set', { key, ttl: actualTTL });
+    }
   }
 
   /**
@@ -113,7 +115,9 @@ export class CacheManager extends EventEmitter {
     const deleted = this.cache.delete(key);
     if (deleted) {
       this.emit('delete', key);
+      if (process.env.NODE_ENV === 'development') {
       logger.debug('Cache delete', { key });
+    }
     }
     return deleted;
   }
@@ -247,7 +251,9 @@ export class CacheManager extends EventEmitter {
     if (lruKey) {
       this.cache.delete(lruKey);
       this.emit('evict', lruKey);
+      if (process.env.NODE_ENV === 'development') {
       logger.debug('Cache LRU eviction', { key: lruKey });
+    }
     }
   }
 
@@ -277,7 +283,9 @@ export class CacheManager extends EventEmitter {
 
     if (count > 0) {
       this.emit('cleanup', count);
+      if (process.env.NODE_ENV === 'development') {
       logger.debug('Cache cleanup completed', { entriesRemoved: count });
+    }
     }
   }
 
@@ -326,7 +334,7 @@ export class CacheManager extends EventEmitter {
   }
 
   /**
-   * Get entry details (for debugging)
+   * Get entry details (for monitoring)
    */
   getEntry(key: string): CacheEntry | null {
     return this.cache.get(key) || null;

@@ -37,7 +37,9 @@ export default function Settings() {
         .single();
 
       if (error && error.code !== 'PGRST116') {
-        console.error('Error loading user profile:', error);
+        if (import.meta.env.DEV) {
+          console.error('Error loading user profile:', error);
+        }
         return;
       }
 
@@ -70,7 +72,9 @@ export default function Settings() {
         /* eslint-enable @typescript-eslint/no-explicit-any */
 
         if (insertError) {
-          console.error('Error creating user profile:', insertError);
+          if (import.meta.env.DEV) {
+            console.error('Error creating user profile:', insertError);
+          }
         } else {
           setProfileData({
             fullName: newProfile.full_name || '',
@@ -81,7 +85,9 @@ export default function Settings() {
         }
       }
     } catch (error) {
-      console.error('Error in loadUserProfile:', error);
+      if (import.meta.env.DEV) {
+        console.error('Error in loadUserProfile:', error);
+      }
     }
   }, [user]);
 

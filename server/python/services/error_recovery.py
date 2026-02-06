@@ -147,7 +147,8 @@ class ErrorRecoveryManager:
         if service_name in self.circuit_breakers:
             self.circuit_breakers[service_name]['state'] = 'closed'
             self.circuit_breakers[service_name]['failure_count'] = 0
-            logger.debug(f"Circuit breaker reset for {service_name}")
+            if os.environ.get('PYTHON_ENV') == 'development':
+                logger.debug(f"Circuit breaker reset for {service_name}")
     
     async def _attempt_recovery(
         self,

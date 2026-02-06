@@ -5,7 +5,9 @@ import { validateEnvironment } from './lib/config/validate-env';
 try {
   validateEnvironment();
 } catch (error) {
-  console.error('Environment validation failed:', error);
+  if (import.meta.env.DEV) {
+    console.error('Environment validation failed:', error);
+  }
   // Continue anyway for development
 }
 

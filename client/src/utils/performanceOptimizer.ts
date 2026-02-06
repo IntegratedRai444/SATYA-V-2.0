@@ -83,8 +83,8 @@ export class MemoryMonitor {
 
   static logMemoryUsage() {
     const memory = this.getMemoryUsage();
-    if (memory) {
-      // Memory usage logged for debugging
+    if (memory && import.meta.env.DEV) {
+      console.log('Memory usage:', memory);
     }
   }
 }

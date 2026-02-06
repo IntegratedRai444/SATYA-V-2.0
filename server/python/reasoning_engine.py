@@ -189,7 +189,8 @@ class ReasoningEngine:
         )
 
         self.evidence_store[evidence_id] = evidence
-        logger.debug(f"Added evidence {evidence_id} from {source}")
+        if os.environ.get('PYTHON_ENV') == 'development':
+            logger.debug(f"Added evidence {evidence_id} from {source}")
         return evidence_id
 
     def get_evidence(

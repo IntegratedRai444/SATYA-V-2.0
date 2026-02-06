@@ -202,7 +202,8 @@ class AudioPreprocessor:
                 features["hubert_embeddings"] = hubert_outputs.last_hidden_state
                 features["hubert_logits"] = hubert_outputs.logits
             
-            logger.debug("Extracted transformer features successfully")
+            if os.environ.get('PYTHON_ENV') == 'development':
+                logger.debug("Extracted transformer features successfully")
             
         except Exception as e:
             logger.warning(f"Failed to extract transformer features: {e}")

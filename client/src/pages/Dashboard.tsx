@@ -46,7 +46,9 @@ const Dashboard: React.FC = () => {
       await signOut();
       navigate('/login');
     } catch (error) {
-      console.error('Logout failed:', error);
+      if (import.meta.env.DEV) {
+        console.error('Logout failed:', error);
+      }
       // Force redirect even if logout fails
       navigate('/login');
     }
@@ -95,7 +97,9 @@ const Dashboard: React.FC = () => {
   // Handle errors from hooks
   useEffect(() => {
     if (statsQuery.error) {
-      console.error('Stats error:', statsQuery.error);
+      if (import.meta.env.DEV) {
+        console.error('Stats error:', statsQuery.error);
+      }
       setError((prev) => prev || 'Failed to load statistics. Some features may be limited.');
     }
   }, [statsQuery.error]);
@@ -124,7 +128,9 @@ const Dashboard: React.FC = () => {
       // Note: You'll need to implement refresh methods in your hooks
       window.location.reload(); // Simple refresh for now
     } catch (err) {
-      console.error('Refresh failed:', err);
+      if (import.meta.env.DEV) {
+        console.error('Refresh failed:', err);
+      }
       setError('Failed to refresh data. Please try again.');
     } finally {
       setIsRefreshing(false);
@@ -134,7 +140,9 @@ const Dashboard: React.FC = () => {
   // Handle authentication errors
   useEffect(() => {
     if (error?.includes('401') || error?.includes('403')) {
-      console.warn('Authentication error detected, redirecting to login');
+      if (import.meta.env.DEV) {
+        console.warn('Authentication error detected, redirecting to login');
+      }
       logout();
     }
   }, [error, logout]);

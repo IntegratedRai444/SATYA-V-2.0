@@ -126,7 +126,9 @@ class NotificationService {
             try {
                 listener(notifications);
             } catch (error) {
-                console.error('Error in notification listener:', error);
+                if (import.meta.env.DEV) {
+                    console.error('Error in notification listener:', error);
+                }
             }
         });
     }

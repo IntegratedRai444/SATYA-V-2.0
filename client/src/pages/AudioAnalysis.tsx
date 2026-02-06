@@ -107,7 +107,9 @@ export default function AudioAnalysis() {
       setJobId(response.jobId);
       setAnalysisStatus('processing');
     } catch (err) {
-      console.error('Audio analysis failed:', err);
+      if (import.meta.env.DEV) {
+        console.error('Audio analysis failed:', err);
+      }
       setAnalysisState({
         status: 'error',
         result: null,

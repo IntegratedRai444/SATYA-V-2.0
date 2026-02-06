@@ -115,7 +115,9 @@ class JobManager {
     const job = this.runningJobs.get(jobId);
     if (job && (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled')) {
       this.runningJobs.delete(jobId);
+      if (process.env.NODE_ENV === 'development') {
       logger.debug(`Job removed from tracking: ${jobId}`);
+    }
     }
   }
 

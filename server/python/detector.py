@@ -156,11 +156,13 @@ class EnhancedDeepfakeDetector:
                     break
 
             if not selected_model:
-                logger.debug("No real AI models found, using fallback")
+                if os.environ.get('PYTHON_ENV') == 'development':
+                    logger.debug("No real AI models found, using fallback")
                 return self._create_working_ai_result(image, image_buffer)
 
             if not face_cascade_path.exists():
-                logger.debug("Face detection model not found, using basic detection")
+                if os.environ.get('PYTHON_ENV') == 'development':
+                    logger.debug("Face detection model not found, using basic detection")
                 return self._create_working_ai_result(image, image_buffer)
 
             # Load face detector

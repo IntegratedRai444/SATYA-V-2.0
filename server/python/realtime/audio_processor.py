@@ -791,7 +791,8 @@ if __name__ == "__main__":
                 
             elif isinstance(event, VoiceActivityDetected):
                 activity = "Speech" if event.is_speech else "Silence"
-                logger.debug(f"VAD: {activity} detected for {event.duration:.2f}s")
+                if os.environ.get('PYTHON_ENV') == 'development':
+                    logger.debug(f"VAD: {activity} detected for {event.duration:.2f}s")
                 
             elif isinstance(event, ProcessingMetricsUpdate):
                 metrics = event.metrics
@@ -820,8 +821,9 @@ if __name__ == "__main__":
     
     # Register additional event callback (you can have multiple)
     def log_all_events(event: AudioProcessorEvent):
-        """Log all events for debugging."""
-        logger.debug(f"Event: {event.event_type} - {event.to_dict()}")
+        """Log all events for debugging in development."""
+        if os.environ.get('PYTHON_ENV') == 'development':
+            logger.debug(f"Event: {event.event_type} - {event.to_dict()}")
     
     processor.register_event_callback(log_all_events)
     

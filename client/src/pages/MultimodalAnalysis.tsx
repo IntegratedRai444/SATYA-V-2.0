@@ -26,6 +26,7 @@ interface AnalysisStateItem {
   status: 'analyzing' | 'completed' | 'error';
   result?: AnalysisResult;
   error?: string;
+  file?: File;
 }
 
 const MultimodalAnalysis: React.FC = () => {
@@ -44,7 +45,9 @@ const MultimodalAnalysis: React.FC = () => {
       if (result && result.status === 'analyzing') {
         const polling = pollAnalysisResult(jobId, {
           onProgress: (progress: number) => {
-            console.log(`Multimodal analysis progress: ${progress}%`);
+            if (import.meta.env.DEV) {
+              console.log(`Multimodal analysis progress: ${progress}%`);
+            }
           }
         });
         
@@ -69,7 +72,7 @@ const MultimodalAnalysis: React.FC = () => {
                         createdAt: new Date().toISOString(),
                         updatedAt: new Date().toISOString(),
                         fileName: result.filename,
-                        fileSize: 0 // TODO: Calculate actual file size
+                        fileSize: result.file?.size || 0
                       } as AnalysisResult
                     }
                   : r

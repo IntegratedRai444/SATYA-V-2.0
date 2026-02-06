@@ -8,7 +8,9 @@ export const testAuthFlow = async () => {
     const logs: string[] = [];
     const log = (message: string) => {
         logs.push(`[${new Date().toISOString()}] ${message}`);
-        console.log(message);
+        if (import.meta.env.DEV) {
+            console.log(message);
+        }
     };
 
     log('Starting Auth Flow Verification...');

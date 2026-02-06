@@ -124,7 +124,9 @@ class HealthMonitor extends EventEmitter {
     this.emit('healthUpdate', metrics);
 
     const duration = Date.now() - startTime;
-    logger.debug('Health check completed', { duration });
+    if (process.env.NODE_ENV === 'development') {
+      logger.debug('Health check completed', { duration });
+    }
   }
 
   /**

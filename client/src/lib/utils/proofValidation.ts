@@ -66,7 +66,9 @@ export function validateProof(proof: any): { isValid: boolean; error?: string } 
 
     return { isValid: true };
   } catch (error) {
-    console.error('Error validating proof:', error);
+    if (import.meta.env.DEV) {
+      console.error('Error validating proof:', error);
+    }
     return { isValid: false, error: 'Failed to validate proof' };
   }
 }

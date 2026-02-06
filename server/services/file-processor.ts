@@ -2,6 +2,9 @@ import { EventEmitter } from 'events';
 import fs from 'fs/promises';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { setInterval, clearInterval } from 'timers';
+
+type Timer = ReturnType<typeof setInterval>;
 import { logger } from '../config/logger';
 import { circuitBreaker } from '../utils/circuitBreaker';
 
@@ -14,7 +17,7 @@ export interface FileMetadata {
   userId: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   error?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface FileProcessorOptions {
@@ -62,7 +65,7 @@ export class FileProcessor extends EventEmitter {
       processedFiles: this.processedFilesCount
     };
   }
-  private cleanupInterval: NodeJS.Timeout | null = null;
+  private cleanupInterval: Timer | null = null;
 
   constructor(options: Partial<FileProcessorOptions> = {}) {
     super();
@@ -197,7 +200,9 @@ export class FileProcessor extends EventEmitter {
         
         if (stats.mtime < cutoffDate) {
           await fs.unlink(filePath);
+        if (process.env.NODE_ENV === 'development') {
           logger.debug('Cleaned up old file', { filePath, lastModified: stats.mtime });
+        }
         }
       }
     } catch (error) {

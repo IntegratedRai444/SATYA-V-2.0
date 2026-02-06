@@ -10,7 +10,9 @@ import { getAccessToken } from '../lib/auth/getAccessToken';
 const getAuthToken = async (): Promise<string | null> => {
   try {
     const token = await getAccessToken();
-    console.log("WebSocket auth token:", token ? "Bearer [REDACTED]" : "null");
+    if (import.meta.env.DEV) {
+      console.log("WebSocket auth token:", token ? "Bearer [REDACTED]" : "null");
+    }
     return token;
   } catch (error) {
     console.error('Error getting auth token for WebSocket:', error);

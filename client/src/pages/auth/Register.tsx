@@ -76,11 +76,13 @@ export default function Register() {
       setFormErrors({});
       setLoading(true);
 
-      console.log('Attempting registration with:', {
-        username: formData.name,
-        email: formData.email,
-        passwordLength: formData.password.length
-      });
+      if (import.meta.env.DEV) {
+        console.log('Attempting registration with:', {
+          username: formData.name,
+          email: formData.email,
+          passwordLength: formData.password.length
+        });
+      }
 
       // Call real Supabase registration
       await signUp(formData.email, formData.password, { 
@@ -90,12 +92,15 @@ export default function Register() {
       
       // Show success message instead of redirecting
       setRegistrationSuccess(true);
-      console.log('Registration successful - email verification required');
+      if (import.meta.env.DEV) {
+        console.log('Registration successful - email verification required');
+      }
     } catch (err: unknown) {
-      console.error('Registration error details:', {
-        message: err instanceof Error ? err.message : 'Unknown error',
-        response: err && typeof err === 'object' && 'response' in err ? (err as { response?: { status?: number } }).response : undefined,
-        status: err && typeof err === 'object' && 'response' in err ? (err as { response?: { status?: number } }).response?.status : undefined,
+      if (import.meta.env.DEV) {
+        console.error('Registration error details:', {
+          message: err instanceof Error ? err.message : 'Unknown error',
+          response: err && typeof err === 'object' && 'response' in err ? (err as { response?: { status?: number } }).response : undefined,
+          status: err && typeof err === 'object' && 'response' in err ? (err as { response?: { status?: number } }).response?.status : undefined,
         stack: err instanceof Error ? err.stack : undefined
       });
 
@@ -122,9 +127,10 @@ export default function Register() {
       } else {
         setFormErrors({ general: 'An unexpected error occurred during registration' });
       }
-    } finally {
-      setLoading(false);
     }
+  } finally {
+    setLoading(false);
+  }
   };
 
   const renderError = () => {
