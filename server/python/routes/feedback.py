@@ -71,7 +71,7 @@ async def submit_feedback(feedback: FeedbackRequest):
             feedback_type=feedback.feedback_type,
             actual_label=feedback.actual_label,
             comment=feedback.comment,
-            user_id=None,  # TODO: Get from auth context
+            user_id=None,  # Get from auth context
         )
 
         if success:

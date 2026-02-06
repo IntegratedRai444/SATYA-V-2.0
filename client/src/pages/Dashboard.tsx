@@ -84,12 +84,11 @@ const Dashboard: React.FC = () => {
   const statsQuery = useDashboardStats();
   const { isConnected } = useDashboardWebSocket({
     autoConnect: true,
-    onStatsUpdate: (data) => {
-      console.log('Dashboard stats updated:', data);
+    onStatsUpdate: () => {
       setError(null); // Clear error on successful update
     },
-    onActivityUpdate: (data) => {
-      console.log('Dashboard activity updated:', data);
+    onActivityUpdate: () => {
+      // Handle activity updates
     },
   });
 
@@ -183,13 +182,11 @@ const Dashboard: React.FC = () => {
     );
   }
 
-  console.log('🎯 Dashboard component rendering');
-
   return (
-    <div className="max-w-[1400px] mx-auto">
+    <div className="w-full">
       {renderError()}
       {/* Connection Status Badge */}
-      <div className="flex justify-end mb-4">
+      <div className="flex justify-end mb-4 px-6">
         <div
           className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
             isConnected ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
@@ -204,102 +201,103 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Hero Banner Section with Blue Gradient Background */}
-      <div className="relative bg-gradient-to-br from-[#1e3a5f] via-[#1a2f4a] to-[#152238] rounded-2xl p-10 mb-14 overflow-hidden border border-gray-800/30">
-        <div className="grid grid-cols-[1.2fr_320px] gap-16 relative z-10">
-          {/* Left Section - Text Content */}
-          <div className="space-y-5">
-            {/* Badges */}
-            <div className="flex items-center gap-2.5">
-              <Badge className="bg-gradient-to-r from-purple-600 to-blue-600 text-white border-0 px-3.5 py-1.5 text-[11px] font-semibold rounded-md shadow-lg">
-                <Zap className="w-3 h-3 mr-1.5 inline" />
-                New AI Models Released
-              </Badge>
-              <Badge className="bg-transparent text-cyan-400 border border-cyan-500/60 px-3.5 py-1.5 text-[11px] font-semibold rounded-md">
-                Protection
-              </Badge>
+      {/* Hero Banner Section - Full Width */}
+      <div className="px-6 mb-14">
+        <div className="relative bg-gradient-to-br from-[#1e3a5f] via-[#1a2f4a] to-[#152238] rounded-2xl p-10 overflow-hidden border border-gray-800/30">
+          <div className="grid grid-cols-[1.2fr_320px] gap-16 relative z-10">
+            {/* Left Section - Text Content */}
+            <div className="space-y-5">
+              {/* Badges */}
+              <div className="flex items-center gap-2.5">
+                <Badge className="bg-gradient-to-r from-purple-600 to-blue-600 text-white border-0 px-3.5 py-1.5 text-[11px] font-semibold rounded-md shadow-lg">
+                  <Zap className="w-3 h-3 mr-1.5 inline" />
+                  New AI Models Released
+                </Badge>
+                <Badge className="bg-transparent text-cyan-400 border border-cyan-500/60 px-3.5 py-1.5 text-[11px] font-semibold rounded-md">
+                  Protection
+                </Badge>
+              </div>
+
+              {/* Hero Heading */}
+              <h1 className="text-[52px] font-bold leading-[1.1] text-white">
+                Detect <span className="text-cyan-400">deepfakes</span> with the
+                <br />
+                power of SatyaAI
+              </h1>
+
+              {/* Description */}
+              <p className="text-gray-200 text-[16px] leading-relaxed max-w-xl">
+                Our advanced detection system helps you authenticate media with unprecedented
+                accuracy, exposing manipulated content across images, videos, and audio.
+              </p>
+
+              {/* Secondary Text */}
+              <p className="text-gray-400 text-[14px] leading-relaxed max-w-xl">
+                Upload your files for analysis and get detailed authenticity reports instantly.
+              </p>
+
+              {/* CTA Buttons */}
+              <div className="flex items-center gap-3.5 pt-4">
+                <Button className="bg-cyan-500 hover:bg-cyan-600 text-white px-6 py-3 text-[14px] font-semibold rounded-lg shadow-lg shadow-cyan-500/30 transition-all">
+                  <Cloud className="w-4 h-4 mr-2" />
+                  Analyze Media
+                  <span className="ml-2">→</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="border-white/30 text-white hover:bg-white/10 hover:border-white/40 px-6 py-3 text-[14px] font-medium rounded-lg transition-all"
+                >
+                  <HelpCircle className="w-5 h-5" /> 
+                  How It Works
+                </Button>
+              </div>
             </div>
 
-            {/* Hero Heading */}
-            <h1 className="text-[52px] font-bold leading-[1.1] text-white">
-              Detect <span className="text-cyan-400">deepfakes</span> with the
-              <br />
-              power of SatyaAI
-            </h1>
-
-            {/* Description */}
-            <p className="text-gray-200 text-[16px] leading-relaxed max-w-xl">
-              Our advanced detection system helps you authenticate media with unprecedented
-              accuracy, exposing manipulated content across images, videos, and audio.
-            </p>
-
-            {/* Secondary Text */}
-            <p className="text-gray-400 text-[14px] leading-relaxed max-w-xl">
-              Upload your files for analysis and get detailed authenticity reports instantly.
-            </p>
-
-            {/* CTA Buttons */}
-            <div className="flex items-center gap-3.5 pt-4">
-              <Button className="bg-cyan-500 hover:bg-cyan-600 text-white px-6 py-3 text-[14px] font-semibold rounded-lg shadow-lg shadow-cyan-500/30 transition-all">
-                <Cloud className="w-4 h-4 mr-2" />
-                Analyze Media
-                <span className="ml-2">→</span>
-              </Button>
-              <Button
-                variant="outline"
-                className="border-white/30 text-white hover:bg-white/10 hover:border-white/40 px-6 py-3 text-[14px] font-medium rounded-lg transition-all"
-              >
-                <HelpCircle className="w-5 h-5" /> 
-                How It Works
-              </Button>
-            </div>
-          </div>
-
-          {/* Right Section - Minimal Transparent Card */}
-          <div className="relative flex items-start justify-end pt-4">
-            {/* Minimal Transparent Card */}
-            <div className="w-full max-w-[240px]">
-              <div className="flex flex-col items-center text-center space-y-4">
-                {/* Icon - Simple outline */}
-                <div className="w-14 h-14 rounded-lg border border-cyan-500/20 flex items-center justify-center bg-transparent">
-                  <Camera className="w-5 h-5" /> 
-                </div>
-
-                {/* Score Display - Clean & Simple */}
-                <div>
-                  <div className="text-[9px] text-cyan-400/70 uppercase tracking-[0.15em] font-semibold mb-1.5">
-                    AUTHENTICITY SCORE
-                  </div>
-                  <div className="text-5xl font-bold text-cyan-400">75%</div>
-                </div>
-
-                {/* Feature List - Minimal & Clean */}
-                <div className="w-full space-y-2 pt-2">
-                  <div className="flex items-center gap-2.5 px-2 py-1.5">
-                    <div className="w-5 h-5 rounded-md bg-transparent flex items-center justify-center">
-                      <Eye className="w-3.5 h-3.5 text-cyan-400/70" />
-                    </div>
-                    <span className="text-[11px] text-gray-300/80 font-normal">
-                      Real-time Analysis
-                    </span>
+            {/* Right Section - Authenticity Score Card */}
+            <div className="relative flex items-start justify-end pt-4">
+              <div className="w-full max-w-[240px]">
+                <div className="flex flex-col items-center text-center space-y-4">
+                  {/* Icon */}
+                  <div className="w-14 h-14 rounded-lg border border-cyan-500/20 flex items-center justify-center bg-transparent">
+                    <Camera className="w-5 h-5 text-cyan-400" /> 
                   </div>
 
-                  <div className="flex items-center gap-2.5 px-2 py-1.5">
-                    <div className="w-5 h-5 rounded-md bg-transparent flex items-center justify-center">
-                      <Lock className="w-3.5 h-3.5 text-cyan-400/70" />
+                  {/* Score Display */}
+                  <div>
+                    <div className="text-[9px] text-cyan-400/70 uppercase tracking-[0.15em] font-semibold mb-1.5">
+                      AUTHENTICITY SCORE
                     </div>
-                    <span className="text-[11px] text-gray-300/80 font-normal">
-                      Secure Processing
-                    </span>
+                    <div className="text-5xl font-bold text-cyan-400">75%</div>
                   </div>
 
-                  <div className="flex items-center gap-2.5 px-2 py-1.5">
-                    <div className="w-5 h-5 rounded-md bg-transparent flex items-center justify-center">
-                      <Shield className="w-3.5 h-3.5 text-cyan-400/70" />
+                  {/* Feature List */}
+                  <div className="w-full space-y-2 pt-2">
+                    <div className="flex items-center gap-2.5 px-2 py-1.5">
+                      <div className="w-5 h-5 rounded-md bg-transparent flex items-center justify-center">
+                        <Eye className="w-3.5 h-3.5 text-cyan-400/70" />
+                      </div>
+                      <span className="text-[11px] text-gray-300/80 font-normal">
+                        Real-time Analysis
+                      </span>
                     </div>
-                    <span className="text-[11px] text-gray-300/80 font-normal">
-                      Verified Protection
-                    </span>
+
+                    <div className="flex items-center gap-2.5 px-2 py-1.5">
+                      <div className="w-5 h-5 rounded-md bg-transparent flex items-center justify-center">
+                        <Lock className="w-3.5 h-3.5 text-cyan-400/70" />
+                      </div>
+                      <span className="text-[11px] text-gray-300/80 font-normal">
+                        Secure Processing
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2.5 px-2 py-1.5">
+                      <div className="w-5 h-5 rounded-md bg-transparent flex items-center justify-center">
+                        <Shield className="w-3.5 h-3.5 text-cyan-400/70" />
+                      </div>
+                      <span className="text-[11px] text-gray-300/80 font-normal">
+                        Verified Protection
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -309,7 +307,7 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* Detection Tools Section */}
-      <div>
+      <div className="px-6">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h2 className="text-[28px] font-bold text-white mb-2">Deepfake Detection Tools</h2>

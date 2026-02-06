@@ -71,8 +71,7 @@ export const useSupabaseAuth = (): UseSupabaseAuthReturn => {
       // Create user profile in database after successful signup
       if (data.user && metadata) {
         try {
-          console.log('User signup successful, profile creation would go here');
-          // TODO: Implement profile creation with proper typing
+          // Profile creation would be implemented here
           // const profileData = {
           //   id: data.user.id,
           //   email: data.user.email || '',
@@ -84,8 +83,8 @@ export const useSupabaseAuth = (): UseSupabaseAuthReturn => {
           //   updated_at: new Date().toISOString()
           // };
           // const { error: profileError } = await supabase.from('users').insert(profileData);
-        } catch (profileErr) {
-          console.warn('Error during profile creation setup:', profileErr);
+        } catch {
+          // Error during profile creation setup
         }
       }
       

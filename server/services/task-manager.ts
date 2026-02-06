@@ -1,6 +1,5 @@
 import { supabase } from '../config/supabase';
 import { logger } from '../config/logger';
-import { v4 as uuidv4 } from 'uuid';
 
 export interface Task {
   id: string;
@@ -8,7 +7,7 @@ export interface Task {
   updatedAt: Date | null;
   userId: string;
   type: string;
-  status: 'queued' | 'processing' | 'completed' | 'failed';
+  status: 'pending' | 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
   progress: number;
   fileName: string;
   fileSize: number;
@@ -24,7 +23,7 @@ export interface Task {
 
 type UpdateTaskProgressData = {
   progress: number;
-  status: 'queued' | 'processing' | 'completed' | 'failed';
+  status: 'pending' | 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
   startedAt?: Date;
   metadata?: string;
 };
@@ -366,9 +365,8 @@ export class TaskManager {
   /**
    * Delete old completed tasks (cleanup)
    * @param daysOld - Delete tasks older than this many days
-   * @param userId - Optional user ID to limit cleanup to specific user
    */
-  async cleanupOldTasks(daysOld: number = 30, userId?: number): Promise<number> {
+  async cleanupOldTasks(daysOld: number = 30): Promise<number> {
     try {
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - daysOld);

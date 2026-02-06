@@ -439,7 +439,7 @@ router.post(
       req.file.buffer = Buffer.alloc(0);
 
       logger.info(`[SENDING TO PYTHON] Sending image analysis request to Python service`, { correlationId });
-      const result = await pythonBridge.postWithUser('/api/v2/analysis/analyze/image', jsonData, {
+      const result = await pythonBridge.postWithUser('/api/v2/analysis/unified/image', jsonData, {
         id: userId,
         email: req.user?.email || '',
         role: req.user?.role || 'user'
@@ -500,7 +500,7 @@ router.post(
 
         res.json({
           success: true,
-          data: {
+          result: {
             ...result,
             jobId: job.id,
             reportCode: job.report_code
@@ -586,7 +586,7 @@ router.post(
       req.file.buffer = Buffer.alloc(0);
 
       logger.info('[SENDING TO PYTHON] Sending audio analysis request to Python service');
-      const result = await pythonBridge.postWithUser('/api/v2/analysis/analyze/audio', jsonData, {
+      const result = await pythonBridge.postWithUser('/api/v2/analysis/unified/audio', jsonData, {
         id: userId,
         email: req.user?.email || '',
         role: req.user?.role || 'user'
@@ -627,7 +627,7 @@ router.post(
 
         res.json({
           success: true,
-          data: {
+          result: {
             ...result,
             jobId: job.id,
             reportCode: job.report_code
@@ -772,7 +772,7 @@ router.post(
       req.file.buffer = Buffer.alloc(0);
 
       logger.info('[SENDING TO PYTHON] Sending video analysis request to Python service');
-      const result = await pythonBridge.postWithUser('/api/v2/analysis/analyze/video', jsonData, {
+      const result = await pythonBridge.postWithUser('/api/v2/analysis/unified/video', jsonData, {
         id: userId,
         email: req.user?.email || '',
         role: req.user?.role || 'user'
@@ -807,7 +807,7 @@ router.post(
 
         res.json({
           success: true,
-          data: {
+          result: {
             ...result,
             jobId: job.id,
             reportCode: job.report_code
@@ -904,7 +904,7 @@ router.post(
 
         res.json({
           success: true,
-          data: {
+          result: {
             ...result.data,
             jobId: job.id,
             reportCode: job.report_code
@@ -991,7 +991,7 @@ router.post(
 
         res.json({
           success: true,
-          data: {
+          result: {
             ...result.data,
             jobId: job.id,
             reportCode: job.report_code

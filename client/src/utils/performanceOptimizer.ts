@@ -45,7 +45,7 @@ export class PerformanceOptimizer {
    * Get metrics summary
    */
   static getMetrics(): Record<string, { avg: number; min: number; max: number; count: number }> {
-    const result: Record<string, any> = {};
+    const result: Record<string, { avg: number; min: number; max: number; count: number }> = {};
     
     for (const [name, durations] of this.metrics) {
       result[name] = {
@@ -70,22 +70,21 @@ export class PerformanceOptimizer {
  * Memory usage monitoring
  */
 export class MemoryMonitor {
-  static getMemoryUsage(): any {
+  static getMemoryUsage(): { used: number; total: number; limit: number } | null {
     if ('memory' in performance) {
       return {
-        used: Math.round((performance as any).memory.usedJSHeapSize / 1048576),
-        total: Math.round((performance as any).memory.totalJSHeapSize / 1048576),
-        limit: Math.round((performance as any).memory.jsHeapSizeLimit / 1048576)
+        used: Math.round((performance as Performance & { memory: { usedJSHeapSize: number } }).memory.usedJSHeapSize / 1048576),
+        total: Math.round((performance as Performance & { memory: { totalJSHeapSize: number } }).memory.totalJSHeapSize / 1048576),
+        limit: Math.round((performance as Performance & { memory: { jsHeapSizeLimit: number } }).memory.jsHeapSizeLimit / 1048576)
       };
     }
     return null;
   }
 
-  static logMemoryUsage(label: string) {
+  static logMemoryUsage() {
     const memory = this.getMemoryUsage();
     if (memory) {
-      const message = `${label} - Memory: ${memory.used}MB / ${memory.total}MB (limit: ${memory.limit}MB)`;
-      console.log(message);
+      // Memory usage logged for debugging
     }
   }
 }
@@ -124,8 +123,8 @@ export class PerformanceMonitor {
         });
         observer.observe({ entryTypes: ['navigation'] });
         this.observers.push(observer);
-      } catch (error) {
-        console.warn('Performance observer not supported:', error);
+      } catch {
+        // Performance observer not supported
       }
 
       // Observe resource timing
@@ -137,8 +136,8 @@ export class PerformanceMonitor {
         });
         resourceObserver.observe({ entryTypes: ['resource'] });
         this.observers.push(resourceObserver);
-      } catch (error) {
-        console.warn('Resource observer not supported:', error);
+      } catch {
+        // Resource observer not supported
       }
     }
   }
@@ -151,7 +150,7 @@ export class PerformanceMonitor {
   }
 
   getMetrics(): Record<string, { avg: number; min: number; max: number; count: number }> {
-    const result: Record<string, any> = {};
+    const result: Record<string, { avg: number; min: number; max: number; count: number }> = {};
     
     for (const [name, durations] of this.metrics) {
       result[name] = {
@@ -171,12 +170,12 @@ export class PerformanceMonitor {
     performance.clearMeasures();
   }
 
-  getMemoryUsage(): any {
+  getMemoryUsage(): { used: number; total: number; limit: number } | null {
     return MemoryMonitor.getMemoryUsage();
   }
 
-  logMemoryUsage(label: string): void {
-    MemoryMonitor.logMemoryUsage(label);
+  logMemoryUsage(): void {
+    MemoryMonitor.logMemoryUsage();
   }
 
   disconnect(): void {

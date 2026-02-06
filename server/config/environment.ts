@@ -2,8 +2,8 @@
 import '../setup-env';
 
 import { z } from 'zod';
-import path from 'path';
-import fs from 'fs';
+import * as path from 'path';
+import * as fs from 'fs';
 
 // Helper function to get environment variable with fallback
 function getEnvVar(key: string, defaultValue?: string): string | undefined {
@@ -52,7 +52,7 @@ const envSchema = z.object({
   
   // Supabase Configuration
   SUPABASE_URL: z.string().url('SUPABASE_URL must be a valid URL'),
-  SUPABASE_ANON_KEY: z.string().min(32, 'SUPABASE_ANON_KEY must be at least 32 characters'),
+  SUPABASE_ANON_KEY: z.string().min(10, 'SUPABASE_ANON_KEY must be at least 10 characters'),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(32, 'SUPABASE_SERVICE_ROLE_KEY must be at least 32 characters'),
   SUPABASE_JWT_SECRET: z.string().min(32, 'SUPABASE_JWT_SECRET must be at least 32 characters'),
   

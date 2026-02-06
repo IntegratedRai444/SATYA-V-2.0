@@ -2,51 +2,63 @@
 // These types define the database schema structure
 
 export type User = {
-  id: number;
+  id: string; // UUID
   username: string;
-  password: string;
   email: string | null;
   full_name: string | null;
-  api_key: string | null;
-  role: string;
+  avatar_url: string | null;
+  role: 'user' | 'admin' | 'moderator';
+  is_active: boolean;
+  last_login: string | null;
   failed_login_attempts: number;
   last_failed_login: string | null;
-  is_locked: boolean;
-  lockout_until: string | null;
+  locked_until: string | null;
   created_at: string;
   updated_at: string;
-  last_login?: string | null;
+  deleted_at: string | null;
 };
 
-export type Scan = {
-  id: number;
-  user_id: number;
-  filename: string;
-  type: string;
-  result: string;
-  confidence_score: number;
-  detection_details: Record<string, any> | null;
-  metadata: Record<string, any> | null;
+export type Task = {
+  id: string; // UUID
+  user_id: string; // UUID
+  type: 'analysis' | 'batch' | 'cleanup' | 'export';
+  status: 'pending' | 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
+  progress: number; // 0-100
+  file_name: string;
+  file_size: number;
+  file_type: string;
+  file_path: string;
+  report_code: string;
+  result: any; // JSONB
+  error: any; // JSONB
+  started_at: string | null;
+  completed_at: string | null;
   created_at: string;
   updated_at: string;
+  deleted_at: string | null;
+  metadata: Record<string, any>;
 };
 
 export type UserPreferences = {
-  id: number;
-  user_id: number;
-  theme: string;
+  id: string; // UUID
+  user_id: string; // UUID
+  theme: 'light' | 'dark' | 'auto';
   language: string;
-  confidence_threshold: number;
+  confidence_threshold: number; // 0-100
   enable_notifications: boolean;
   auto_analyze: boolean;
-  sensitivity_level: string;
+  sensitivity_level: 'low' | 'medium' | 'high';
+  chat_model: string | null;
+  chat_enabled: boolean;
   created_at: string;
   updated_at: string;
+  deleted_at: string | null;
 };
 
+// Legacy AnalysisJob type (deprecated - use Task instead)
 export type AnalysisJob = {
   id: string;
-  user_id: number;
+  user_id: string; // UUID
   status: string;
   media_type: string;
   file_name: string;
@@ -68,7 +80,7 @@ export type AnalysisJob = {
 export type AnalysisResult = {
   id: string;
   job_id: string;
-  user_id: number;
+  user_id: string; // UUID
   result_type: string;
   confidence_score: number;
   details: Record<string, any> | null;

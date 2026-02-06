@@ -1,9 +1,9 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { Loader2, Upload, Mic, CheckCircle, AlertCircle, FileText, BarChart3 } from 'lucide-react';
+import { Loader2, Upload, Mic, CheckCircle, AlertCircle, FileText, BarChart3, Eye } from 'lucide-react';
 import { useAudioAnalysis } from '../hooks/useApi';
 import { pollAnalysisResult } from '../lib/analysis/pollResult';
 import { AnalysisResult } from '../lib/api/services/analysisService';
-import logger from '../lib/logger';
+import type { AnalysisJobStatus } from '../lib/analysis/pollResult';
 
 export default function AudioAnalysis() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -121,9 +121,17 @@ export default function AudioAnalysis() {
   useEffect(() => {
     let cleanup: (() => void) | null = null;
     if (jobId && analysisStatus === 'processing') {
-      cleanup = pollAnalysisResult(
-        jobId,
-        (job: any) => {
+      const pollResult = pollAnalysisResult(jobId, {
+        onProgress: () => {
+          // Handle progress updates if needed
+        },
+        onStatusChange: () => {
+          // Handle status changes if needed
+        }
+      });
+      
+      pollResult.promise
+        .then((job: AnalysisJobStatus) => {
           if (job.status === 'completed' && job.result) {
             const analysisResult: AnalysisResult = {
               result: {
@@ -138,34 +146,42 @@ export default function AudioAnalysis() {
                   modelVersion: job.result.metrics?.modelVersion || '1.0.0'
                 }
               },
-              key_findings: [
-                job.result.isAuthentic 
-                  ? 'No signs of manipulation detected' 
-                  : 'Potential signs of manipulation found',
-                `Confidence: ${(job.result.confidence * 100).toFixed(1)}%`,
-                'Audio analysis completed successfully'
-              ],
-              case_id: job.id || `CASE_${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
-              analysis_date: new Date().toISOString(),
-              technical_details: {
-                processing_time_seconds: job.result.metrics?.processingTime || 0
-              }
+              id: job.id,
+              type: 'audio',
+              status: 'completed',
+              createdAt: new Date().toISOString(), // Use current time since not provided
+              updatedAt: new Date().toISOString()
             };
-            setAnalysisState({ status: 'success', result: analysisResult, error: null });
+            setAnalysisState({
+              status: 'success',
+              result: analysisResult,
+              error: null
+            });
             setAnalysisStatus('completed');
+          } else if (job.status === 'failed') {
+            setAnalysisState({
+              status: 'error',
+              result: null,
+              error: job.error || 'Analysis failed'
+            });
+            setAnalysisStatus('failed');
           }
-        },
-        (err: any) => {
+        })
+        .catch((err: { message?: string }) => {
           setAnalysisState({
             status: 'error',
             result: null,
-            error: err.message
+            error: err.message || 'Analysis failed'
           });
           setAnalysisStatus('failed');
-        }
-      );
+        });
+      
+      cleanup = pollResult.cancel;
     }
-    return cleanup;
+    
+    return () => {
+      if (cleanup) cleanup();
+    };
   }, [jobId, analysisStatus]);
 
   return (

@@ -15,6 +15,9 @@ STRICT_MODE_CONFIG = {
     "allow_heuristic_fallback": False,  # NO heuristic analysis fallback
     "allow_mock_embeddings": False,  # NO mock embeddings
     "fail_on_model_error": True,  # Fail immediately if models can't load
+    "enable_all_models": True,  # Enable ALL available models
+    "force_gpu_acceleration": False,  # Use GPU if available, fallback to CPU
+    "strict_inference": True,  # Only use real model inference
 }
 
 # Error messages for strict mode

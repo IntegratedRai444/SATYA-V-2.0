@@ -29,7 +29,7 @@ router.get('/stats', dashboardRateLimit, async (req: any, res: Response) => {
     // Get user's analysis statistics (limited to last 1000 for performance)
     const { data: tasks, error: tasksError } = await supabase
       .from('tasks')
-      .select('status, type, created_at, confidence, is_deepfake')
+      .select('status, type, created_at, result')
       .eq('user_id', userId)
       .eq('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -45,13 +45,13 @@ router.get('/stats', dashboardRateLimit, async (req: any, res: Response) => {
 
     // Calculate statistics
     const totalAnalyses = tasks?.length || 0;
-    const deepfakeDetected = tasks?.filter(t => t.is_deepfake === true).length || 0;
-    const realDetected = tasks?.filter(t => t.is_deepfake === false).length || 0;
+    const deepfakeDetected = tasks?.filter(t => (t.result as Record<string, unknown>)?.is_deepfake === true).length || 0;
+    const realDetected = tasks?.filter(t => (t.result as Record<string, unknown>)?.is_deepfake === false).length || 0;
     
     // Calculate average confidence
-    const completedTasks = tasks?.filter(t => t.status === 'completed' && t.confidence) || [];
+    const completedTasks = tasks?.filter(t => t.status === 'completed' && (t.result as Record<string, unknown>)?.confidence) || [];
     const avgConfidence = completedTasks.length > 0 
-      ? completedTasks.reduce((sum, task) => sum + (task.confidence || 0), 0) / completedTasks.length 
+      ? completedTasks.reduce((sum, task) => sum + ((task.result as Record<string, unknown>)?.confidence as number || 0), 0) / completedTasks.length 
       : 0;
 
     // Get last 7 days activity
@@ -79,7 +79,7 @@ router.get('/stats', dashboardRateLimit, async (req: any, res: Response) => {
       totalAnalyses: totalAnalyses,
       authenticMedia: realDetected,
       manipulatedMedia: deepfakeDetected,
-      uncertainScans: 0, // Calculate if needed
+      uncertainAnalyses: 0, // Calculate if needed
       avgConfidence: Math.round(avgConfidence * 100) / 100,
       last_7_days: last7Days
     };
@@ -110,7 +110,7 @@ router.get('/analytics', dashboardRateLimit, async (req: any, res: Response) => 
     // Get user's analysis data
     const { data: tasks, error: tasksError } = await supabase
       .from('tasks')
-      .select('id, type, created_at, confidence, is_deepfake, file_name')
+      .select('id, type, created_at, file_name, result')
       .eq('user_id', userId)
       .eq('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -138,8 +138,8 @@ router.get('/analytics', dashboardRateLimit, async (req: any, res: Response) => 
       id: task.id,
       modality: task.type,
       created_at: task.created_at,
-      confidence: task.confidence || 0,
-      is_deepfake: task.is_deepfake || false,
+      confidence: (task.result as Record<string, unknown>)?.confidence as number || 0,
+      is_deepfake: (task.result as Record<string, unknown>)?.is_deepfake as boolean || false,
       file_name: task.file_name || 'Unknown'
     })) || [];
 

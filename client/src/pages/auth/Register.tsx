@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Eye, EyeOff, Shield, AlertTriangle, Loader2, User, Lock, Mail } from 'lucide-react';
+import { AlertTriangle, Shield } from 'lucide-react';
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
+import AuthLayout from '@/components/auth/AuthLayout';
+import AuthInput from '@/components/auth/AuthInput';
+import AuthButton from '@/components/auth/AuthButton';
 
 export default function Register() {
   const navigate = useNavigate();
@@ -133,197 +133,124 @@ export default function Register() {
     if (!errorMessage) return null;
 
     return (
-      <div className="mb-4">
-        <Alert variant="destructive">
-          <AlertTriangle className="h-4 w-4 mr-2" />
-          <AlertDescription>
-            {errorMessage}
-          </AlertDescription>
-        </Alert>
+      <div className="mb-6 p-3 bg-red-900/20 border border-red-500/30 rounded-lg">
+        <div className="flex items-center text-red-400">
+          <AlertTriangle className="w-4 h-4 mr-2 flex-shrink-0" />
+          <span className="text-sm">{errorMessage}</span>
+        </div>
       </div>
     );
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900">
-      {/* Content */}
-      <div className="w-full max-w-md px-4">
-        {/* Header */}
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-full mb-4">
-            <Shield className="w-8 h-8 text-white" />
+    <AuthLayout 
+      title="Create Account"
+      subtitle="Secure access to advanced deepfake detection and media analysis tools"
+    >
+      {renderError()}
+
+      {/* Success Message */}
+      {registrationSuccess && (
+        <div className="mb-6 p-3 bg-green-900/20 border border-green-500/30 rounded-lg">
+          <div className="flex items-center text-green-400">
+            <Shield className="w-4 h-4 mr-2 flex-shrink-0" />
+            <span className="text-sm">Registration successful! Please check your email to verify your account before logging in.</span>
           </div>
-          <h1 className="text-2xl font-bold text-white mb-1">SatyaAI</h1>
-          <p className="text-blue-300 text-sm">Cyber Intelligence Platform</p>
         </div>
+      )}
 
-        {/* Register Form */}
-        <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-6">
-          <h2 className="text-xl font-semibold text-white text-center mb-6">Secure Registration</h2>
+      {!registrationSuccess && (
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <AuthInput
+            label="Full Name"
+            name="name"
+            type="text"
+            placeholder="Enter your full name"
+            value={formData.name}
+            onChange={handleInputChange}
+            error={formErrors.name}
+            autoComplete="name"
+            icon="name"
+          />
 
-          {renderError()}
+          <AuthInput
+            label="Email Address"
+            name="email"
+            type="email"
+            placeholder="Enter your email"
+            value={formData.email}
+            onChange={handleInputChange}
+            error={formErrors.email}
+            autoComplete="email"
+            icon="email"
+          />
 
-          {/* Success Message */}
-          {registrationSuccess && (
-            <div className="mb-6">
-              <Alert className="bg-green-900/20 border-green-500/50">
-                <Shield className="h-4 w-4 mr-2 text-green-400" />
-                <AlertDescription className="text-green-200">
-                  Registration successful! Please check your email to verify your account before logging in.
-                </AlertDescription>
-              </Alert>
-            </div>
-          )}
+          <AuthInput
+            label="Password"
+            name="password"
+            type="password"
+            placeholder="Create a strong password"
+            value={formData.password}
+            onChange={handleInputChange}
+            error={formErrors.password}
+            autoComplete="new-password"
+            icon="password"
+            showPasswordToggle
+            showPassword={showPassword}
+            onTogglePassword={() => setShowPassword(!showPassword)}
+          />
+          <p className="text-xs text-gray-500 -mt-4 mb-2">
+            Must contain at least 8 characters, including uppercase, lowercase, and numbers
+          </p>
 
-          {!registrationSuccess && (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Full Name */}
-              <div>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <Input
-                    id="name"
-                    name="name"
-                    type="text"
-                    autoComplete="name"
-                    required
-                    value={formData.name}
-                    onChange={handleInputChange}
-                    className="w-full pl-10 pr-4 py-2 bg-gray-700/50 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
-                    placeholder="Full Name"
-                  />
-                </div>
-                {formErrors.name && (
-                  <p className="text-red-400 text-xs mt-1">{formErrors.name}</p>
-                )}
-              </div>
+          <AuthInput
+            label="Confirm Password"
+            name="confirmPassword"
+            type="password"
+            placeholder="Confirm your password"
+            value={formData.confirmPassword}
+            onChange={handleInputChange}
+            error={formErrors.confirmPassword}
+            autoComplete="new-password"
+            icon="password"
+            showPasswordToggle
+            showPassword={showConfirmPassword}
+            onTogglePassword={() => setShowConfirmPassword(!showConfirmPassword)}
+          />
 
-              {/* Email */}
-              <div>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <Input
-                    id="email"
-                    name="email"
-                    type="email"
-                    autoComplete="email"
-                    required
-                    value={formData.email}
-                    onChange={handleInputChange}
-                    className="w-full pl-10 pr-4 py-2 bg-gray-700/50 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
-                    placeholder="Email Address"
-                  />
-                </div>
-                {formErrors.email && (
-                  <p className="text-red-400 text-xs mt-1">{formErrors.email}</p>
-                )}
-              </div>
+          <AuthButton loading={loading}>
+            {loading ? 'Creating account...' : 'Create Account'}
+          </AuthButton>
 
-              {/* Password */}
-              <div>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <Input
-                    id="password"
-                    name="password"
-                    type={showPassword ? 'text' : 'password'}
-                    autoComplete="new-password"
-                    required
-                    value={formData.password}
-                    onChange={handleInputChange}
-                    className="w-full pl-10 pr-10 py-2 bg-gray-700/50 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
-                    placeholder="Password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-                {formErrors.password && (
-                  <p className="text-red-400 text-xs mt-1">{formErrors.password}</p>
-                )}
-                <p className="text-xs text-gray-500 mt-1">
-                  Must contain at least 8 characters, including uppercase, lowercase, and numbers
-                </p>
-              </div>
-
-              {/* Confirm Password */}
-              <div>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <Input
-                    id="confirmPassword"
-                    name="confirmPassword"
-                    type={showConfirmPassword ? 'text' : 'password'}
-                    autoComplete="new-password"
-                    required
-                    value={formData.confirmPassword}
-                    onChange={handleInputChange}
-                    className="w-full pl-10 pr-10 py-2 bg-gray-700/50 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
-                    placeholder="Confirm Password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
-                  >
-                    {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-                {formErrors.confirmPassword && (
-                  <p className="text-red-400 text-xs mt-1">{formErrors.confirmPassword}</p>
-                )}
-              </div>
-
-              {/* Register Button */}
-              <Button
-                type="submit"
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded transition-colors disabled:opacity-50"
-                disabled={loading}
+          <div className="text-center space-y-3 pt-4">
+            <div className="text-blue-400/60 text-sm">
+              Already have an account?{' '}
+              <button
+                type="button"
+                className="text-blue-300 hover:text-blue-200 transition-colors font-medium hover:underline"
+                onClick={(e) => {
+                  e.preventDefault();
+                  navigate('/login');
+                }}
               >
-                {loading ? (
-                  <>
-                    <Loader2 className="animate-spin -ml-1 mr-2 h-4 w-4" />
-                    Creating account...
-                  </>
-                ) : (
-                  'Create Account'
-                )}
-              </Button>
-
-              {/* Links */}
-              <div className="text-center space-y-2 pt-4">
-                <div className="text-sm text-gray-400">
-                  Already have an account?{' '}
-                  <a
-                    href="/dashboard"
-                    className="text-blue-400 hover:text-blue-300 transition-colors"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      navigate('/dashboard');
-                    }}
-                  >
-                    Go to Dashboard
-                  </a>
-                </div>
-              </div>
-            </form>
-          )}
-
-          {/* Footer Note */}
-          <div className="mt-6 space-y-2">
-            <p className="text-center text-gray-500 text-xs">
-              By creating an account, you agree to our Terms of Service and Privacy Policy
-            </p>
-            <p className="text-center text-gray-500 text-xs">
-              Protected by enterprise-grade security
-            </p>
+                Login
+              </button>
+            </div>
           </div>
+        </form>
+      )}
+
+      {/* Footer Note */}
+      {!registrationSuccess && (
+        <div className="mt-6 space-y-2">
+          <p className="text-center text-gray-500/80 text-xs">
+            By creating an account, you agree to our Terms of Service and Privacy Policy
+          </p>
+          <p className="text-center text-gray-500/80 text-xs">
+            Protected by enterprise-grade security
+          </p>
         </div>
-      </div>
-    </div>
+      )}
+    </AuthLayout>
   );
 }

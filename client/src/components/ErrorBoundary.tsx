@@ -1,4 +1,4 @@
-import { Component, ErrorInfo, ReactNode } from 'react';
+import { Component, ReactNode } from 'react';
 
 declare const process: {
   env: {
@@ -26,15 +26,10 @@ class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Frontend Error Boundary caught an error:', error.message);
-    console.error('Error stack:', error.stack);
-    console.error('Component stack:', errorInfo.componentStack);
-
+  componentDidCatch() {
     // In production, you might want to send this to an error reporting service
     if (process.env.NODE_ENV === 'production') {
-      // TODO: Send to error monitoring service (Sentry, etc.)
-      console.error('Production Error:', error, errorInfo);
+      // Send to error monitoring service (Sentry, etc.)
     }
   }
 

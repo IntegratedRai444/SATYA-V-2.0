@@ -110,8 +110,8 @@ const ImageAnalysis = () => {
   useEffect(() => {
     if (jobId && analysisStatus === 'processing') {
       const polling = pollAnalysisResult(jobId, {
-        onProgress: (progress: number) => {
-          console.log(`Analysis progress: ${progress}%`);
+        onProgress: () => {
+          // Update progress if needed
         }
       });
       

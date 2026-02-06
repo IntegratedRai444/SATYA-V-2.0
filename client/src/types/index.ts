@@ -5,7 +5,7 @@ export interface AuthResponse {
     message: string;
     token?: string;
     user?: {
-        id: number;
+        id: string;
         username: string;
         email?: string;
         fullName?: string;
@@ -15,11 +15,11 @@ export interface AuthResponse {
 }
 
 export interface User {
-    id: number;
+    id: string;
     username: string;
     email: string;
     fullName?: string;
-    role: string;
+    role: 'user' | 'admin' | 'moderator';
     createdAt?: string;
 }
 
@@ -45,5 +45,5 @@ export interface AnalysisResult {
     result: 'authentic' | 'manipulated' | 'uncertain';
     confidence: number;
     timestamp: string;
-    details?: Record<string, any>;
+    details?: Record<string, unknown>;
 }

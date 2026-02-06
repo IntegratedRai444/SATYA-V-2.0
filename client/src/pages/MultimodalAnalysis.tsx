@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import logger from '../lib/logger';
 import {
   Upload,
@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import { useMultimodalAnalysis } from '../hooks/useApi';
 import { AnalysisResult } from '../hooks/useApi';
+import { pollAnalysisResult } from '../lib/analysis/pollResult';
+import type { AnalysisJobStatus } from '../lib/analysis/pollResult';
 
 interface AnalysisStateItem {
   id: string;
@@ -30,9 +32,69 @@ const MultimodalAnalysis: React.FC = () => {
   const [activeMode, setActiveMode] = useState<'single' | 'multimodal'>('single');
   const [selectedType, setSelectedType] = useState<'image' | 'video' | 'audio'>('image');
   const [results, setResults] = useState<AnalysisStateItem[]>([]);
+  const [jobIds, setJobIds] = useState<Record<string, string>>({});
   
   // Use the proper hook for multimodal analysis
   const { analyzeMultimodal, isAnalyzing } = useMultimodalAnalysis();
+
+  // Poll for results when jobIds are available
+  useEffect(() => {
+    Object.entries(jobIds).forEach(([resultId, jobId]) => {
+      const result = results.find(r => r.id === resultId);
+      if (result && result.status === 'analyzing') {
+        const polling = pollAnalysisResult(jobId, {
+          onProgress: (progress: number) => {
+            console.log(`Multimodal analysis progress: ${progress}%`);
+          }
+        });
+        
+        polling.promise
+          .then((job: AnalysisJobStatus) => {
+            if (job.status === 'completed' && job.result) {
+              setResults(prev => prev.map(r =>
+                r.id === resultId
+                  ? { 
+                      ...r, 
+                      status: 'completed', 
+                      result: {
+                        id: job.id,
+                        type: 'multimodal',
+                        status: 'completed',
+                        result: {
+                          isAuthentic: job.result?.isAuthentic ?? false,
+                          confidence: job.result?.confidence ?? 0,
+                          details: job.result?.details ?? {},
+                          metrics: job.result?.metrics ?? { processingTime: 0, modelVersion: '1.0.0' }
+                        },
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString(),
+                        fileName: result.filename,
+                        fileSize: 0 // TODO: Calculate actual file size
+                      } as AnalysisResult
+                    }
+                  : r
+              ));
+              
+              // Clean up job ID after completion
+              setJobIds(prev => {
+                const newJobIds = { ...prev };
+                delete newJobIds[resultId];
+                return newJobIds;
+              });
+            }
+          })
+          .catch((err: { message?: string }) => {
+            setResults(prev => prev.map(r =>
+              r.id === resultId
+                ? { ...r, status: 'error', error: err.message || 'Analysis failed' }
+                : r
+            ));
+          });
+        
+        return polling.cancel;
+      }
+    });
+  }, [jobIds, results]);
   
   // Webcam feature temporarily disabled
 
@@ -58,13 +120,12 @@ const MultimodalAnalysis: React.FC = () => {
       // Use the hook for analysis
       const response = await analyzeMultimodal({ files: filesArray });
 
-      setResults(prev => prev.map(r =>
-        r.id === resultId
-          ? { ...r, status: 'completed', result: { jobId: response.jobId, result: { isAuthentic: true, confidence: 100, details: 'Analysis complete' } } as unknown as AnalysisResult }
-          : r
-      ));
+      // Store job ID for polling
+      if (response?.jobId) {
+        setJobIds(prev => ({ ...prev, [resultId]: response.jobId }));
+      }
       
-      logger.info('Multimodal analysis completed successfully', {
+      logger.info('Multimodal analysis started successfully', {
         jobId: response.jobId
       });
       
@@ -102,11 +163,14 @@ const MultimodalAnalysis: React.FC = () => {
       // Use the hook for analysis
       const response = await analyzeMultimodal({ files: filesArray });
 
-      setResults(prev => prev.map(r =>
-        r.id === resultId
-          ? { ...r, status: 'completed', result: { jobId: response.jobId, result: { isAuthentic: true, confidence: 100, details: 'Analysis complete' } } as unknown as AnalysisResult }
-          : r
-      ));
+      // Store job ID for polling
+      if (response?.jobId) {
+        setJobIds(prev => ({ ...prev, [resultId]: response.jobId }));
+      }
+      
+      logger.info('Multimodal analysis started successfully', {
+        jobId: response.jobId
+      });
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       setResults(prev => prev.map(r =>
@@ -141,12 +205,20 @@ const MultimodalAnalysis: React.FC = () => {
             <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl flex items-center justify-center">
               <Brain className="w-6 h-6 text-white" />
             </div>
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-              Multimodal Analysis
-            </h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                Multimodal Analysis
+              </h1>
+              <span className="bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 px-3 py-1 text-xs font-semibold rounded-md">
+                EXPERIMENTAL
+              </span>
+            </div>
           </div>
           <p className="text-gray-400 text-lg max-w-2xl mx-auto">
             Advanced AI-powered deepfake detection with single-file, multimodal, and real-time analysis capabilities
+          </p>
+          <p className="text-yellow-400/60 text-sm mt-2">
+            This feature is experimental and may not provide accurate results. Use with caution.
           </p>
         </div>
 

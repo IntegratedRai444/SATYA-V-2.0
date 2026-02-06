@@ -53,7 +53,7 @@ export interface AnalysisResult {
 
 export interface JobStartResponse {
   success: boolean;
-  jobId: string;
+  reportCode: string; // Changed from jobId to match backend
 }
 
 export interface AnalysisProof {
@@ -98,11 +98,11 @@ export class AnalysisService extends BaseService {
         timeout: 360000, // 6 minutes timeout
       });
 
-      if (!response.success || !response.jobId) {
+      if (!response.success || !response.reportCode) {
         throw new Error('Failed to start analysis job');
       }
 
-      return response.jobId; // IMPORTANT: return jobId, not result
+      return response.reportCode; // IMPORTANT: return reportCode, not result
     } catch (error) {
       console.error('Image analysis failed:', error);
       
@@ -146,11 +146,11 @@ export class AnalysisService extends BaseService {
         timeout: 360000, // 6 minutes timeout
       });
 
-      if (!response.success || !response.jobId) {
+      if (!response.success || !response.reportCode) {
         throw new Error('Failed to start analysis job');
       }
 
-      return response.jobId;
+      return response.reportCode;
     } catch (error) {
       console.error('Video analysis error:', error);
       throw new Error('Failed to start video analysis');
@@ -173,11 +173,11 @@ export class AnalysisService extends BaseService {
         timeout: 360000, // 6 minutes timeout
       });
 
-      if (!response.success || !response.jobId) {
+      if (!response.success || !response.reportCode) {
         throw new Error('Failed to start analysis job');
       }
 
-      return response.jobId;
+      return response.reportCode;
     } catch (error) {
       console.error('Audio analysis error:', error);
       throw new Error('Failed to start audio analysis');
@@ -207,11 +207,11 @@ export class AnalysisService extends BaseService {
         timeout: 360000, // 6 minutes timeout
       });
 
-      if (!response.success || !response.jobId) {
+      if (!response.success || !response.reportCode) {
         throw new Error('Failed to start analysis job');
       }
 
-      return response.jobId;
+      return response.reportCode;
     } catch (error) {
       console.error('Multimodal analysis error:', error);
       throw new Error('Failed to start multimodal analysis');

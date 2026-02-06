@@ -8,8 +8,10 @@ import { notificationsRouter } from './notifications';
 import { userRouter } from './user';
 import { resultsRouter } from './results.routes';
 import { modelsRouter } from './models.routes';
+import { websocketRouter } from './websocket';
 import { createApiError } from '../middleware/api-version';
 import { authenticate } from '../middleware/auth.middleware';
+import { authRouter } from './auth';
 
 const router = Router();
 
@@ -19,6 +21,8 @@ router.use('/health', healthRouter);
 // API v2 Routes
 const v2Router = Router();
 
+// Auth routes (PUBLIC - for login, register, etc.)
+v2Router.use('/auth', authRouter);
 
 // Dashboard routes (PROTECTED)
 v2Router.use('/dashboard', authenticate, dashboardRouter);
@@ -48,6 +52,9 @@ v2Router.use('/results', authenticate, resultsRouter);
 
 // Models routes (PUBLIC - for model info)
 v2Router.use('/models', modelsRouter);
+
+// WebSocket routes (PUBLIC - for upgrade)
+v2Router.use('/dashboard/ws', websocketRouter);
 
 // Versioned API routes
 router.use('/', v2Router);

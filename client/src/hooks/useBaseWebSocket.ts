@@ -141,7 +141,10 @@ export function useBaseWebSocket(options: BaseWebSocketOptions = {}) {
                         ws.onmessage = (event: MessageEvent) => {
                             try {
                                 const data = JSON.parse(event.data);
-                                handleMessage(data);
+                                handleMessage({
+                                    ...data,
+                                    timestamp: data.timestamp || new Date().toISOString()
+                                });
                             } catch (error) {
                                 logger.error('Failed to parse WebSocket message', error instanceof Error ? error : new Error(String(error)), { 
                                     data: event.data 
@@ -189,7 +192,10 @@ export function useBaseWebSocket(options: BaseWebSocketOptions = {}) {
                                                     ws.onmessage = (event: MessageEvent) => {
                                                         try {
                                                             const data = JSON.parse(event.data);
-                                                            handleMessage(data);
+                                                            handleMessage({
+                                                                ...data,
+                                                                timestamp: data.timestamp || new Date().toISOString()
+                                                            });
                                                         } catch (error) {
                                                             logger.error('Failed to parse WebSocket message', error instanceof Error ? error : new Error(String(error)), { 
                                                                 data: event.data 
@@ -277,7 +283,10 @@ export function useBaseWebSocket(options: BaseWebSocketOptions = {}) {
             ws.onmessage = (event: MessageEvent) => {
                 try {
                     const data = JSON.parse(event.data);
-                    handleMessage(data);
+                    handleMessage({
+                        ...data,
+                        timestamp: data.timestamp || new Date().toISOString()
+                    });
                 } catch (error) {
                     logger.error('Failed to parse WebSocket message', error instanceof Error ? error : new Error(String(error)));
                 }

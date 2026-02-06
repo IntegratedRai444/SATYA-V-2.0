@@ -111,6 +111,9 @@ CREATE TABLE IF NOT EXISTS public.users (
   role public.user_role NOT NULL DEFAULT 'user',
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   last_login TIMESTAMPTZ,
+  failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+  last_failed_login TIMESTAMPTZ,
+  locked_until TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   deleted_at TIMESTAMPTZ,
@@ -270,6 +273,46 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
   changes JSONB,
   ip_address INET,
   user_agent TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ============================================================
+-- AUTH SESSIONS TABLE
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.auth_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  refresh_token_hash TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  revoked_at TIMESTAMPTZ,
+  last_used_at TIMESTAMPTZ,
+  last_used_ip INET,
+  deleted_at TIMESTAMPTZ
+);
+
+-- ============================================================
+-- PASSWORD RESET TOKENS TABLE  
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.password_reset_tokens (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  token_hash TEXT NOT NULL UNIQUE,
+  email TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  used_at TIMESTAMPTZ,
+  deleted_at TIMESTAMPTZ
+);
+
+-- ============================================================
+-- LOGIN ATTEMPTS TABLE
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.login_attempts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT NOT NULL,
+  ip_address INET,
+  user_agent TEXT,
+  status TEXT NOT NULL CHECK (status IN ('success', 'failed')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -482,6 +525,9 @@ ALTER TABLE public.batch_jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.api_keys ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.auth_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.password_reset_tokens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.login_attempts ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================
 -- RLS POLICIES
@@ -638,6 +684,50 @@ USING (user_id = auth.uid());
 DROP POLICY IF EXISTS "Service role can manage all audit logs" ON public.audit_logs;
 CREATE POLICY "Service role can manage all audit logs"
 ON public.audit_logs FOR ALL TO service_role
+USING (true)
+WITH CHECK (true);
+
+-- AUTH SESSIONS
+DROP POLICY IF EXISTS "Users can view their own sessions" ON public.auth_sessions;
+CREATE POLICY "Users can view their own sessions"
+ON public.auth_sessions FOR SELECT
+USING (user_id = auth.uid() AND revoked_at IS NULL AND deleted_at IS NULL);
+
+DROP POLICY IF EXISTS "Service role can manage all auth sessions" ON public.auth_sessions;
+CREATE POLICY "Service role can manage all auth sessions"
+ON public.auth_sessions FOR ALL TO service_role
+USING (true)
+WITH CHECK (true);
+
+-- PASSWORD RESET TOKENS
+DROP POLICY IF EXISTS "Users can view their own reset tokens" ON public.password_reset_tokens;
+CREATE POLICY "Users can view their own reset tokens"
+ON public.password_reset_tokens FOR SELECT
+USING (email = (
+  SELECT email FROM public.users 
+  WHERE id = auth.uid() AND deleted_at IS NULL
+) AND used_at IS NULL AND deleted_at IS NULL);
+
+DROP POLICY IF EXISTS "Service role can manage all reset tokens" ON public.password_reset_tokens;
+CREATE POLICY "Service role can manage all reset tokens"
+ON public.password_reset_tokens FOR ALL TO service_role
+USING (true)
+WITH CHECK (true);
+
+-- LOGIN ATTEMPTS
+DROP POLICY IF EXISTS "Admins can view all login attempts" ON public.login_attempts;
+CREATE POLICY "Admins can view all login attempts"
+ON public.login_attempts FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1 FROM public.users 
+    WHERE id = auth.uid() AND role = 'admin' AND deleted_at IS NULL
+  )
+);
+
+DROP POLICY IF EXISTS "Service role can manage all login attempts" ON public.login_attempts;
+CREATE POLICY "Service role can manage all login attempts"
+ON public.login_attempts FOR ALL TO service_role
 USING (true)
 WITH CHECK (true);
 

@@ -211,7 +211,8 @@ export const refreshTokenLimiter = async (req: ExpressRequest, res: Response, ne
 export const speedLimiter = slowDown({
   windowMs: 5 * 60 * 1000, // 5 minutes
   delayAfter: 3, // Allow 3 requests per 5 minutes, then...
-  delayMs: 1000 // Add 1 second of delay per request above delayAfter
+  delayMs: () => 1000, // Add 1 second of delay per request above delayAfter
+  validate: { delayMs: false } // Disable validation warning
 });
 
 // Token validation schema (kept for potential future use)

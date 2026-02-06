@@ -34,9 +34,9 @@ export class ApiKeyService {
   }
 
   /**
-   * Get user by API key
+   * Get user by API key with security enforcement
    */
-  static async getUserByApiKey(apiKey: string): Promise<{ id: string; email: string | null; role: string; apiKey: string | null } | null> {
+  static async getUserByApiKey(apiKey: string, ipAddress?: string): Promise<{ id: string; email: string | null; role: string; apiKey: string | null } | null> {
     try {
       const hashedKey = this.hashKey(apiKey);
       
@@ -48,17 +48,61 @@ export class ApiKeyService {
             id,
             email,
             role
-          )
+          ),
+          expires_at,
+          rate_limit_per_minute,
+          last_used_at,
+          last_used_ip
         `)
         .eq('key_hash', hashedKey)
         .eq('is_active', true)
         .is('deleted_at', null)
-        .single() as { data: { user_id: string; users: { id: string; email: string | null; role: string } } | null; error: { message: string } | null };
+        .single() as { data: { 
+          user_id: string; 
+          users: { id: string; email: string | null; role: string };
+          expires_at: string | null;
+          rate_limit_per_minute: number;
+          last_used_at: string | null;
+          last_used_ip: string | null;
+        } | null; 
+        error: { message: string } | null };
 
       if (error || !result) {
         logger.warn('API key lookup failed', { error: error?.message });
         return null;
       }
+
+      // Check if API key has expired
+      if (result.expires_at && new Date() > new Date(result.expires_at)) {
+        logger.warn('API key expired', { userId: result.users.id, expiresAt: result.expires_at });
+        return null;
+      }
+
+      // Check rate limiting (simple implementation - in production, use Redis)
+      const now = new Date();
+      const oneMinuteAgo = new Date(now.getTime() - 60 * 1000);
+      
+      if (result.last_used_at && new Date(result.last_used_at) > oneMinuteAgo) {
+        // This is a simplified rate limit check
+        // In production, you'd want to track actual request count per minute
+        if (result.rate_limit_per_minute <= 1) {
+          logger.warn('API key rate limit exceeded', { 
+            userId: result.users.id, 
+            rateLimit: result.rate_limit_per_minute 
+          });
+          return null;
+        }
+      }
+
+      // Update usage tracking
+      await supabase
+        .from('api_keys')
+        .update({
+          last_used_at: now.toISOString(),
+          last_used_ip: ipAddress || 'unknown'
+        })
+        .eq('user_id', result.users.id)
+        .eq('key_hash', hashedKey);
       
       return {
         id: result.users.id,

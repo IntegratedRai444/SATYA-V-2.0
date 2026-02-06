@@ -1,7 +1,5 @@
-import type { RequestHandler, Request } from 'express';
-import { RateLimiterMemory, RateLimiterRedis, IRateLimiterOptions, RateLimiterRes } from 'rate-limiter-flexible';
-import { createClient } from 'redis';
-import { errorResponse } from '../utils/apiResponse';
+import type { Request, Response, NextFunction } from 'express';
+import { RateLimiterMemory, RateLimiterRes } from 'rate-limiter-flexible';
 import { logger } from '../config/logger';
 
 type RateLimiterType = 'general' | 'auth' | 'sensitive' | 'api';
@@ -13,7 +11,12 @@ const getEnvNumber = (key: string, defaultValue: number): number => {
   return value ? parseInt(value, 10) : defaultValue;
 };
 
-const rateLimiterOptions: Record<RateLimiterType, IRateLimiterOptions> = {
+const rateLimiterOptions: Record<RateLimiterType, {
+  points?: number;
+  duration?: number;
+  blockDuration?: number;
+  keyPrefix?: string;
+}> = {
   // General API rate limiting
   general: {
     points: getEnvNumber('RATE_LIMIT_GENERAL_POINTS', 1000),
@@ -47,32 +50,6 @@ const rateLimiterOptions: Record<RateLimiterType, IRateLimiterOptions> = {
   },
 };
 
-// Redis client for distributed rate limiting
-let redisClient: ReturnType<typeof createClient> | null = null;
-
-// Initialize Redis client
-const initializeRedis = async () => {
-  if (process.env.REDIS_URL && !redisClient) {
-    try {
-      redisClient = createClient({
-        url: process.env.REDIS_URL,
-        socket: {
-          reconnectStrategy: (retries) => Math.min(retries * 100, 5000)
-        }
-      });
-      
-      await redisClient.connect();
-      logger.info('Redis client connected for rate limiting');
-    } catch (error) {
-      logger.error('Failed to connect Redis for rate limiting:', error);
-      redisClient = null;
-    }
-  }
-};
-
-// Initialize Redis on startup
-initializeRedis();
-
 // Create rate limiters for different scopes
 const createLimiters = (type: RateLimiterType) => {
   const options = rateLimiterOptions[type];
@@ -83,42 +60,18 @@ const createLimiters = (type: RateLimiterType) => {
     keyPrefix: options.keyPrefix,
   };
 
-  // Use Redis if available, otherwise fall back to memory
-  const store = redisClient ? new RateLimiterRedis({
-    redis: redisClient,
-    sendCommand: (...args: unknown[]) => (redisClient as any).sendCommand(...args),
-  }) : null;
-
   return {
-    ip: store ? new RateLimiterRedis({
-      ...baseConfig,
-      points,
-      keyPrefix: `${options.keyPrefix}_ip`,
-      redis: redisClient,
-      sendCommand: (...args: unknown[]) => (redisClient as any).sendCommand(...args),
-    }) : new RateLimiterMemory({
+    ip: new RateLimiterMemory({
       ...baseConfig,
       points,
       keyPrefix: `${options.keyPrefix}_ip`,
     }),
-    user: store ? new RateLimiterRedis({
-      ...baseConfig,
-      points,
-      keyPrefix: `${options.keyPrefix}_user`,
-      redis: redisClient,
-      sendCommand: (...args: unknown[]) => (redisClient as any).sendCommand(...args),
-    }) : new RateLimiterMemory({
+    user: new RateLimiterMemory({
       ...baseConfig,
       points,
       keyPrefix: `${options.keyPrefix}_user`,
     }),
-    global: store ? new RateLimiterRedis({
-      ...baseConfig,
-      points: points * 5,
-      keyPrefix: `${options.keyPrefix}_global`,
-      redis: redisClient,
-      sendCommand: (...args: unknown[]) => (redisClient as any).sendCommand(...args),
-    }) : new RateLimiterMemory({
+    global: new RateLimiterMemory({
       ...baseConfig,
       points: points * 5,
       keyPrefix: `${options.keyPrefix}_global`,
@@ -148,8 +101,8 @@ const getClientIp = (req: Request): string => {
 };
 
 // Rate limiter middleware with IP and user-based limiting
-export const rateLimiter = (type: RateLimiterType = 'general'): RequestHandler => {
-  return async (req, res, next) => {
+export const rateLimiter = (type: RateLimiterType = 'general') => {
+  return async (req: Request, res: Response, next: NextFunction) => {
     const clientIp = getClientIp(req);
     const userId = req.user?.id?.toString() || 'anonymous';
     
@@ -204,15 +157,11 @@ export const rateLimiter = (type: RateLimiterType = 'general'): RequestHandler =
         retryAfter,
       });
       
-      return errorResponse(
-        res,
-        {
-          code: 'RATE_LIMIT_EXCEEDED',
-          message: 'Too many requests, please try again later',
-          retryAfter,
-        },
-        429
-      );
+      return res.status(429).json({
+        code: 'RATE_LIMIT_EXCEEDED',
+        message: 'Too many requests, please try again later',
+        retryAfter,
+      });
     }
   };
 };
@@ -223,7 +172,7 @@ export const sensitiveRateLimiter = rateLimiter('sensitive');
 export const apiRateLimiter = rateLimiter('api');
 
 // Apply rate limiting based on route
-export const routeRateLimiter: RequestHandler = (req, res, next) => {
+export const routeRateLimiter = (req: Request, res: Response, next: NextFunction) => {
   // Apply different rate limits based on route
   if (req.path.startsWith('/api/auth')) {
     return authRateLimiter(req, res, next);

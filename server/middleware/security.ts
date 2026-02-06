@@ -176,7 +176,7 @@ export const apiKeyAuth = (requiredRoles: string[] = []) => {
         });
       }
 
-      const user = await ApiKeyService.getUserByApiKey(apiKey);
+      const user = await ApiKeyService.getUserByApiKey(apiKey, req.ip);
       
       if (!user) {
         return res.status(401).json({

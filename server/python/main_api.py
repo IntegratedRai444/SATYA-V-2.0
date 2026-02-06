@@ -14,8 +14,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-# Load environment variables from root .env file
-load_dotenv('../../.env')
+# Load environment variables from local .env file first, then root
+load_dotenv()  # Load from server/python/.env
+load_dotenv('../../.env')  # Load from root .env
 
 # Force enable ML models for development
 os.environ['ENABLE_ML_MODELS'] = 'true'
@@ -118,6 +119,15 @@ except ImportError as e:
 # Import ML services
 # Force enable ML models for development
 ENABLE_ML_MODELS = True
+ENABLE_ADVANCED_MODELS = True
+ENABLE_ML_OPTIMIZATION = True
+STRICT_MODE_ENABLED = True
+
+# Force enable all ML models via environment
+os.environ['ENABLE_ML_MODELS'] = 'true'
+os.environ['ENABLE_ADVANCED_MODELS'] = 'true'
+os.environ['ENABLE_ML_OPTIMIZATION'] = 'true'
+os.environ['STRICT_MODE_ENABLED'] = 'true'
 
 # Initialize ML_AVAILABLE flag
 ML_AVAILABLE = False

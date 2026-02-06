@@ -87,11 +87,9 @@ export class ApiError extends Error {
 }
 
 // Extend Express Response type
-declare global {
-  namespace Express {
-    interface Response {
-      requestId?: string;
-    }
+declare module 'express' {
+  interface Response {
+    requestId?: string;
   }
 }
 
@@ -223,9 +221,6 @@ export const serverError = (
   const errorMessage = typeof error === 'string' ? error : error.message;
   const errorStack = typeof error === 'string' ? undefined : error.stack;
   
-  // Log the error for debugging
-  console.error('Server Error:', error);
-
   const errorDetails: Record<string, unknown> = {
     code: 'INTERNAL_SERVER_ERROR',
     message: 'An unexpected error occurred',

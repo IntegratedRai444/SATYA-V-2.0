@@ -50,6 +50,7 @@ import { enhancedAuditLogger } from './middleware/audit-logger';
 
 // Import routes
 import { router as apiRouter } from './routes/index';
+import { websocketRouter } from './routes/websocket';
 import { versionMiddleware } from './middleware/api-version';
 import { features } from './config/features';
 
@@ -513,6 +514,9 @@ app.use(versionMiddleware as any);
 
 // API routes
 app.use('/api/v2', apiRouter);
+
+// WebSocket routes
+app.use('/', websocketRouter);
 
 // 404 Handler for undefined routes
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

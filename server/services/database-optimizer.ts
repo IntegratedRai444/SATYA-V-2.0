@@ -1,46 +1,36 @@
 import { supabase } from '../config/supabase';
 import { logger } from '../config/logger';
 
+// Import Node.js timer functions
+import { setInterval, clearInterval } from 'timers';
+
+// Define timer type
+type Timer = ReturnType<typeof setInterval>;
+
 interface User {
   id: string;
   username: string;
   email: string | null;
   full_name: string | null;
-  api_key: string | null;
   role: string;
-  failed_login_attempts: number;
-  last_failed_login: string | null;
-  is_locked: boolean;
-  lockout_until: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-interface Scan {
-  id: string;
-  user_id: string | null;
-  filename: string;
-  type: string;
-  result: string;
-  confidence_score: number;
-  detection_details: string | null;
-  metadata: string | null;
+  is_active: boolean;
+  last_login: string | null;
   created_at: string;
   updated_at: string;
 }
 
 interface QueryCache {
   key: string;
-  data: any;
+  data: unknown;
   timestamp: number;
   ttl: number;
 }
 
 interface DatabaseStats {
   totalUsers: number;
-  totalScans: number;
+  totalTasks: number;
   activeUsers: number;
-  recentScans: number;
+  recentTasks: number;
   databaseSize: number;
   queryPerformance: {
     averageQueryTime: number;
@@ -51,7 +41,7 @@ interface DatabaseStats {
 class DatabaseOptimizer {
   private queryCache: Map<string, QueryCache> = new Map();
   private queryTimes: number[] = [];
-  private cleanupInterval: NodeJS.Timeout | null = null;
+  private cleanupInterval: Timer | null = null;
   private readonly maxCacheSize = 1000;
   private readonly defaultTTL = 5 * 60 * 1000; // 5 minutes
   private readonly slowQueryThreshold = 1000; // 1 second
@@ -132,7 +122,7 @@ class DatabaseOptimizer {
   /**
    * Set value in cache
    */
-  private setCache(key: string, data: any, ttl: number = this.defaultTTL): void {
+  private setCache(key: string, data: unknown, ttl: number = this.defaultTTL): void {
     if (this.queryCache.size >= this.maxCacheSize) {
       // Remove the first (oldest) entry to make space
       const firstKey = this.queryCache.keys().next().value;
@@ -206,29 +196,29 @@ class DatabaseOptimizer {
   }
 
   /**
-   * Get user scans with caching
+   * Get user tasks with caching
    */
-  async getUserScans(
+  async getUserTasks(
     userId: string, 
     limit: number = 20, 
     offset: number = 0
-  ): Promise<Scan[]> {
-    return this.executeQuery<Scan[]>(
-      `user_scans:${userId}:${limit}:${offset}`,
+  ): Promise<unknown[]> {
+    return this.executeQuery<unknown[]>(
+      `user_tasks:${userId}:${limit}:${offset}`,
       async () => {
-        const { data: scans, error } = await supabase
-          .from('scans')
+        const { data: tasks, error } = await supabase
+          .from('tasks')
           .select('*')
           .eq('user_id', userId)
           .order('created_at', { ascending: false })
           .range(offset, offset + limit - 1);
         
         if (error) {
-          throw new Error(`Failed to get scans for user ${userId}: ${error.message}`);
+          throw new Error(`Failed to get tasks for user ${userId}: ${error.message}`);
         }
-        return scans as Scan[];
+        return tasks as unknown[];
       },
-      2 * 60 * 1000 // 2 minutes TTL for scan data
+      2 * 60 * 1000 // 2 minutes TTL for task data
     );
   }
 
@@ -236,28 +226,28 @@ class DatabaseOptimizer {
    * Get dashboard statistics with caching
    */
   async getDashboardStats(userId: string): Promise<{
-    totalScans: number;
-    recentScans: number;
-    lastScanDate: Date | null;
+    totalTasks: number;
+    recentTasks: number;
+    lastTaskDate: Date | null;
   }> {
     return this.executeQuery(
       `dashboard_stats:${userId}`,
       async () => {
-        // Get total scans count
-        const { data: allScans, error: totalError } = await supabase
-          .from('scans')
+        // Get total tasks count
+        const { data: allTasks, error: totalError } = await supabase
+          .from('tasks')
           .select('id')
           .eq('user_id', userId);
         
         if (totalError) {
-          throw new Error(`Failed to get total scans: ${totalError.message}`);
+          throw new Error(`Failed to get total tasks: ${totalError.message}`);
         }
-        const totalScans = allScans?.length || 0;
+        const totalTasks = allTasks?.length || 0;
         
-        // Get recent scans (last 7 days)
+        // Get recent tasks (last 7 days)
         const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-        const { data: recentScans, error: recentError } = await supabase
-          .from('scans')
+        const { data: recentTasks, error: recentError } = await supabase
+          .from('tasks')
           .select('created_at')
           .eq('user_id', userId)
           .gte('created_at', oneWeekAgo)
@@ -265,13 +255,13 @@ class DatabaseOptimizer {
           .limit(5);
 
         if (recentError) {
-          throw new Error(`Failed to get recent scans: ${recentError.message}`);
+          throw new Error(`Failed to get recent tasks: ${recentError.message}`);
         }
 
         return {
-          totalScans,
-          recentScans: recentScans?.length || 0,
-          lastScanDate: recentScans && recentScans.length > 0 ? new Date(recentScans[0].created_at) : null
+          totalTasks,
+          recentTasks: recentTasks?.length || 0,
+          lastTaskDate: recentTasks && recentTasks.length > 0 ? new Date(recentTasks[0].created_at) : null
         };
       },
       5 * 60 * 1000 // 5 minutes TTL
@@ -295,15 +285,15 @@ class DatabaseOptimizer {
         }
         const totalUsers = allUsers?.length || 0;
         
-        // Get total scans count
-        const { data: allScans, error: scansError } = await supabase
-          .from('scans')
+        // Get total tasks count
+        const { data: allTasks, error: tasksError } = await supabase
+          .from('tasks')
           .select('id');
         
-        if (scansError) {
-          throw new Error(`Failed to get scans count: ${scansError.message}`);
+        if (tasksError) {
+          throw new Error(`Failed to get tasks count: ${tasksError.message}`);
         }
-        const totalScans = allScans?.length || 0;
+        const totalTasks = allTasks?.length || 0;
         
         // Get active users (logged in within last 7 days)
         const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -317,17 +307,17 @@ class DatabaseOptimizer {
         }
         const activeUsersCount = activeUsers?.length || 0;
         
-        // Get recent scans (last 24 hours)
+        // Get recent tasks (last 24 hours)
         const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-        const { data: recentScans, error: recentScansError } = await supabase
-          .from('scans')
+        const { data: recentTasks, error: recentTasksError } = await supabase
+          .from('tasks')
           .select('id')
           .gte('created_at', oneDayAgo);
         
-        if (recentScansError) {
-          throw new Error(`Failed to get recent scans: ${recentScansError.message}`);
+        if (recentTasksError) {
+          throw new Error(`Failed to get recent tasks: ${recentTasksError.message}`);
         }
-        const recentScansCount = recentScans?.length || 0;
+        const recentTasksCount = recentTasks?.length || 0;
 
         // Calculate average query time and slow queries
         const averageQueryTime = this.queryTimes.length > 0 
@@ -338,9 +328,9 @@ class DatabaseOptimizer {
 
         return {
           totalUsers,
-          totalScans,
+          totalTasks,
           activeUsers: activeUsersCount,
-          recentScans: recentScansCount,
+          recentTasks: recentTasksCount,
           databaseSize: 0, // Would need database-specific implementation
           queryPerformance: {
             averageQueryTime,

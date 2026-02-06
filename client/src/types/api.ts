@@ -8,8 +8,8 @@
 // ============================================================================
 
 export type ApiStatus = 'success' | 'error' | 'pending';
-export type MediaType = 'image' | 'video' | 'audio';
-export type AnalysisStatus = 'pending' | 'processing' | 'completed' | 'failed';
+export type MediaType = 'image' | 'video' | 'audio' | 'multimodal' | 'webcam' | 'batch';
+export type AnalysisStatus = 'pending' | 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
 export type AuthenticityResult = 'AUTHENTIC MEDIA' | 'MANIPULATED MEDIA' | 'UNCERTAIN';
 
 // ============================================================================
@@ -69,10 +69,10 @@ export interface PaginatedResponse<T> {
 // ============================================================================
 
 export interface User {
-  id: number;
+  id: string;
   username: string;
   email: string;
-  role: 'user' | 'admin' | 'analyst';
+  role: 'user' | 'admin' | 'moderator';
   fullName?: string;
   avatar?: string;
   createdAt: string;
@@ -137,7 +137,7 @@ export interface FileInfo {
 
 export interface AnalysisResult {
   id?: string;
-  caseId?: string;
+  reportCode?: string; // Changed from caseId/jobId to match backend
   type: MediaType;
   status: AnalysisStatus;
   authenticity?: AuthenticityResult;
@@ -147,7 +147,6 @@ export interface AnalysisResult {
   details?: AnalysisDetails;
   fileInfo?: FileInfo;
   error?: ApiError;
-  jobId?: string;
   async?: boolean;
   estimatedTime?: number;
 }
@@ -156,7 +155,7 @@ export interface AnalysisResponse {
   success: boolean;
   message: string;
   result?: AnalysisResult;
-  jobId?: string;
+  reportCode?: string; // Changed from jobId to match backend
   async?: boolean;
   estimatedTime?: number;
   error?: string;

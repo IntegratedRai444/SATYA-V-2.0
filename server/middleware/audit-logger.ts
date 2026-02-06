@@ -269,40 +269,6 @@ async function triggerSecurityAlert(auditEntry: AuditEntry): Promise<void> {
   }
 }
 
-// Helper function to sanitize request parameters
-function sanitizeRequestParams(req: Request): Record<string, unknown> {
-  const sanitized: Record<string, unknown> = {};
-  
-  // Include query parameters (excluding sensitive ones)
-  if (req.query) {
-    const queryCopy = { ...req.query } as Record<string, unknown>;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password, token, ...safeQuery } = queryCopy;
-    Object.assign(sanitized, safeQuery);
-  }
-  
-  // Include limited body parameters for POST/PUT requests
-  if (req.body && ['POST', 'PUT', 'PATCH'].includes(req.method)) {
-    sanitized.body_keys = Object.keys(req.body);
-    
-    // For specific endpoints, include more details
-    if (req.path.includes('/analysis')) {
-      sanitized.body = {
-        has_file: !!req.file,
-        file_type: req.file?.mimetype,
-        file_size: req.file?.size
-      };
-    }
-    
-    // Exclude sensitive body content
-    delete req.body.password;
-    delete req.body.token;
-    delete req.body.api_key;
-    delete req.body.secret;
-  }
-  
-  return sanitized;
-}
 
 // Specific audit middleware for common actions
 export const auditAuth = {

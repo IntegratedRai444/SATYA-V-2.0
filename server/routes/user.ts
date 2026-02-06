@@ -330,7 +330,7 @@ router.get('/analytics', userRateLimit, auditLogger('sensitive_data_access', 'us
     // Get user's analysis data
     const { data: tasks, error: tasksError } = await supabase
       .from('tasks')
-      .select('id, type, created_at, confidence, is_deepfake, file_name')
+      .select('id, type, created_at, file_name, result')
       .eq('user_id', userId)
       .eq('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -361,8 +361,8 @@ router.get('/analytics', userRateLimit, auditLogger('sensitive_data_access', 'us
       id: task.id,
       modality: task.type,
       created_at: task.created_at,
-      confidence: task.confidence || 0,
-      is_deepfake: task.is_deepfake || false,
+      confidence: (task.result as Record<string, unknown>)?.confidence as number || 0,
+      is_deepfake: (task.result as Record<string, unknown>)?.is_deepfake as boolean || false,
       file_name: task.file_name || 'Unknown'
     })) || [];
 

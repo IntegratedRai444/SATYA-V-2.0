@@ -16,22 +16,14 @@ import { logger } from '../config/logger';
  */
 export const checkDatabaseConnection = async (): Promise<boolean> => {
   try {
-    // Test Supabase connection
-    const { data, error } = await supabase.auth.getSession();
+    // Test Supabase connection with a simple health check
+    const { data, error } = await supabase
+      .from('tasks')
+      .select('id')
+      .limit(1);
     
     if (error) {
       logger.error('Supabase connection error', { error: error.message });
-      return false;
-    }
-    
-    // Test a simple query
-    const { data: testData, error: testError } = await supabase
-      .from('users')
-      .select('count')
-      .single();
-    
-    if (testError) {
-      logger.error('Supabase query error', { error: testError.message });
       return false;
     }
     

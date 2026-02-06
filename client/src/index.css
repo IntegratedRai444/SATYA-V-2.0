@@ -288,6 +288,10 @@
     background: #374151;
   }
 
+  .scrollbar-thumb-gray-700::-webkit-scrollbar-thumb:hover {
+    background: #4b5563;
+  }
+
   .scrollbar-track-gray-900::-webkit-scrollbar-track {
     background: #111827;
   }

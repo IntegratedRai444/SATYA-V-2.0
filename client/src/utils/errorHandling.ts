@@ -1,5 +1,11 @@
 import logger from './logger';
 
+declare const process: {
+  env: {
+    NODE_ENV?: string;
+  };
+};
+
 export type ErrorLevel = 'low' | 'medium' | 'high' | 'critical';
 
 import { toast } from '@/components/ui/use-toast';
@@ -8,7 +14,7 @@ export interface ErrorContext {
   component?: string;
   action?: string;
   userId?: string;
-  additionalInfo?: Record<string, any>;
+  additionalInfo?: Record<string, unknown>;
 }
 
 /**
@@ -136,9 +142,8 @@ export const handleError = (
         body: JSON.stringify(errorData),
       });
 
-      console.error('Error reported to tracking service:', errorData);
-    } catch (trackingError) {
-      console.error('Failed to send error to tracking service:', trackingError);
+          } catch {
+      // Failed to send error to tracking service
     }
   }
 
@@ -161,15 +166,6 @@ export const logError = (
 ) => {
   const errorMessage = typeof error === 'string' ? error : error.message;
   const errorStack = typeof error === 'object' ? error.stack : undefined;
-
-  // Log to console in development
-  if (import.meta.env.DEV) {
-    console.error('Error:', {
-      message: errorMessage,
-      stack: errorStack,
-      context,
-    });
-  }
 
   // Log to error tracking service in production
   if (import.meta.env.PROD) {
@@ -194,21 +190,9 @@ export const logError = (
         body: JSON.stringify(errorData),
       });
 
-      console.error('Error reported to tracking service:', errorData);
-    } catch (trackingError) {
-      console.error('Failed to send error to tracking service:', trackingError);
+          } catch {
+      // Failed to send error to tracking service
     }
   }
 };
 
-// Example usage:
-// try {
-//   // Your code here
-// } catch (error) {
-//   logError(error, {
-//     component: 'ComponentName',
-//     action: 'fetchData',
-//     userId: 'user123',
-//     additionalInfo: 'More context here'
-//   });
-// }

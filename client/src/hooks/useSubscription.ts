@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef } from 'react';
-import type { WebSocketMessage } from './useBaseWebSocket';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { WebSocketMessage } from '@/types/websocket';
 
 /**
  * Generic WebSocket subscription hook
@@ -10,32 +10,30 @@ import type { WebSocketMessage } from './useBaseWebSocket';
  * @param subscribeType - Message type for subscribing (e.g., 'subscribe_job', 'subscribe_scan')
  * @param unsubscribeType - Message type for unsubscribing (e.g., 'unsubscribe_job', 'unsubscribe_scan')
  * @param messageFilter - Function to filter relevant messages
- * @param onUpdate - Callback when a relevant message is received
- * @param options - Additional options
+ * @param onUpdate - Callback function when relevant message is received
+ * @param payload - Optional payload to include with subscription
+ * @param autoSubscribe - Whether to automatically subscribe on mount
  */
-export function useSubscription<TData = any>(
+export function useSubscription<TData = unknown>(
     baseWebSocket: {
-        sendMessage: (message: any) => boolean | void;
+        sendMessage: (message: unknown) => boolean;
         subscribe: (handler: (message: WebSocketMessage) => void) => () => void;
         isConnected: boolean;
-    } | null,
+    },
     subscriptionId: string | null,
     subscribeType: string,
     unsubscribeType: string,
     messageFilter: (message: WebSocketMessage) => boolean,
     onUpdate: (data: TData) => void,
-    options: {
-        autoSubscribe?: boolean;
-        payload?: Record<string, any>;
-    } = {}
+    payload: Record<string, unknown> = {},
+    autoSubscribe = true
 ) {
-    const { autoSubscribe = true, payload = {} } = options;
     const subscriptionRef = useRef<(() => void) | null>(null);
-    const isSubscribedRef = useRef(false);
+    const [isSubscribed, setIsSubscribed] = useState(false);
 
     // Subscribe function
     const subscribe = useCallback(() => {
-        if (!baseWebSocket || !subscriptionId || isSubscribedRef.current) {
+        if (!baseWebSocket || !subscriptionId || isSubscribed) {
             return;
         }
 
@@ -49,17 +47,18 @@ export function useSubscription<TData = any>(
         // Set up message handler
         const unsubscribe = baseWebSocket.subscribe((message: WebSocketMessage) => {
             if (messageFilter(message)) {
-                onUpdate(message.data || message.payload);
+                const messageData = (message as unknown as Record<string, unknown>).payload || (message as unknown as Record<string, unknown>).data;
+                onUpdate(messageData as TData);
             }
         });
 
         subscriptionRef.current = unsubscribe;
-        isSubscribedRef.current = true;
-    }, [baseWebSocket, subscriptionId, subscribeType, messageFilter, onUpdate, payload]);
+        setIsSubscribed(true);
+    }, [baseWebSocket, subscriptionId, subscribeType, messageFilter, onUpdate, payload, isSubscribed]);
 
     // Unsubscribe function
     const unsubscribe = useCallback(() => {
-        if (!baseWebSocket || !subscriptionId || !isSubscribedRef.current) {
+        if (!baseWebSocket || !subscriptionId || !isSubscribed) {
             return;
         }
 
@@ -75,13 +74,20 @@ export function useSubscription<TData = any>(
             subscriptionRef.current = null;
         }
 
-        isSubscribedRef.current = false;
-    }, [baseWebSocket, subscriptionId, unsubscribeType]);
+        setIsSubscribed(false);
+    }, [baseWebSocket, subscriptionId, unsubscribeType, isSubscribed]);
 
     // Auto-subscribe on mount if enabled
     useEffect(() => {
         if (autoSubscribe && subscriptionId && baseWebSocket?.isConnected) {
-            subscribe();
+            // Defer the subscribe call to avoid synchronous setState
+            const timeoutId = setTimeout(() => {
+                subscribe();
+            }, 0);
+            
+            return () => {
+                clearTimeout(timeoutId);
+            };
         }
 
         return () => {
@@ -92,7 +98,7 @@ export function useSubscription<TData = any>(
     return {
         subscribe,
         unsubscribe,
-        isSubscribed: isSubscribedRef.current
+        isSubscribed
     };
 }
 
@@ -112,16 +118,20 @@ function getIdKey(type: string): string {
  * Specialized hook for job subscriptions
  */
 export function useJobSubscription(
-    baseWebSocket: any,
+    baseWebSocket: {
+        sendMessage: (message: unknown) => boolean;
+        subscribe: (handler: (message: WebSocketMessage) => void) => () => void;
+        isConnected: boolean;
+    },
     jobId: string | null,
-    onUpdate: (data: any) => void
+    onUpdate: (data: unknown) => void
 ) {
     return useSubscription(
         baseWebSocket,
         jobId,
         'subscribe_job',
         'unsubscribe_job',
-        (message) => message.type === 'job_update' && message.data?.jobId === jobId,
+        (message) => (message as unknown as { type: string; data?: { jobId?: string } }).type === 'job_update' && (message as unknown as { data?: { jobId?: string } }).data?.jobId === jobId,
         onUpdate
     );
 }
@@ -130,16 +140,20 @@ export function useJobSubscription(
  * Specialized hook for scan subscriptions
  */
 export function useScanSubscription(
-    baseWebSocket: any,
+    baseWebSocket: {
+        sendMessage: (message: unknown) => boolean;
+        subscribe: (handler: (message: WebSocketMessage) => void) => () => void;
+        isConnected: boolean;
+    },
     scanId: string | null,
-    onUpdate: (data: any) => void
+    onUpdate: (data: unknown) => void
 ) {
     return useSubscription(
         baseWebSocket,
         scanId,
         'subscribe_scan',
         'unsubscribe_scan',
-        (message) => message.type === 'scan_update' && message.payload?.scanId === scanId,
+        (message) => (message as unknown as { type: string; payload?: { scanId?: string } }).type === 'scan_update' && (message as unknown as { payload?: { scanId?: string } }).payload?.scanId === scanId,
         onUpdate
     );
 }
@@ -148,9 +162,13 @@ export function useScanSubscription(
  * Specialized hook for channel subscriptions (dashboard, etc.)
  */
 export function useChannelSubscription(
-    baseWebSocket: any,
+    baseWebSocket: {
+        sendMessage: (message: unknown) => boolean;
+        subscribe: (handler: (message: WebSocketMessage) => void) => () => void;
+        isConnected: boolean;
+    },
     channel: string | null,
-    onUpdate: (data: any) => void
+    onUpdate: (data: unknown) => void
 ) {
     return useSubscription(
         baseWebSocket,
@@ -159,7 +177,7 @@ export function useChannelSubscription(
         'unsubscribe',
         (message) => {
             const channelTypes = ['stats', 'analytics', 'activity', 'metrics', 'all'];
-            return channelTypes.includes(message.type);
+            return channelTypes.includes((message as unknown as { type: string }).type);
         },
         onUpdate,
         { payload: { channel } }

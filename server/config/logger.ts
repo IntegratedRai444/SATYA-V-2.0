@@ -1,6 +1,6 @@
-import winston from 'winston';
-import path from 'path';
-import fs from 'fs';
+import * as winston from 'winston';
+import * as path from 'path';
+import * as fs from 'fs';
 import { config } from './environment';
 import type { Request, Response, NextFunction } from 'express';
 
@@ -65,9 +65,9 @@ const productionFormat = winston.format.combine(
     // Add tracing context to all log entries
     const { requestId, traceId, spanId, ...rest } = info;
     const result = { ...rest };
-    if (requestId) (result as any).requestId = requestId;
-    if (traceId) (result as any).traceId = traceId;
-    if (spanId) (result as any).spanId = spanId;
+    if (requestId) (result as Record<string, unknown>).requestId = requestId;
+    if (traceId) (result as Record<string, unknown>).traceId = traceId;
+    if (spanId) (result as Record<string, unknown>).spanId = spanId;
     return result;
   })(),
   winston.format.json()

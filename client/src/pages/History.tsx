@@ -3,6 +3,37 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Button } from '../components/ui/button';
 import { useAnalysisHistory } from '../hooks/useApi';
 
+// Define proper types for history items
+interface HistoryItem {
+  id: string;
+  reportCode?: string;
+  jobId?: string;
+  created_at?: string;
+  timestamp?: string;
+  is_deepfake?: boolean;
+  confidence?: number;
+  type?: string;
+  modality?: string;
+  summary?: {
+    findings?: string[];
+  };
+  analysis_data?: {
+    findings?: string[];
+  };
+  key_findings?: string[];
+  authenticity?: string;
+}
+
+interface UIHistoryItem {
+  id: string;
+  case_id: string;
+  analysis_date: string;
+  authenticity: string;
+  confidence: number;
+  analysis_type: string;
+  key_findings: string[];
+}
+
 export default function History() {
   const { history, clearHistory } = useAnalysisHistory();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -45,13 +76,13 @@ export default function History() {
   };
 
   // Map API response to UI format
-  const renderHistoryItem = (result: any, index: number) => {
+  const renderHistoryItem = (result: HistoryItem, index: number) => {
     // Map API response to UI format - Fixed field mapping
-    const uiItem = {
-      id: result.id || result.jobId,
+    const uiItem: UIHistoryItem = {
+      id: result.id || result.jobId || '',
       case_id: result.reportCode || result.jobId || `case-${result.id}`,
       analysis_date: result.created_at || result.timestamp || new Date().toISOString(),
-      authenticity: result.is_deepfake ? 'MANIPULATED MEDIA' : 'AUTHENTIC MEDIA',
+      authenticity: result.authenticity || (result.is_deepfake ? 'MANIPULATED MEDIA' : 'AUTHENTIC MEDIA'),
       confidence: result.confidence || 0,
       analysis_type: result.modality || result.type || 'Unknown',
       key_findings: result.summary?.findings || result.analysis_data?.findings || result.key_findings || []
@@ -158,7 +189,7 @@ export default function History() {
           style={{ maxHeight: `${listHeight}px` }}
           className="overflow-y-auto scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-gray-200 pr-2"
         >
-          {history.map((result: any, index: number) => renderHistoryItem(result, index))}
+          {history.map((result: HistoryItem, index: number) => renderHistoryItem(result, index))}
         </div>
       )}
       <Card>
@@ -170,7 +201,7 @@ export default function History() {
             </div>
             <div className="text-center">
               <p className="text-2xl font-bold text-red-500">
-                {history.filter((h: any) => h.authenticity === 'MANIPULATED MEDIA').length}
+                {history.filter((h: HistoryItem) => h.authenticity === 'MANIPULATED MEDIA').length}
               </p>
               <p className="text-sm text-muted-foreground">Manipulated</p>
             </div>

@@ -52,6 +52,10 @@ export default defineConfig(({ mode }) => {
       __filename: JSON.stringify(''),
       // eslint-disable-next-line no-undef
       __APP_VERSION__: JSON.stringify(process.env?.npm_package_version || ''),
+      // Force enable ML models in frontend
+      'process.env.ENABLE_ML_MODELS': JSON.stringify('true'),
+      'process.env.ENABLE_ADVANCED_MODELS': JSON.stringify('true'),
+      'process.env.STRICT_MODE_ENABLED': JSON.stringify('true'),
     },
     resolve: {
       alias: {

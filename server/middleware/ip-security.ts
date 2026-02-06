@@ -60,8 +60,8 @@ export const ipSecurity = (config: Partial<IPSecurityConfig> = {}) => {
 
     // Block unknown IPs if enabled
     if (securityConfig.blockUnknown && securityConfig.whitelist.length === 0) {
-      const isPrivateIP = isPrivateIP(clientIP);
-      if (!isPrivateIP) {
+      const isPrivate = isPrivateIP(clientIP);
+      if (!isPrivate) {
         logger.warn('Blocked unknown IP', { ip: clientIP, path: req.path });
         return res.status(403).json({
           error: 'IP_UNKNOWN',
@@ -118,10 +118,10 @@ function isPrivateIP(ip: string): boolean {
  */
 export const strictRateLimit = (req: Request, res: Response, next: NextFunction) => {
   const clientIP = getClientIP(req);
-  const isPrivateIP = isPrivateIP(clientIP);
+  const isPrivate = isPrivateIP(clientIP);
   
   // Apply stricter rate limiting for public IPs
-  if (!isPrivateIP) {
+  if (!isPrivate) {
     // Add custom header for stricter rate limiting
     req.headers['x-strict-rate-limit'] = 'true';
   }

@@ -1,4 +1,24 @@
-oknode_modules
-node_modules
-node_modules
-node_modules
+# Dependencies
+node_modules/
+dist/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+
+# Build artifacts
+*.tsbuildinfo
+dist/
+
+# Coverage reports
+coverage/
+*.lcov
+
+# Temporary files
+*.tmp
+*.temp

@@ -18,11 +18,11 @@ import { useMediaQuery } from '@/hooks/use-media-query';
 import { useChat } from '@/contexts/ChatContext';
 
 interface SidebarProps {
-  isOpen: boolean;
+  isExpanded: boolean;
   onToggle: () => void;
 }
 
-const Sidebar = ({ isOpen, onToggle }: SidebarProps) => {
+const Sidebar = ({ isExpanded, onToggle }: SidebarProps) => {
   const location = useLocation();
   const isActive = (path: string) => location.pathname === path;
   const isMobile = useMediaQuery('(max-width: 768px)');
@@ -42,22 +42,23 @@ const Sidebar = ({ isOpen, onToggle }: SidebarProps) => {
       <button
         onClick={onToggle}
         className="fixed left-0 top-20 z-50 bg-[#141414] border border-[#21262d] rounded-r-lg p-2 hover:bg-[#1c1c1c] transition-all duration-300"
-        style={{ left: isOpen ? (isMobile ? '240px' : '280px') : '0' }}
-        aria-label={isOpen ? 'Close sidebar' : 'Open sidebar'}
+        style={{ left: isExpanded ? (isMobile ? '240px' : '280px') : '0' }}
+        aria-label={isExpanded ? 'Close sidebar' : 'Open sidebar'}
       >
-        {isOpen ? (
+        {isExpanded ? (
           <ChevronLeft className="w-5 h-5 text-gray-400" />
         ) : (
           <ChevronRight className="w-5 h-5 text-gray-400" />
         )}
       </button>
 
-      {/* Sidebar */}
+      {/* Sidebar - Flex positioning */}
       <aside 
         className={clsx(
-          'bg-[#141414] border-r border-[#21262d] flex flex-col h-[calc(100vh-4rem)] fixed left-0 top-16 z-40 transition-transform duration-300',
-          isMobile ? 'w-[240px]' : 'w-[280px]',
-          isOpen ? 'translate-x-0' : '-translate-x-full'
+          'bg-[#141414] border-r border-[#21262d] flex flex-col h-full transition-all duration-300 flex-shrink-0 overflow-hidden',
+          isExpanded 
+            ? (isMobile ? 'w-[240px]' : 'w-[280px]') 
+            : 'w-0'
         )}
       >
         {/* Scrollable Navigation Area */}
