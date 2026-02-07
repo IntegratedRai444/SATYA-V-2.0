@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, Shield } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 import AuthLayout from '@/components/auth/AuthLayout';
 import AuthInput from '@/components/auth/AuthInput';
@@ -18,8 +18,7 @@ export default function Register() {
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [networkError, setNetworkError] = useState<string | null>(null);
-  const [registrationSuccess, setRegistrationSuccess] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -90,11 +89,16 @@ export default function Register() {
         full_name: formData.name
       });
       
-      // Show success message instead of redirecting
-      setRegistrationSuccess(true);
+      // Auto-redirect to dashboard since Supabase signs in the user immediately
+      // when email verification is disabled
       if (import.meta.env.DEV) {
-        console.log('Registration successful - email verification required');
+        console.log('Registration successful - user signed in immediately');
       }
+      
+      // Brief delay to ensure auth state is updated before redirect
+      setTimeout(() => {
+        navigate('/dashboard');
+      }, 500);
     } catch (err: unknown) {
       if (import.meta.env.DEV) {
         console.error('Registration error details:', {
@@ -155,18 +159,7 @@ export default function Register() {
     >
       {renderError()}
 
-      {/* Success Message */}
-      {registrationSuccess && (
-        <div className="mb-6 p-3 bg-green-900/20 border border-green-500/30 rounded-lg">
-          <div className="flex items-center text-green-400">
-            <Shield className="w-4 h-4 mr-2 flex-shrink-0" />
-            <span className="text-sm">Registration successful! Please check your email to verify your account before logging in.</span>
-          </div>
-        </div>
-      )}
-
-      {!registrationSuccess && (
-        <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-6">
           <AuthInput
             label="Full Name"
             name="name"
@@ -244,19 +237,16 @@ export default function Register() {
             </div>
           </div>
         </form>
-      )}
 
       {/* Footer Note */}
-      {!registrationSuccess && (
-        <div className="mt-6 space-y-2">
-          <p className="text-center text-gray-500/80 text-xs">
-            By creating an account, you agree to our Terms of Service and Privacy Policy
-          </p>
-          <p className="text-center text-gray-500/80 text-xs">
-            Protected by enterprise-grade security
-          </p>
-        </div>
-      )}
+      <div className="mt-6 space-y-2">
+        <p className="text-center text-gray-500/80 text-xs">
+          By creating an account, you agree to our Terms of Service and Privacy Policy
+        </p>
+        <p className="text-center text-gray-500/80 text-xs">
+          Protected by enterprise-grade security
+        </p>
+      </div>
     </AuthLayout>
   );
 }

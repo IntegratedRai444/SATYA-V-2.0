@@ -180,7 +180,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialPrompt }) => {
       <div className="flex-1 overflow-y-auto p-6 pb-4">
         {isLoadingHistory ? (
           <div className="flex justify-center items-center h-full">
-            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-500"></div>
+            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#00a8ff]"></div>
           </div>
         ) : messages.length === 0 ? (
           <WelcomeMessage onPromptSelect={handlePromptSelect} />
@@ -204,7 +204,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialPrompt }) => {
 
 
       {/* Input Area */}
-      <div className="p-4 border-t border-gray-800">
+      <div className="p-4 border-t border-[#333333] bg-[#0f1419]">
         <form onSubmit={handleSendMessage} className="relative">
           <div className="flex items-end space-x-2">
             <div className="flex-1 relative">
@@ -212,9 +212,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialPrompt }) => {
                 type="text"
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
-                placeholder="Message SATYA AI..."
+                placeholder="Ask Satya Sentinel about deepfakes…"
                 maxLength={4000}
-                className="w-full bg-gray-800 border border-gray-700 rounded-xl py-3 pl-4 pr-12 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                className="w-full bg-[#0a0a0a] border border-[#333333] rounded-lg py-3 pl-4 pr-12 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#00a8ff]/50 focus:border-[#00a8ff]/30 transition-all duration-200"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -225,10 +225,10 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialPrompt }) => {
               <button
                 type="submit"
                 disabled={!inputValue.trim() || isSending}
-                className={`absolute right-2 bottom-2 p-1.5 rounded-lg flex items-center justify-center ${
+                className={`absolute right-2 bottom-2 p-2 rounded-lg flex items-center justify-center transition-all duration-200 ${
                   inputValue.trim() && !isSending
-                    ? 'text-white bg-purple-600 hover:bg-purple-700'
-                    : 'text-gray-400 bg-gray-700'
+                    ? 'text-white bg-[#00a8ff] hover:bg-[#0088cc]'
+                    : 'text-gray-400 bg-[#333333]'
                 }`}
               >
                 {isSending ? (
@@ -242,7 +242,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialPrompt }) => {
         </form>
         <div className="flex items-center justify-between mt-2">
           <p className="text-xs text-gray-500">
-            SATYA AI can make mistakes. Consider checking important information.
+            Satya Sentinel can make mistakes. Consider checking important information.
           </p>
           <p className="text-xs text-gray-500">
             {inputValue.length}/4000

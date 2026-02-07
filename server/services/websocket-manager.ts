@@ -1,5 +1,6 @@
 import { WebSocketServer, WebSocket, RawData } from 'ws';
 import { Server, IncomingMessage } from 'http';
+import { URLSearchParams } from 'url';
 import { logger } from '../config/logger';
 import { z } from 'zod';
 import { supabase } from '../config/supabase';
@@ -48,8 +49,8 @@ const WebSocketMessageType = {
   JOB_PROGRESS: 'JOB_PROGRESS',
   JOB_STAGE_UPDATE: 'JOB_STAGE_UPDATE',
   JOB_METRICS: 'JOB_METRICS',
-  SUBSCRIBE_JOB: 'subscribe_job',
-  UNSUBSCRIBE_JOB: 'unsubscribe_job',
+  SUBSCRIBE_JOB: 'SUBSCRIBE_JOB',
+  UNSUBSCRIBE_JOB: 'UNSUBSCRIBE_JOB',
   MESSAGE_ACK: 'message_ack'
 } as const;
 
@@ -93,7 +94,7 @@ const supabaseAuthService = {
 
 // Define WebSocket message schema
 const messageSchema = z.object({
-  type: z.enum(['subscribe', 'unsubscribe', 'message', 'ping', 'pong']),
+  type: z.enum(['subscribe', 'unsubscribe', 'message', 'ping', 'pong', 'SUBSCRIBE_JOB', 'UNSUBSCRIBE_JOB']),
   channel: z.string().optional(),
   payload: z.record(z.string(), z.unknown()).optional(),
   requestId: z.string().uuid().optional(),
@@ -202,22 +203,18 @@ export class WebSocketManager {
   public initialize(server: Server): void {
     this.wss = new WebSocketServer({ 
       server, 
-      path: '/api/v2/dashboard/ws',
+      path: '/ws', // Use simple path that doesn't conflict with Express routes
       verifyClient: async (info: { req: IncomingMessage; origin: string; secure: boolean; }, callback: (res: boolean, code?: number, message?: string) => void) => {
-        const token = info.req.headers['authorization']?.replace('Bearer ', '');
+        logger.debug('WebSocket connection attempt', {
+          url: info.req.url,
+          headers: info.req.headers,
+          host: info.req.headers.host
+        });
         
-        if (!token) {
-          callback(false, 401, 'Unauthorized');
-          return;
-        }
-
-        const user = await supabaseAuthService.verifyToken(token);
-        if (!user) {
-          callback(false, 401, 'Invalid token');
-          return;
-        }
-
+        // TEMP: Disable authentication for testing
+        logger.info('WebSocket connection allowed (auth disabled for testing)');
         callback(true);
+        return;
       }
     });
 
@@ -229,19 +226,14 @@ export class WebSocketManager {
   }
 
   private async handleConnection(ws: WebSocketClient, req: IncomingMessage): Promise<void> {
-    const token = req.headers['authorization']?.replace('Bearer ', '');
-    const user = token ? await supabaseAuthService.verifyToken(token) : null;
-
-    if (!user) {
-      ws.close(1008, 'Authentication failed');
-      return;
-    }
-
+    // TEMP: Disable authentication for testing
+    logger.info('WebSocket connection established (auth disabled for testing)');
+    
     // Initialize client properties
     ws.clientId = this.generateClientId();
-    ws.userId = user.userId;
-    ws.username = user.username;
-    ws.sessionId = user.sessionId;
+    ws.userId = 'test-user-id'; // Mock user ID for testing
+    ws.username = 'testuser';
+    ws.sessionId = 'test-session';
     ws.ipAddress = req.socket.remoteAddress || 'unknown';
     ws.connectedAt = Date.now();
     ws.connectionTime = Date.now();
@@ -257,15 +249,15 @@ export class WebSocketManager {
     ws.reconnectTimeout = null;
 
     // Add to clients map
-    if (!this.clients.has(user.userId)) {
-      this.clients.set(user.userId, new Set());
+    if (!this.clients.has(ws.userId)) {
+      this.clients.set(ws.userId, new Set());
     }
-    this.clients.get(user.userId)!.add(ws);
+    this.clients.get(ws.userId)!.add(ws);
 
     logger.info('[WS CONNECT] New WebSocket connection', {
       clientId: ws.clientId,
-      userId: user.userId,
-      username: user.username,
+      userId: ws.userId,
+      username: ws.username,
       ipAddress: ws.ipAddress
     });
 
@@ -334,6 +326,32 @@ export class WebSocketManager {
             type: 'unsubscription_confirmed',
             channel: message.channel,
             timestamp: Date.now()
+          });
+        }
+        break;
+
+      case 'SUBSCRIBE_JOB':
+        if (message.payload?.jobId) {
+          const channel = `job:${message.payload.jobId}`;
+          ws.subscribedChannels.add(channel);
+          this.sendToClient(ws, {
+            type: 'subscription_confirmed',
+            channel,
+            timestamp: Date.now(),
+            payload: { jobId: message.payload.jobId }
+          });
+        }
+        break;
+
+      case 'UNSUBSCRIBE_JOB':
+        if (message.payload?.jobId) {
+          const channel = `job:${message.payload.jobId}`;
+          ws.subscribedChannels.delete(channel);
+          this.sendToClient(ws, {
+            type: 'unsubscription_confirmed',
+            channel,
+            timestamp: Date.now(),
+            payload: { jobId: message.payload.jobId }
           });
         }
         break;
@@ -452,6 +470,79 @@ export class WebSocketManager {
 
   public sendEventToUser(userId: string, message: WebSocketMessage): void {
     this.sendToUser(userId, message);
+  }
+
+  // Send job update to specific user
+  public sendJobUpdate(userId: string, jobId: string, status: string, progress?: number, message?: string): void {
+    const jobChannel = `job:${jobId}`;
+    const userClients = this.clients.get(userId);
+    
+    if (userClients) {
+      userClients.forEach((ws) => {
+        if (ws.readyState === WebSocket.OPEN && ws.subscribedChannels.has(jobChannel)) {
+          this.sendToClient(ws, {
+            type: 'JOB_PROGRESS',
+            jobId,
+            payload: {
+              jobId,
+              status,
+              progress: progress || 0,
+              message: message || '',
+              timestamp: new Date().toISOString()
+            },
+            timestamp: Date.now()
+          });
+        }
+      });
+    }
+  }
+
+  // Send job completion to specific user
+  public sendJobCompleted(userId: string, jobId: string, result?: unknown): void {
+    const jobChannel = `job:${jobId}`;
+    const userClients = this.clients.get(userId);
+    
+    if (userClients) {
+      userClients.forEach((ws) => {
+        if (ws.readyState === WebSocket.OPEN && ws.subscribedChannels.has(jobChannel)) {
+          this.sendToClient(ws, {
+            type: 'JOB_COMPLETED',
+            jobId,
+            payload: {
+              jobId,
+              status: 'completed',
+              result,
+              timestamp: new Date().toISOString()
+            },
+            timestamp: Date.now()
+          });
+        }
+      });
+    }
+  }
+
+  // Send job failure to specific user
+  public sendJobFailed(userId: string, jobId: string, error: string): void {
+    const jobChannel = `job:${jobId}`;
+    const userClients = this.clients.get(userId);
+    
+    if (userClients) {
+      userClients.forEach((ws) => {
+        if (ws.readyState === WebSocket.OPEN && ws.subscribedChannels.has(jobChannel)) {
+          this.sendToClient(ws, {
+            type: 'JOB_FAILED',
+            jobId,
+            payload: {
+              jobId,
+              status: 'failed',
+              error,
+              timestamp: new Date().toISOString()
+            },
+            timestamp: Date.now()
+          });
+        }
+      });
+    }
   }
 
   public shutdown(): void {

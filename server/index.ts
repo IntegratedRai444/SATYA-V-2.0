@@ -50,7 +50,6 @@ import { enhancedAuditLogger } from './middleware/audit-logger';
 
 // Import routes
 import { router as apiRouter } from './routes/index';
-import { websocketRouter } from './routes/websocket';
 import { versionMiddleware } from './middleware/api-version';
 import { features } from './config/features';
 
@@ -515,8 +514,8 @@ app.use(versionMiddleware as any);
 // API routes
 app.use('/api/v2', apiRouter);
 
-// WebSocket routes
-app.use('/', websocketRouter);
+// Note: WebSocket routes are handled directly by WebSocket server
+// No Express router needed for WebSocket endpoints
 
 // 404 Handler for undefined routes
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -850,14 +849,26 @@ async function startServer() {
     logConfigurationSummary();
     logger.info('✅ Server initialized with Supabase - no database initialization needed');
 
-    // Start the server
+    // Start the server first
     const serverInstance = httpServer.listen(config.PORT, '0.0.0.0', () => {
+      // Initialize WebSocket manager after server starts
+      if (webSocketManager && typeof webSocketManager === 'object' && 'initialize' in webSocketManager) {
+        try {
+          (webSocketManager as { initialize: (server: Server) => void }).initialize(httpServer);
+          logger.info('✅ WebSocket server initialized successfully');
+        } catch (error) {
+          logger.error('❌ Failed to initialize WebSocket server:', error);
+        }
+      }
+
       // eslint-disable-next-line no-console
       console.log(`🚀 Server running on http://0.0.0.0:${config.PORT}`);
       // eslint-disable-next-line no-console
       console.log(`📊 Health check: http://0.0.0.0:${config.PORT}/health`);
       // eslint-disable-next-line no-console
       console.log(`📚 API docs: http://0.0.0.0:${config.PORT}/api-docs`);
+      // eslint-disable-next-line no-console
+      console.log(`🔌 WebSocket: ws://0.0.0.0:${config.PORT}/api/v2/dashboard/ws`);
     });
 
     // Handle graceful shutdown

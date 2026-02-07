@@ -1,63 +1,24 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertTriangle, Loader2, Mail, CheckCircle } from 'lucide-react';
+import { Loader2, Mail, CheckCircle } from 'lucide-react';
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
-import { supabase } from '@/lib/supabaseSingleton';
 
 export default function VerifyEmail() {
   const navigate = useNavigate();
   const { user, loading } = useSupabaseAuth();
-  const [resending, setResending] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // If user is already verified, redirect to dashboard
-    if (user && user.email_confirmed_at) {
+    // If user is authenticated, redirect to dashboard since email verification is disabled
+    if (user) {
       navigate('/dashboard');
     }
-  }, [user, navigate]);
-
-  const handleResendVerification = async () => {
-    try {
-      setResending(true);
-      setError(null);
-      setMessage(null);
-
-      // Resend verification email using Supabase
-      const { error } = await supabase.auth.resend({
-        type: 'signup',
-        email: user?.email || '',
-      });
-
-      if (error) throw error;
-
-      setMessage('Verification email sent! Please check your inbox.');
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to resend verification email');
-    } finally {
-      setResending(false);
+    
+    // If no user, redirect to login
+    if (!loading && !user) {
+      navigate('/login');
     }
-  };
-
-  const handleCheckVerification = async () => {
-    try {
-      // Refresh user session to check email verification status
-      const { data: { user }, error } = await supabase.auth.getUser();
-      
-      if (error) throw error;
-      
-      if (user?.email_confirmed_at) {
-        navigate('/dashboard');
-      } else {
-        setError('Email not yet verified. Please check your inbox and click the verification link.');
-      }
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to check verification status');
-    }
-  };
+  }, [user, loading, navigate]);
 
   if (loading) {
     return (
@@ -87,20 +48,20 @@ export default function VerifyEmail() {
           <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full mb-6 shadow-lg shadow-blue-500/25">
             <Mail className="w-10 h-10 text-white" />
           </div>
-          <h1 className="text-4xl font-bold text-white mb-2 tracking-tight">Verify Email</h1>
+          <h1 className="text-4xl font-bold text-white mb-2 tracking-tight">Account Ready</h1>
           <p className="text-blue-200 text-lg font-medium">SatyaAI Deepfake Detection</p>
         </div>
 
         {/* Glass Card */}
         <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-3xl p-8 shadow-2xl shadow-black/20">
           <div className="text-center mb-6">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-yellow-500/20 rounded-full mb-4">
-              <AlertTriangle className="w-8 h-8 text-yellow-400" />
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-green-500/20 rounded-full mb-4">
+              <CheckCircle className="w-8 h-8 text-green-400" />
             </div>
-            <h2 className="text-2xl font-semibold text-white mb-2">Email Verification Required</h2>
+            <h2 className="text-2xl font-semibold text-white mb-2">Email Verification Not Required</h2>
             <p className="text-gray-300">
-              We've sent a verification email to:<br />
-              <span className="font-mono text-cyan-400">{user?.email}</span>
+              Email verification has been disabled for your account.<br />
+              You can now access all features immediately.
             </p>
           </div>
 
@@ -108,64 +69,25 @@ export default function VerifyEmail() {
           <div className="space-y-4 mb-6">
             <div className="flex items-start gap-3">
               <CheckCircle className="w-5 h-5 text-green-400 mt-0.5 flex-shrink-0" />
-              <p className="text-gray-300 text-sm">Check your email inbox for the verification link</p>
+              <p className="text-gray-300 text-sm">Your account is ready to use</p>
             </div>
             <div className="flex items-start gap-3">
               <CheckCircle className="w-5 h-5 text-green-400 mt-0.5 flex-shrink-0" />
-              <p className="text-gray-300 text-sm">Click the link to verify your account</p>
+              <p className="text-gray-300 text-sm">No email verification required</p>
             </div>
             <div className="flex items-start gap-3">
               <CheckCircle className="w-5 h-5 text-green-400 mt-0.5 flex-shrink-0" />
-              <p className="text-gray-300 text-sm">Return here and click "I've Verified" to continue</p>
+              <p className="text-gray-300 text-sm">Redirecting you to dashboard...</p>
             </div>
           </div>
-
-          {/* Messages */}
-          {message && (
-            <div className="mb-6">
-              <Alert className="bg-green-900/20 border-green-500/50">
-                <CheckCircle className="h-4 w-4 mr-2 text-green-400" />
-                <AlertDescription className="text-green-200">
-                  {message}
-                </AlertDescription>
-              </Alert>
-            </div>
-          )}
-
-          {error && (
-            <div className="mb-6">
-              <Alert variant="destructive">
-                <AlertTriangle className="h-4 w-4 mr-2" />
-                <AlertDescription>
-                  {error}
-                </AlertDescription>
-              </Alert>
-            </div>
-          )}
 
           {/* Actions */}
           <div className="space-y-4">
             <Button
-              onClick={handleCheckVerification}
+              onClick={() => navigate('/dashboard')}
               className="w-full flex justify-center py-3 px-4 border border-transparent rounded-full text-sm font-medium text-white bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-200 shadow-lg shadow-cyan-500/25 hover:shadow-cyan-500/40 hover:-translate-y-0.5"
             >
-              I've Verified My Email
-            </Button>
-
-            <Button
-              onClick={handleResendVerification}
-              variant="outline"
-              disabled={resending}
-              className="w-full flex justify-center py-3 px-4 border border-cyan-500/50 rounded-full text-sm font-medium text-cyan-400 hover:bg-cyan-500/10 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-200"
-            >
-              {resending ? (
-                <>
-                  <Loader2 className="animate-spin -ml-1 mr-2 h-4 w-4" />
-                  Resending...
-                </>
-              ) : (
-                'Resend Verification Email'
-              )}
+              Go to Dashboard
             </Button>
 
             <div className="text-center">
@@ -182,7 +104,7 @@ export default function VerifyEmail() {
         {/* Footer Note */}
         <div className="mt-6 text-center">
           <p className="text-gray-500 text-xs">
-            Didn't receive the email? Check your spam folder or click "Resend Verification Email"
+            Your account is ready to use. No email verification required.
           </p>
         </div>
       </div>

@@ -1,40 +1,54 @@
 import React from 'react';
-import { Bot } from 'lucide-react';
+import { Shield, Sparkles } from 'lucide-react';
 
 interface WelcomeMessageProps {
   onPromptSelect: (prompt: string) => void;
 }
 
-const suggestedPrompts = [
-  'How does deepfake detection work?',
-  'What are the signs of a manipulated video?',
-  'How accurate is AI deepfake detection?',
-  'What should I do if I suspect a deepfake?',
-  'Explain confidence scores in analysis',
-  'How can I protect myself from deepfakes?'
-];
+const WelcomeMessage: React.FC<WelcomeMessageProps> = ({ onPromptSelect }) => {
+  const suggestions = [
+    "How does deepfake detection work?",
+    "What are signs of manipulated media?",
+    "How accurate is AI detection?"
+  ];
 
-export const WelcomeMessage: React.FC<WelcomeMessageProps> = ({ onPromptSelect }) => {
   return (
-    <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-      <div className="w-16 h-16 rounded-full bg-purple-900/50 flex items-center justify-center mb-6">
-        <Bot className="text-3xl text-purple-400" />
-      </div>
-      <h1 className="text-3xl font-bold text-white mb-2">I'm Satya Sentinel 🛡️</h1>
-      <p className="text-gray-400 mb-8 max-w-md">
-        Your AI assistant for deepfake detection and media analysis. Ask me anything about identifying manipulated content or using SatyaAI features.
-      </p>
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full max-w-2xl mb-12">
-        {suggestedPrompts.map((prompt, index) => (
-          <button
-            key={index}
-            onClick={() => onPromptSelect(prompt)}
-            className="p-4 text-left rounded-lg border border-gray-700 hover:border-purple-500 hover:bg-gray-800/50 transition-colors text-gray-200"
-          >
-            {prompt}
-          </button>
-        ))}
+    <div className="flex flex-col h-full bg-[#0a0a0a]">
+      {/* Welcome Content */}
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-8">
+        <div className="text-center max-w-md">
+          {/* Icon */}
+          <div className="w-12 h-12 rounded-lg bg-[#00a8ff]/10 border border-[#00a8ff]/20 flex items-center justify-center mx-auto mb-4">
+            <Shield className="w-6 h-6 text-[#00a8ff]" strokeWidth={2} />
+          </div>
+          
+          {/* Title */}
+          <h2 className="text-[20px] font-semibold text-white mb-2">
+            How can I help you today?
+          </h2>
+          
+          {/* Description */}
+          <p className="text-[13px] text-gray-400 mb-8 leading-relaxed">
+            Ask me about deepfake detection, media analysis, or how to use SatyaAI features.
+          </p>
+
+          {/* Suggestions */}
+          <div className="space-y-2">
+            <p className="text-[11px] text-gray-500 mb-3 flex items-center justify-center gap-1">
+              <Sparkles className="w-3 h-3 text-[#00a8ff]" />
+              Suggested questions
+            </p>
+            {suggestions.map((suggestion, index) => (
+              <button
+                key={index}
+                onClick={() => onPromptSelect(suggestion)}
+                className="w-full text-left px-4 py-3 bg-[#0f1419] border border-[#333333] rounded-lg text-[13px] text-gray-300 hover:border-[#00a8ff]/40 hover:bg-[#00a8ff]/5 transition-all duration-200"
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

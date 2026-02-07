@@ -41,7 +41,7 @@ const Sidebar = ({ isExpanded, onToggle }: SidebarProps) => {
       {/* Toggle Button */}
       <button
         onClick={onToggle}
-        className="fixed left-0 top-20 z-50 bg-[#141414] border border-[#21262d] rounded-r-lg p-2 hover:bg-[#1c1c1c] transition-all duration-300"
+        className="fixed left-0 top-20 z-50 bg-[#0f1419] border border-[#333333] rounded-r-lg p-2 hover:bg-[#1a2a3a] transition-all duration-300"
         style={{ left: isExpanded ? (isMobile ? '240px' : '280px') : '0' }}
         aria-label={isExpanded ? 'Close sidebar' : 'Open sidebar'}
       >
@@ -55,7 +55,7 @@ const Sidebar = ({ isExpanded, onToggle }: SidebarProps) => {
       {/* Sidebar - Flex positioning */}
       <aside 
         className={clsx(
-          'bg-[#141414] border-r border-[#21262d] flex flex-col h-full transition-all duration-300 flex-shrink-0 overflow-hidden',
+          'bg-[#0f1419] border-r border-[#333333] flex flex-col h-full transition-all duration-300 flex-shrink-0 overflow-hidden',
           isExpanded 
             ? (isMobile ? 'w-[240px]' : 'w-[280px]') 
             : 'w-0'
@@ -82,10 +82,10 @@ const Sidebar = ({ isExpanded, onToggle }: SidebarProps) => {
                 to="/dashboard"
                 className={clsx(
                   "w-full flex items-center gap-4 px-4 py-3.5 rounded-lg transition-all duration-150",
-                  "focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-[#141414]",
+                  "focus:outline-none focus:ring-2 focus:ring-[#00a8ff] focus:ring-offset-2 focus:ring-offset-[#0f1419]",
                   isActive('/dashboard')
-                    ? "bg-cyan-500/10 text-cyan-400 border-l-3 border-cyan-500"
-                    : "text-gray-400 hover:bg-[#1c1c1c] hover:text-white"
+                    ? "bg-[#00a8ff]/10 text-[#00a8ff] border-l-3 border-[#00a8ff]"
+                    : "text-gray-400 hover:bg-[#1a2a3a] hover:text-white"
                 )}
                 aria-current={isActive('/dashboard') ? 'page' : undefined}
                 aria-label="Dashboard - Navigate to dashboard page"
@@ -99,10 +99,10 @@ const Sidebar = ({ isExpanded, onToggle }: SidebarProps) => {
                 to="/image-analysis"
                 className={clsx(
                   "w-full flex items-center gap-4 px-4 py-3.5 rounded-lg transition-all duration-150",
-                  "focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-[#141414]",
+                  "focus:outline-none focus:ring-2 focus:ring-[#00a8ff] focus:ring-offset-2 focus:ring-offset-[#0f1419]",
                   isActive('/image-analysis')
-                    ? "bg-cyan-500/10 text-cyan-400 border-l-3 border-cyan-500"
-                    : "text-gray-400 hover:bg-[#1c1c1c] hover:text-white"
+                    ? "bg-[#00a8ff]/10 text-[#00a8ff] border-l-3 border-[#00a8ff]"
+                    : "text-gray-400 hover:bg-[#1a2a3a] hover:text-white"
                 )}
                 aria-current={isActive('/image-analysis') ? 'page' : undefined}
               >
@@ -115,10 +115,10 @@ const Sidebar = ({ isExpanded, onToggle }: SidebarProps) => {
                 to="/video-analysis"
                 className={clsx(
                   "w-full flex items-center gap-4 px-4 py-3.5 rounded-lg transition-all duration-150",
-                  "focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-[#141414]",
+                  "focus:outline-none focus:ring-2 focus:ring-[#00a8ff] focus:ring-offset-2 focus:ring-offset-[#0f1419]",
                   isActive('/video-analysis')
-                    ? "bg-cyan-500/10 text-cyan-400 border-l-3 border-cyan-500"
-                    : "text-gray-400 hover:bg-[#1c1c1c] hover:text-white"
+                    ? "bg-[#00a8ff]/10 text-[#00a8ff] border-l-3 border-[#00a8ff]"
+                    : "text-gray-400 hover:bg-[#1a2a3a] hover:text-white"
                 )}
                 aria-current={isActive('/video-analysis') ? 'page' : undefined}
               >
@@ -131,10 +131,10 @@ const Sidebar = ({ isExpanded, onToggle }: SidebarProps) => {
                 to="/audio-analysis"
                 className={clsx(
                   "w-full flex items-center gap-4 px-4 py-3.5 rounded-lg transition-all duration-150",
-                  "focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-[#141414]",
+                  "focus:outline-none focus:ring-2 focus:ring-[#00a8ff] focus:ring-offset-2 focus:ring-offset-[#0f1419]",
                   isActive('/audio-analysis')
-                    ? "bg-cyan-500/10 text-cyan-400 border-l-3 border-cyan-500"
-                    : "text-gray-400 hover:bg-[#1c1c1c] hover:text-white"
+                    ? "bg-[#00a8ff]/10 text-[#00a8ff] border-l-3 border-[#00a8ff]"
+                    : "text-gray-400 hover:bg-[#1a2a3a] hover:text-white"
                 )}
                 aria-current={isActive('/audio-analysis') ? 'page' : undefined}
               >
@@ -147,10 +147,10 @@ const Sidebar = ({ isExpanded, onToggle }: SidebarProps) => {
                 to="/multimodal-analysis"
                 className={clsx(
                   "w-full flex items-center gap-4 px-4 py-3.5 rounded-lg transition-all duration-150",
-                  "focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-[#141414]",
+                  "focus:outline-none focus:ring-2 focus:ring-[#00a8ff] focus:ring-offset-2 focus:ring-offset-[#0f1419]",
                   isActive('/multimodal-analysis')
-                    ? "bg-cyan-500/10 text-cyan-400 border-l-3 border-cyan-500"
-                    : "text-gray-400 hover:bg-[#1c1c1c] hover:text-white"
+                    ? "bg-[#00a8ff]/10 text-[#00a8ff] border-l-3 border-[#00a8ff]"
+                    : "text-gray-400 hover:bg-[#1a2a3a] hover:text-white"
                 )}
                 aria-current={isActive('/multimodal-analysis') ? 'page' : undefined}
               >
@@ -163,10 +163,10 @@ const Sidebar = ({ isExpanded, onToggle }: SidebarProps) => {
                 to="/batch-analysis"
                 className={clsx(
                   "w-full flex items-center gap-4 px-4 py-3.5 rounded-lg transition-all duration-150",
-                  "focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-[#141414]",
+                  "focus:outline-none focus:ring-2 focus:ring-[#00a8ff] focus:ring-offset-2 focus:ring-offset-[#0f1419]",
                   isActive('/batch-analysis')
-                    ? "bg-cyan-500/10 text-cyan-400 border-l-3 border-cyan-500"
-                    : "text-gray-400 hover:bg-[#1c1c1c] hover:text-white"
+                    ? "bg-[#00a8ff]/10 text-[#00a8ff] border-l-3 border-[#00a8ff]"
+                    : "text-gray-400 hover:bg-[#1a2a3a] hover:text-white"
                 )}
                 aria-current={isActive('/batch-analysis') ? 'page' : undefined}
               >
@@ -192,10 +192,10 @@ const Sidebar = ({ isExpanded, onToggle }: SidebarProps) => {
                 to="/analytics"
                 className={clsx(
                   "w-full flex items-center gap-4 px-4 py-3.5 rounded-lg transition-all duration-150",
-                  "focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-[#141414]",
+                  "focus:outline-none focus:ring-2 focus:ring-[#00a8ff] focus:ring-offset-2 focus:ring-offset-[#0f1419]",
                   isActive('/analytics')
-                    ? "bg-cyan-500/10 text-cyan-400 border-l-3 border-cyan-500"
-                    : "text-gray-400 hover:bg-[#1c1c1c] hover:text-white"
+                    ? "bg-[#00a8ff]/10 text-[#00a8ff] border-l-3 border-[#00a8ff]"
+                    : "text-gray-400 hover:bg-[#1a2a3a] hover:text-white"
                 )}
                 aria-current={isActive('/analytics') ? 'page' : undefined}
               >
@@ -208,10 +208,10 @@ const Sidebar = ({ isExpanded, onToggle }: SidebarProps) => {
                 to="/scan-history"
                 className={clsx(
                   "w-full flex items-center gap-4 px-4 py-3.5 rounded-lg transition-all duration-150",
-                  "focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-[#141414]",
+                  "focus:outline-none focus:ring-2 focus:ring-[#00a8ff] focus:ring-offset-2 focus:ring-offset-[#0f1419]",
                   isActive('/scan-history')
-                    ? "bg-cyan-500/10 text-cyan-400 border-l-3 border-cyan-500"
-                    : "text-gray-400 hover:bg-[#1c1c1c] hover:text-white"
+                    ? "bg-[#00a8ff]/10 text-[#00a8ff] border-l-3 border-[#00a8ff]"
+                    : "text-gray-400 hover:bg-[#1a2a3a] hover:text-white"
                 )}
                 aria-current={isActive('/scan-history') ? 'page' : undefined}
               >
@@ -224,10 +224,10 @@ const Sidebar = ({ isExpanded, onToggle }: SidebarProps) => {
                 to="/settings"
                 className={clsx(
                   "w-full flex items-center gap-4 px-4 py-3.5 rounded-lg transition-all duration-150",
-                  "focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-[#141414]",
+                  "focus:outline-none focus:ring-2 focus:ring-[#00a8ff] focus:ring-offset-2 focus:ring-offset-[#0f1419]",
                   isActive('/settings')
-                    ? "bg-cyan-500/10 text-cyan-400 border-l-3 border-cyan-500"
-                    : "text-gray-400 hover:bg-[#1c1c1c] hover:text-white"
+                    ? "bg-[#00a8ff]/10 text-[#00a8ff] border-l-3 border-[#00a8ff]"
+                    : "text-gray-400 hover:bg-[#1a2a3a] hover:text-white"
                 )}
                 aria-current={isActive('/settings') ? 'page' : undefined}
               >
@@ -240,10 +240,10 @@ const Sidebar = ({ isExpanded, onToggle }: SidebarProps) => {
                 to="/help"
                 className={clsx(
                   "w-full flex items-center gap-4 px-4 py-3.5 rounded-lg transition-all duration-150",
-                  "focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-[#141414]",
+                  "focus:outline-none focus:ring-2 focus:ring-[#00a8ff] focus:ring-offset-2 focus:ring-offset-[#0f1419]",
                   isActive('/help')
-                    ? "bg-cyan-500/10 text-cyan-400 border-l-3 border-cyan-500"
-                    : "text-gray-400 hover:bg-[#1c1c1c] hover:text-white"
+                    ? "bg-[#00a8ff]/10 text-[#00a8ff] border-l-3 border-[#00a8ff]"
+                    : "text-gray-400 hover:bg-[#1a2a3a] hover:text-white"
                 )}
                 aria-current={isActive('/help') ? 'page' : undefined}
               >
@@ -256,20 +256,20 @@ const Sidebar = ({ isExpanded, onToggle }: SidebarProps) => {
 
           {/* AI Assistant Mini Chatbox - Inside Scrollable Area */}
           <div className="mt-6 mb-4">
-            <div className="bg-[#1a1a1a] border-2 border-emerald-500/30 rounded-xl p-4 space-y-3 hover:border-emerald-500/50 transition-all duration-300">
+            <div className="bg-[#0a0a0a] border-2 border-[#00a8ff]/30 rounded-xl p-4 space-y-3 hover:border-[#00a8ff]/50 transition-all duration-300">
             
             {/* Header */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="relative">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#00a8ff] to-[#0088cc] flex items-center justify-center">
                     <Zap className="w-4 h-4" />
                   </div>
-                  <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-emerald-400 rounded-full border-2 border-[#141414] animate-pulse"></div>
+                  <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-[#00a8ff] rounded-full border-2 border-[#0f1419] animate-pulse"></div>
                 </div>
                 <div>
                   <h4 className="text-[13px] font-bold text-white">AI Assistant</h4>
-                  <p className="text-[10px] text-emerald-400">Online</p>
+                  <p className="text-[10px] text-[#00a8ff]">Online</p>
                 </div>
               </div>
             </div>
@@ -278,30 +278,30 @@ const Sidebar = ({ isExpanded, onToggle }: SidebarProps) => {
             <div className="space-y-2">
               <button 
                 onClick={() => handleQuickAction('How does deepfake detection work?')}
-                className="w-full text-left px-3 py-2 rounded-lg bg-[#1a1a1a] hover:bg-[#222222] border border-emerald-500/20 hover:border-emerald-500/40 transition-all duration-200 group"
+                className="w-full text-left px-3 py-2 rounded-lg bg-[#0f1419] hover:bg-[#1a2a3a] border border-[#00a8ff]/20 hover:border-[#00a8ff]/40 transition-all duration-200 group"
               >
                 <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400"></div>
+                  <div className="w-1.5 h-1.5 rounded-full bg-[#00a8ff]"></div>
                   <span className="text-[12px] text-gray-300 group-hover:text-white">Ask about detection</span>
                 </div>
               </button>
               
               <button 
                 onClick={() => handleQuickAction('Can you help me understand my analysis results?')}
-                className="w-full text-left px-3 py-2 rounded-lg bg-[#1a1a1a] hover:bg-[#222222] border border-emerald-500/20 hover:border-emerald-500/40 transition-all duration-200 group"
+                className="w-full text-left px-3 py-2 rounded-lg bg-[#0f1419] hover:bg-[#1a2a3a] border border-[#00a8ff]/20 hover:border-[#00a8ff]/40 transition-all duration-200 group"
               >
                 <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-cyan-400"></div>
+                  <div className="w-1.5 h-1.5 rounded-full bg-[#0088cc]"></div>
                   <span className="text-[12px] text-gray-300 group-hover:text-white">Get help with results</span>
                 </div>
               </button>
               
               <button 
                 onClick={() => handleQuickAction('What are the best practices for deepfake detection?')}
-                className="w-full text-left px-3 py-2 rounded-lg bg-[#1a1a1a] hover:bg-[#222222] border border-emerald-500/20 hover:border-emerald-500/40 transition-all duration-200 group"
+                className="w-full text-left px-3 py-2 rounded-lg bg-[#0f1419] hover:bg-[#1a2a3a] border border-[#00a8ff]/20 hover:border-[#00a8ff]/40 transition-all duration-200 group"
               >
                 <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-teal-400"></div>
+                  <div className="w-1.5 h-1.5 rounded-full bg-[#0066cc]"></div>
                   <span className="text-[12px] text-gray-300 group-hover:text-white">Learn best practices</span>
                 </div>
               </button>
@@ -310,7 +310,7 @@ const Sidebar = ({ isExpanded, onToggle }: SidebarProps) => {
             {/* Open Chat Button */}
             <button 
               onClick={handleOpenChat}
-              className="w-full py-2.5 rounded-lg bg-gradient-to-r from-emerald-500 to-cyan-500 text-white text-[13px] font-semibold hover:shadow-lg hover:shadow-emerald-500/30 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
+              className="w-full py-2.5 rounded-lg bg-gradient-to-r from-[#00a8ff] to-[#0088cc] text-white text-[13px] font-semibold hover:shadow-lg hover:shadow-[#00a8ff]/30 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
             >
               Open Chat
             </button>
