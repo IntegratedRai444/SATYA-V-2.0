@@ -194,8 +194,10 @@ const MultimodalAnalysis: React.FC = () => {
   };
 
   const getConfidenceColor = (confidence: number) => {
-    if (confidence >= 80) return 'text-green-500';
-    if (confidence >= 60) return 'text-yellow-500';
+    // Convert 0-1 scale to 0-100 for display
+    const confidencePercent = Math.round(confidence * 100);
+    if (confidencePercent >= 80) return 'text-green-500';
+    if (confidencePercent >= 60) return 'text-yellow-500';
     return 'text-red-500';
   };
 
@@ -213,7 +215,7 @@ const MultimodalAnalysis: React.FC = () => {
                 Multimodal Analysis
               </h1>
               <span className="bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 px-3 py-1 text-xs font-semibold rounded-md">
-                EXPERIMENTAL
+                EXPERIMENTAL - Results may not be accurate
               </span>
             </div>
           </div>
@@ -221,7 +223,7 @@ const MultimodalAnalysis: React.FC = () => {
             Advanced AI-powered deepfake detection with single-file, multimodal, and real-time analysis capabilities
           </p>
           <p className="text-yellow-400/60 text-sm mt-2">
-            This feature is experimental and may not provide accurate results. Use with caution.
+            ⚠️ This is an experimental feature. Results may not be accurate and should not be used for critical decisions.
           </p>
         </div>
 
@@ -305,10 +307,10 @@ const MultimodalAnalysis: React.FC = () => {
                               <div className="flex items-center gap-2 mb-1">
                                 <span className={`text-sm font-medium ${result.result.result?.isAuthentic ? 'text-green-400' : 'text-red-400'
                                   }`}>
-                                  {result.result.result?.isAuthentic ? 'AUTHENTIC MEDIA' : 'MANIPULATED MEDIA'}
+                                  {result.result.result?.isAuthentic ? 'AUTHENTIC MEDIA' : 'POTENTIALLY MANIPULATED'}
                                 </span>
                                 <span className={`text-sm ${getConfidenceColor(result.result.result?.confidence || 0)}`}>
-                                  {result.result.result?.confidence}%
+                                  {Math.round((result.result.result?.confidence || 0) * 100)}%
                                 </span>
                               </div>
                               {result.result.result?.details && (
@@ -316,6 +318,9 @@ const MultimodalAnalysis: React.FC = () => {
                                   Analysis complete
                                 </p>
                               )}
+                              <p className="text-xs text-yellow-400 mt-1">
+                                ⚠️ Experimental feature - results may not be accurate
+                              </p>
                             </div>
                           )}
 
