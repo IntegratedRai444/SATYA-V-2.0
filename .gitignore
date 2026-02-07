@@ -11,12 +11,16 @@ __pycache__/
 node_modules/
 dist/
 client/node_modules/
+client/dist/
+client/.vite/
 
 # VSCode
 .vscode/
+.idea/
 
 # Mac
 .DS_Store
+Thumbs.db
 
 # Logs
 *.log
@@ -70,8 +74,9 @@ backend/report_engine/exports/
 *.pb
 *.pkl
 *.safetensors
+*.ckpt
+*.pt
 # models/  # Commented out to allow scanning
-
 
 # Database
 *.sqlite
@@ -85,3 +90,26 @@ vite.config.ts.*
 *.tsbuildinfo
 *-report.json
 yarn.lock
+
+# Client specific
+client/coverage/
+client/*.lcov
+client/tsconfig.tsbuildinfo
+client/.vite/
+
+# Python service specific
+server/python/htmlcov/
+server/python/.tox/
+server/python/.nox/
+server/python/.coverage
+server/python/.mypy_cache/
+server/python/.pyre/
+server/python/build/
+server/python/dist/
+server/python/*.egg-info/
+server/python/wheels/
+server/python/weights/
+server/python/checkpoints/
+server/python/runs/
+server/python/test_results/
+server/python/outputs/
