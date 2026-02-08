@@ -11,7 +11,7 @@ const buttonVariants = cva(
         default: "bg-accent-cyan text-white hover:bg-accent-cyan-dark shadow-lg shadow-accent-cyan/30 hover:shadow-accent-cyan/50",
         primary: "bg-accent-cyan text-white hover:bg-accent-cyan-dark shadow-lg shadow-accent-cyan/30 hover:shadow-accent-cyan/50",
         secondary: "bg-transparent border-2 border-accent-cyan text-accent-cyan hover:bg-accent-cyan/10",
-        outline: "border border-border-primary text-text-primary hover:bg-bg-tertiary",
+        outline: "border border-accent-cyan text-text-primary hover:bg-bg-tertiary",
         ghost: "hover:bg-bg-tertiary text-text-secondary hover:text-text-primary",
         gradient: "bg-gradient-to-r from-accent-cyan to-accent-purple text-white shadow-lg",
         destructive: "bg-accent-red text-white hover:bg-accent-red/90",

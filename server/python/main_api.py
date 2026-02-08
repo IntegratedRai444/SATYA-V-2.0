@@ -1113,9 +1113,241 @@ async def get_multimodal_status():
             "modalities": {"image": False, "audio": False, "video": False}
         }
 
+@app.get("/api/v2/database/status")
+async def get_database_status():
+    """
+    Get the status of Supabase database connection.
+    
+    Returns:
+        Database connection status and configuration details
+    """
+    try:
+        from database.base import validate_supabase_connection
+        status = validate_supabase_connection()
+        
+        if status["status"] == "connected":
+            return {
+                "available": True,
+                "database": "supabase",
+                "status": status["status"],
+                "message": status["message"],
+                "key_type": status["key_type"],
+                "configuration": {
+                    "url_configured": status["url_configured"],
+                    "key_configured": status["key_configured"]
+                }
+            }
+        else:
+            return {
+                "available": False,
+                "database": "supabase",
+                "status": status["status"],
+                "message": status["message"],
+                "key_type": status.get("key_type", "unknown"),
+                "error": status.get("error"),
+                "configuration": {
+                    "url_configured": status["url_configured"],
+                    "key_configured": status["key_configured"]
+                }
+            }
+            
+    except Exception as e:
+        logger.error(f"Failed to get database status: {e}")
+        return {
+            "available": False,
+            "database": "supabase",
+            "status": "error",
+            "message": f"Status check failed: {str(e)}",
+            "error": str(e)
+        }
+
+
 # WebSocket implementation removed - handled by Node.js backend
 # All WebSocket communication should go through Node.js at /api/v2/dashboard/ws
 # This keeps Python focused on ML computation only
+
+# ===========================================================================
+# CANONICAL API ENDPOINTS - Forward to /api/v2 routes
+# ===========================================================================
+
+@app.post("/analyze")
+async def analyze_canonical(
+    request: Request,
+    current_user: Optional[Dict] = Depends(get_current_user) if MIDDLEWARE_AVAILABLE else None
+):
+    """
+    Canonical analysis endpoint - auto-detects media type and routes appropriately.
+    
+    This is the main entry point for analysis requests.
+    Automatically detects whether the uploaded file is image, video, or audio
+    and forwards to the appropriate specialized endpoint.
+    
+    Args:
+        request: FastAPI request object
+        current_user: Authenticated user (if auth enabled)
+        
+    Returns:
+        Analysis results from the appropriate detector
+    """
+    try:
+        # Get form data
+        form = await request.form()
+        
+        # Extract file from form
+        file = None
+        for key, value in form.items():
+            if isinstance(value, UploadFile):
+                file = value
+                break
+        
+        if not file:
+            raise HTTPException(status_code=400, detail="No file provided")
+        
+        # Read file content
+        content = await file.read()
+        if not content or len(content) < 100:
+            raise HTTPException(status_code=400, detail="Invalid file")
+        
+        # Auto-detect file type
+        import magic
+        mime_type = magic.from_buffer(content, mime=True)
+        
+        logger.info(f"Canonical analysis: auto-detected type {mime_type} for file {file.filename}")
+        
+        # Route to appropriate endpoint based on MIME type
+        if mime_type.startswith('image/'):
+            # Forward to image analysis
+            from fastapi import UploadFile
+            from io import BytesIO
+            
+            # Create UploadFile object for forwarding
+            file_obj = UploadFile(file.filename, BytesIO(content), content_type=mime_type)
+            
+            # Call the existing image analysis endpoint
+            return await analyze_image_unified(file_obj, True, current_user)
+            
+        elif mime_type.startswith('video/'):
+            # Forward to video analysis
+            from fastapi import UploadFile
+            from io import BytesIO
+            
+            file_obj = UploadFile(file.filename, BytesIO(content), content_type=mime_type)
+            return await analyze_video_unified(file_obj, None, True, current_user)
+            
+        elif mime_type.startswith('audio/'):
+            # Forward to audio analysis
+            from fastapi import UploadFile
+            from io import BytesIO
+            
+            file_obj = UploadFile(file.filename, BytesIO(content), content_type=mime_type)
+            return await analyze_audio_unified(file_obj, current_user)
+            
+        else:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Unsupported file type: {mime_type}. Supported types: image/*, video/*, audio/*"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Canonical analysis failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/analyze/image")
+async def analyze_image_canonical(
+    file: UploadFile = File(...),
+    analyze_forensics: bool = True,
+    current_user: Optional[Dict] = Depends(get_current_user) if MIDDLEWARE_AVAILABLE else None
+):
+    """
+    Canonical image analysis endpoint.
+    
+    Forwards requests to /api/v2/analysis/unified/image
+    
+    Args:
+        file: Image file to analyze
+        analyze_forensics: Whether to perform forensic analysis
+        current_user: Authenticated user (if auth enabled)
+        
+    Returns:
+        Image analysis results
+    """
+    logger.info(f"Canonical image analysis: {file.filename}")
+    return await analyze_image_unified(file, analyze_forensics, current_user)
+
+
+@app.post("/analyze/video")
+async def analyze_video_canonical(
+    file: UploadFile = File(...),
+    analyze_frames: Optional[int] = None,
+    analyze_forensics: bool = True,
+    current_user: Optional[Dict] = Depends(get_current_user) if MIDDLEWARE_AVAILABLE else None
+):
+    """
+    Canonical video analysis endpoint.
+    
+    Forwards requests to /api/v2/analysis/unified/video
+    
+    Args:
+        file: Video file to analyze
+        analyze_frames: Number of frames to analyze (None for auto)
+        analyze_forensics: Whether to perform forensic analysis
+        current_user: Authenticated user (if auth enabled)
+        
+    Returns:
+        Video analysis results
+    """
+    logger.info(f"Canonical video analysis: {file.filename}")
+    return await analyze_video_unified(file, analyze_frames, analyze_forensics, current_user)
+
+
+@app.post("/analyze/audio")
+async def analyze_audio_canonical(
+    file: UploadFile = File(...),
+    current_user: Optional[Dict] = Depends(get_current_user) if MIDDLEWARE_AVAILABLE else None
+):
+    """
+    Canonical audio analysis endpoint.
+    
+    Forwards requests to /api/v2/analysis/unified/audio
+    
+    Args:
+        file: Audio file to analyze
+        current_user: Authenticated user (if auth enabled)
+        
+    Returns:
+        Audio analysis results
+    """
+    logger.info(f"Canonical audio analysis: {file.filename}")
+    return await analyze_audio_unified(file, current_user)
+
+
+@app.get("/analyze/info")
+async def analyze_get_info():
+    """
+    GET endpoint for /analyze - returns API information.
+    
+    Returns:
+        Information about available analysis endpoints and supported formats
+    """
+    return {
+        "endpoint": "/analyze",
+        "method": "POST",
+        "description": "Canonical analysis endpoint - auto-detects media type",
+        "supported_formats": {
+            "image": ["image/jpeg", "image/png", "image/webp", "image/gif"],
+            "video": ["video/mp4", "video/avi", "video/mov", "video/webm"],
+            "audio": ["audio/wav", "audio/mp3", "audio/m4a", "audio/ogg"]
+        },
+        "alternative_endpoints": {
+            "image": "/analyze/image",
+            "video": "/analyze/video", 
+            "audio": "/analyze/audio"
+        },
+        "documentation": "Auto-detects file type and routes to appropriate specialized detector"
+    }
 
 
 

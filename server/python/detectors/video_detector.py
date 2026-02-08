@@ -9,7 +9,7 @@ import tempfile
 import time
 from collections import defaultdict, deque
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -191,18 +191,28 @@ class VideoDetector:
             "max_scene_changes": 50,  # Max scene changes before flagging
         }
 
-    def detect(self, video_path: str) -> Dict:
+    def detect(self, video_input: Union[str, List[np.ndarray]]) -> Dict:
         """
         Comprehensive video analysis
-
+        
         Args:
-            video_path: Path to video file
-
+            video_input: Either path to video file (str) or list of numpy array frames
+            
         Returns:
             Comprehensive detection results
         """
+        # Handle both file paths and frame arrays
+        if isinstance(video_input, str):
+            return self._detect_from_file(video_input)
+        elif isinstance(video_input, list):
+            return self._detect_from_frames(video_input)
+        else:
+            raise ValueError("video_input must be either a file path (str) or list of frames")
+    
+    def _detect_from_file(self, video_path: str) -> Dict:
+        """Detect from video file path"""
         try:
-            logger.info(f"🔍 Analyzing video: {video_path}")
+            logger.info(f"🔍 Analyzing video file: {video_path}")
             start_time = time.time()
 
             # Open video
@@ -221,124 +231,10 @@ class VideoDetector:
                 f"📊 Video: {total_frames} frames, {fps:.2f} fps, {duration:.2f}s, {width}x{height}"
             )
 
-            # Initialize results
-            results = {
-                "success": True,
-                "authenticity_score": 0.0,
-                "confidence": 0.0,
-                "label": "unknown",
-                "explanation": "",
-                "details": {
-                    "video_info": {
-                        "total_frames": total_frames,
-                        "fps": fps,
-                        "duration": duration,
-                        "resolution": f"{width}x{height}",
-                        "frames_analyzed": 0,
-                    }
-                },
-                "warnings": [],
-                "suspicious_frames": [],
-                "scene_changes": [],
-            }
-
-            # 1. Extract and analyze frames
-            frame_results = self._analyze_frames_comprehensive(cap)
-            results["details"]["frame_analysis"] = {
-                "frames_analyzed": len(frame_results),
-                "average_score": np.mean([f["score"] for f in frame_results])
-                if frame_results
-                else 0,
-                "suspicious_frames": sum(1 for f in frame_results if f["score"] < 0.5),
-                "authentic_frames": sum(1 for f in frame_results if f["score"] >= 0.7),
-                "score_variance": np.var([f["score"] for f in frame_results])
-                if frame_results
-                else 0,
-            }
-            results["details"]["video_info"]["frames_analyzed"] = len(frame_results)
-
-            # 2. Temporal consistency analysis
-            temporal_result = self._analyze_temporal_consistency_comprehensive(
-                frame_results
-            )
-            results["details"]["temporal_consistency"] = temporal_result
-
-            # 3. Face tracking and consistency
-            face_tracking_result = self._analyze_face_tracking_comprehensive(
-                frame_results
-            )
-            results["details"]["face_tracking"] = face_tracking_result
-
-            # 4. Motion pattern analysis
-            motion_result = self._analyze_motion_patterns_comprehensive(frame_results)
-            results["details"]["motion_analysis"] = motion_result
-
-            # 5. Optical flow analysis (if available)
-            if self.flow_calculator and self.config["optical_flow_analysis"]:
-                flow_result = self._analyze_optical_flow(frame_results)
-                results["details"]["optical_flow"] = flow_result
-
-            # 6. Advanced temporal deep learning analysis (if model available)
-            if self.temporal_model is not None:
-                temporal_dl_result = self._analyze_temporal_deep_learning(
-                    cap, video_path
-                )
-                results["details"]["temporal_deep_learning"] = temporal_dl_result
-
-            # 7. Scene change detection
-            if self.config["scene_change_detection"]:
-                scene_changes = self._detect_scene_changes(frame_results)
-                results["scene_changes"] = scene_changes
-                results["details"]["scene_analysis"] = {
-                    "scene_changes_detected": len(scene_changes),
-                    "suspicious": len(scene_changes) > self.config["max_scene_changes"],
-                }
-
-            # 7. Compression artifact analysis
-            compression_result = self._analyze_video_compression(frame_results)
-            results["details"]["compression_analysis"] = compression_result
-
-            # 8. Frame rate consistency
-            fps_consistency = self._analyze_fps_consistency(frame_results, fps)
-            results["details"]["fps_consistency"] = fps_consistency
-
-            # Combine all scores
-            final_score, confidence, label = self._combine_all_video_scores(
-                results["details"]
-            )
-
-            results["authenticity_score"] = final_score
-            results["confidence"] = confidence
-            results["label"] = label
-
-            # Generate explanation
-            results["explanation"] = self._generate_video_explanation(results)
-
-            # Add recommendations
-            results["recommendations"] = self._generate_video_recommendations(results)
-
-            # Identify suspicious frames
-            results["suspicious_frames"] = [
-                {
-                    "frame_number": f["frame_number"],
-                    "score": f["score"],
-                    "timestamp": f["frame_number"] / fps if fps > 0 else 0,
-                }
-                for f in frame_results
-                if f["score"] < 0.4
-            ][
-                :10
-            ]  # Top 10 most suspicious
-
+            # Process frames from video file
+            results = self._process_video_frames(cap, fps, total_frames, width, height, duration, start_time)
+            
             cap.release()
-
-            processing_time = time.time() - start_time
-            results["processing_time"] = processing_time
-
-            logger.info(
-                f"✅ Video analysis complete: {label} ({final_score:.3f}, confidence: {confidence:.3f}) in {processing_time:.1f}s"
-            )
-
             return results
 
         except Exception as e:
@@ -350,6 +246,172 @@ class VideoDetector:
                 "confidence": 0.0,
                 "authenticity_score": 0.5,
             }
+    
+    def _detect_from_frames(self, frames: List[np.ndarray]) -> Dict:
+        """Detect from list of numpy array frames"""
+        try:
+            logger.info(f"🔍 Analyzing {len(frames)} video frames")
+            start_time = time.time()
+
+            # Use default video properties for frame arrays
+            fps = 30.0  # Default fps
+            total_frames = len(frames)
+            width = frames[0].shape[1] if frames else 224
+            height = frames[0].shape[0] if frames else 224
+            duration = total_frames / fps if fps > 0 else 0
+
+            logger.info(
+                f"📊 Video frames: {total_frames} frames, {fps:.2f} fps, {duration:.2f}s, {width}x{height}"
+            )
+
+            # Process frames directly
+            results = self._process_video_frames(None, fps, total_frames, width, height, duration, start_time, frames)
+            
+            return results
+
+        except Exception as e:
+            logger.error(f"❌ Video detection failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "label": "error",
+                "confidence": 0.0,
+                "authenticity_score": 0.5,
+            }
+    
+    def _process_video_frames(self, cap, fps, total_frames, width, height, duration, start_time, frames_list=None) -> Dict:
+        """Common processing logic for both file and frame inputs"""
+
+        # Initialize results
+        results = {
+            "success": True,
+            "authenticity_score": 0.0,
+            "confidence": 0.0,
+            "label": "unknown",
+            "explanation": "",
+            "details": {
+                "video_info": {
+                    "total_frames": total_frames,
+                    "fps": fps,
+                    "duration": duration,
+                    "resolution": f"{width}x{height}",
+                    "frames_analyzed": 0,
+                }
+            },
+            "warnings": [],
+            "suspicious_frames": [],
+            "scene_changes": [],
+        }
+
+            # 1. Extract and analyze frames
+        if frames_list is not None:
+            # Process provided frames directly
+            frame_results = []
+            for i, frame in enumerate(frames_list):
+                frame_result = self._analyze_single_frame_comprehensive(frame, i)
+                if frame_result:
+                    frame_results.append(frame_result)
+        else:
+            # Extract frames from video capture
+            frame_results = self._analyze_frames_comprehensive(cap)
+            
+        results["details"]["frame_analysis"] = {
+            "frames_analyzed": len(frame_results),
+            "average_score": np.mean([f["score"] for f in frame_results])
+            if frame_results
+            else 0,
+            "suspicious_frames": sum(1 for f in frame_results if f["score"] < 0.5),
+            "authentic_frames": sum(1 for f in frame_results if f["score"] >= 0.7),
+            "score_variance": np.var([f["score"] for f in frame_results])
+            if frame_results
+            else 0,
+        }
+        results["details"]["video_info"]["frames_analyzed"] = len(frame_results)
+
+        # 2. Temporal consistency analysis
+        temporal_result = self._analyze_temporal_consistency_comprehensive(
+            frame_results
+        )
+        results["details"]["temporal_consistency"] = temporal_result
+
+        # 3. Face tracking and consistency
+        face_tracking_result = self._analyze_face_tracking_comprehensive(
+            frame_results
+        )
+        results["details"]["face_tracking"] = face_tracking_result
+
+        # 4. Motion pattern analysis
+        motion_result = self._analyze_motion_patterns_comprehensive(frame_results)
+        results["details"]["motion_analysis"] = motion_result
+
+        # 5. Optical flow analysis (if available)
+        if self.flow_calculator and self.config["optical_flow_analysis"]:
+            flow_result = self._analyze_optical_flow(frame_results)
+            results["details"]["optical_flow"] = flow_result
+
+        # 6. Advanced temporal deep learning analysis (if model available)
+        if self.temporal_model is not None and cap is not None:
+            temporal_dl_result = self._analyze_temporal_deep_learning(
+                cap, "video_file" if frames_list is None else "frame_array"
+            )
+            results["details"]["temporal_deep_learning"] = temporal_dl_result
+
+        # 7. Scene change detection
+        if self.config["scene_change_detection"]:
+            scene_changes = self._detect_scene_changes(frame_results)
+            results["scene_changes"] = scene_changes
+            results["details"]["scene_analysis"] = {
+                "scene_changes_detected": len(scene_changes),
+                "suspicious": len(scene_changes) > self.config["max_scene_changes"],
+            }
+
+        # 7. Compression artifact analysis
+        compression_result = self._analyze_video_compression(frame_results)
+        results["details"]["compression_analysis"] = compression_result
+
+        # 8. Frame rate consistency
+        fps_consistency = self._analyze_fps_consistency(frame_results, fps)
+        results["details"]["fps_consistency"] = fps_consistency
+
+        # Combine all scores
+        final_score, confidence, label = self._combine_all_video_scores(
+            results["details"]
+        )
+
+        results["authenticity_score"] = final_score
+        results["confidence"] = confidence
+        results["label"] = label
+
+        # Generate explanation
+        results["explanation"] = self._generate_video_explanation(results)
+
+        # Add recommendations
+        results["recommendations"] = self._generate_video_recommendations(results)
+
+        # Identify suspicious frames
+        results["suspicious_frames"] = [
+            {
+                "frame_number": f["frame_number"],
+                "score": f["score"],
+                "timestamp": f["frame_number"] / fps if fps > 0 else 0,
+            }
+            for f in frame_results
+            if f["score"] < 0.4
+        ][
+            :10
+        ]  # Top 10 most suspicious
+
+        if cap is not None:
+            cap.release()
+
+        processing_time = time.time() - start_time
+        results["processing_time"] = processing_time
+
+        logger.info(
+            f"✅ Video analysis complete: {label} ({final_score:.3f}, confidence: {confidence:.3f}) in {processing_time:.1f}s"
+        )
+
+        return results
 
     def _analyze_frames_comprehensive(self, cap: cv2.VideoCapture) -> List[Dict]:
         """Extract and comprehensively analyze frames"""

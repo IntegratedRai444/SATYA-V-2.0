@@ -45,11 +45,10 @@ const History = lazyWithRetry(() => import('@/pages/History'));
 const Settings = lazyWithRetry(() => import('@/pages/Settings'));
 const Help = lazyWithRetry(() => import('@/pages/Help'));
 
-const AIAssistant = lazyWithRetry(() => import('@/pages/AIAssistant'));
-// const BatchAnalysis = lazyWithRetry(() => import('@/pages/BatchAnalysis')); // DISABLED
 const ImageAnalysis = lazyWithRetry(() => import('@/pages/ImageAnalysis'));
 const VideoAnalysis = lazyWithRetry(() => import('@/pages/VideoAnalysis'));
 const AudioAnalysis = lazyWithRetry(() => import('@/pages/AudioAnalysis'));
+const DetectionGuide = lazyWithRetry(() => import('@/pages/DetectionGuide'));
 const WiringVerification = lazyWithRetry(() => import('@/pages/dev/WiringVerification'));
 const NotFound = lazyWithRetry(() => import('@/pages/NotFound'));
 
@@ -217,14 +216,8 @@ export const router = createBrowserRouter([
         ),
       },
       {
-        path: 'ai-assistant',
-        element: (
-          <ErrorBoundary level="page">
-            <Suspense fallback={<LoadingState message="Loading AI Assistant..." />}>
-              <AIAssistant />
-            </Suspense>
-          </ErrorBoundary>
-        ),
+        path: 'system-status',
+        element: <Navigate to="/dashboard" replace />,
       },
       // {
       //   path: 'batch-analysis',
@@ -269,6 +262,16 @@ export const router = createBrowserRouter([
       {
         path: 'multimodal-analysis',
         element: <Navigate to="/smart-analysis" replace />,
+      },
+      {
+        path: 'detection-guide',
+        element: (
+          <ErrorBoundary level="page">
+            <Suspense fallback={<LoadingState message="Loading detection guide..." />}>
+              <DetectionGuide />
+            </Suspense>
+          </ErrorBoundary>
+        ),
       },
     ],
   },

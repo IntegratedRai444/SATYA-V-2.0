@@ -53,6 +53,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         # Initialize Redis client if URL is provided
         self.redis = None
+        self.redis_available = False
+        
         if redis_url:
             try:
                 self.redis = redis.Redis.from_url(
@@ -60,10 +62,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 )
                 # Test connection
                 self.redis.ping()
-                logger.info("Connected to Redis for rate limiting")
+                self.redis_available = True
+                logger.info("✅ Connected to Redis for rate limiting")
             except Exception as e:
-                logger.error(f"Failed to connect to Redis: {e}")
+                logger.warning(f"⚠️ Redis not available for rate limiting: {e}")
+                logger.info("🔄 Falling back to in-memory rate limiting")
                 self.redis = None
+                self.redis_available = False
+        else:
+            logger.info("🔄 No Redis URL provided - using in-memory rate limiting")
 
     async def dispatch(
         self, request: StarletteRequest, call_next: RequestResponseEndpoint
@@ -178,12 +185,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         current_time = int(time.time())
         window_start = current_time - period
 
-        if self.redis:
+        if self.redis_available:
             # Use Redis for distributed rate limiting
             try:
                 # Use a Redis pipeline for atomic operations
                 with self.redis.pipeline() as pipe:
-                    # Add current timestamp to the sorted set
+                    # Add current timestamp to sorted set
                     pipe.zadd(
                         f"ratelimit:{client_id}", {str(current_time): current_time}
                     )
@@ -200,20 +207,30 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 # Check if limit is exceeded
                 if count > limit:
                     # Get the oldest timestamp to calculate retry_after
-                    oldest = self.redis.zrange(
-                        f"ratelimit:{client_id}", 0, 0, withscores=True
-                    )
-                    if oldest:
-                        retry_after = int((oldest[0][1] + period) - current_time)
-                        return True, max(1, retry_after)
-                    return True, period
+                    try:
+                        oldest = self.redis.zrange(
+                            f"ratelimit:{client_id}", 0, 0, withscores=True
+                        )
+                        if oldest:
+                            retry_after = int((oldest[0][1] + period) - current_time)
+                            return True, max(1, retry_after)
+                        return True, period
+                    except Exception as e:
+                        logger.warning(f"Redis error getting retry time: {e}")
+                        return True, period
 
                 return False, 0
 
             except redis.RedisError as e:
-                logger.error(f"Redis error in rate limiting: {e}")
-                # Fail open - allow the request if Redis is down
-                return False, 0
+                logger.warning(f"⚠️ Redis rate limiting failed, falling back to memory: {e}")
+                # Mark Redis as unavailable for future requests
+                self.redis_available = False
+                # Fall through to in-memory rate limiting
+            except Exception as e:
+                logger.error(f"❌ Unexpected Redis error: {e}")
+                # Mark Redis as unavailable for future requests
+                self.redis_available = False
+                # Fall through to in-memory rate limiting
         else:
             # In-memory rate limiting (fallback)
             if not hasattr(self, "_request_timestamps"):
@@ -246,22 +263,33 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         current_time = int(time.time())
         window_start = current_time - period
 
-        if self.redis:
+        if self.redis_available:
             try:
                 # Get count of requests in current window
                 count = self.redis.zcount(
                     f"ratelimit:{client_id}", window_start, "+inf"
                 )
-                # Get oldest timestamp to calculate reset time
-                oldest = self.redis.zrange(
-                    f"ratelimit:{client_id}", 0, 0, withscores=True
-                )
-                reset_at = (
-                    (oldest[0][1] + period) if oldest else (current_time + period)
-                )
-                return max(0, limit - count), int(reset_at)
+                # Get the oldest timestamp to calculate reset time
+                try:
+                    oldest = self.redis.zrange(
+                        f"ratelimit:{client_id}", 0, 0, withscores=True
+                    )
+                    reset_at = (
+                        (oldest[0][1] + period) if oldest else (current_time + period)
+                    )
+                    return max(0, limit - count), int(reset_at)
+                except Exception as e:
+                    logger.warning(f"Redis error getting reset time: {e}")
+                    return max(0, limit - count), current_time + period
             except redis.RedisError as e:
-                logger.error(f"Redis error getting rate limit info: {e}")
+                logger.warning(f"⚠️ Redis rate limit info failed, using fallback: {e}")
+                # Mark Redis as unavailable for future requests
+                self.redis_available = False
+                return limit, current_time + period
+            except Exception as e:
+                logger.error(f"❌ Unexpected Redis error getting rate limit info: {e}")
+                # Mark Redis as unavailable for future requests
+                self.redis_available = False
                 return limit, current_time + period
         else:
             # In-memory fallback

@@ -5,7 +5,7 @@ import {
   LogOut,
   Settings,
   Home,
-  Bot,
+  Activity,
   Clock,
   HelpCircle
 } from 'lucide-react';
@@ -18,6 +18,17 @@ const Navbar = () => {
   const { user, signOut } = useSupabaseAuth();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Handle System Status click
+  const handleSystemStatusClick = () => {
+    if (location.pathname === '/dashboard') {
+      // If already on dashboard, emit custom event to open modal
+      window.dispatchEvent(new CustomEvent('openSystemStatus'));
+    } else {
+      // Navigate to dashboard (will trigger modal via route)
+      navigate('/dashboard');
+    }
+  };
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -52,7 +63,7 @@ const Navbar = () => {
 
   const navItems = [
     { icon: Home, label: 'Home', path: '/dashboard' },
-    { icon: Bot, label: 'AI Assistant', path: '/ai-assistant' },
+    { icon: Activity, label: 'System Status', path: '/system-status' },
     { icon: Clock, label: 'History', path: '/history' },
     { icon: Settings, label: 'Settings', path: '/settings' },
     { icon: HelpCircle, label: 'Help', path: '/help' },
@@ -91,7 +102,7 @@ const Navbar = () => {
             return (
               <button
                 key={item.path}
-                onClick={() => navigate(item.path)}
+                onClick={() => item.label === 'System Status' ? handleSystemStatusClick() : navigate(item.path)}
                 className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[15px] font-medium transition-all duration-200 ${
                   active
                     ? 'bg-[#00BFFF] text-white shadow-lg shadow-cyan-500/30'

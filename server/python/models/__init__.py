@@ -11,33 +11,45 @@ except ImportError as e:
     print(f"Warning: DeepfakeClassifier not available: {e}")
     DEEPFAKE_CLASSIFIER_AVAILABLE = False
 
-# Legacy models from models.py
+# Legacy models from individual model files (if they exist)
 try:
-    import sys
-    sys.path.append('../../')
-    from models import (
-        XceptionDeepfakeDetector,
-        EfficientNetDeepfakeDetector,
-        ResNet50DeepfakeDetector,
-        AudioDeepfakeDetector as LegacyAudioDetector,
-        VideoDeepfakeDetector as LegacyVideoDetector
-    )
+    from .xception_detector import XceptionDeepfakeDetector
     XCEPTION_DETECTOR_AVAILABLE = True
-    EFFICIENTNET_DETECTOR_AVAILABLE = True
-    RESNET50_DETECTOR_AVAILABLE = True
-    LEGACY_AUDIO_DETECTOR_AVAILABLE = True
-    LEGACY_VIDEO_DETECTOR_AVAILABLE = True
-except ImportError as e:
-    print(f"Warning: Legacy detectors not available: {e}")
+except ImportError:
+    print("Warning: XceptionDeepfakeDetector not available")
     XCEPTION_DETECTOR_AVAILABLE = False
-    EFFICIENTNET_DETECTOR_AVAILABLE = False
-    RESNET50_DETECTOR_AVAILABLE = False
-    LEGACY_AUDIO_DETECTOR_AVAILABLE = False
-    LEGACY_VIDEO_DETECTOR_AVAILABLE = False
     XceptionDeepfakeDetector = None
+
+try:
+    from .efficientnet_detector import EfficientNetDeepfakeDetector
+    EFFICIENTNET_DETECTOR_AVAILABLE = True
+except ImportError:
+    print("Warning: EfficientNetDeepfakeDetector not available")
+    EFFICIENTNET_DETECTOR_AVAILABLE = False
     EfficientNetDeepfakeDetector = None
+
+try:
+    from .resnet50_detector import ResNet50DeepfakeDetector
+    RESNET50_DETECTOR_AVAILABLE = True
+except ImportError:
+    print("Warning: ResNet50DeepfakeDetector not available")
+    RESNET50_DETECTOR_AVAILABLE = False
     ResNet50DeepfakeDetector = None
+
+try:
+    from .audio_detector_legacy import AudioDeepfakeDetector as LegacyAudioDetector
+    LEGACY_AUDIO_DETECTOR_AVAILABLE = True
+except ImportError:
+    print("Warning: Legacy AudioDeepfakeDetector not available")
+    LEGACY_AUDIO_DETECTOR_AVAILABLE = False
     LegacyAudioDetector = None
+
+try:
+    from .video_detector_legacy import VideoDeepfakeDetector as LegacyVideoDetector
+    LEGACY_VIDEO_DETECTOR_AVAILABLE = True
+except ImportError:
+    print("Warning: Legacy VideoDeepfakeDetector not available")
+    LEGACY_VIDEO_DETECTOR_AVAILABLE = False
     LegacyVideoDetector = None
 
 # Enhanced modality models

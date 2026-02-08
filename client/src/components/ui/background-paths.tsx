@@ -136,9 +136,45 @@ export function BackgroundPaths({
 export function DashboardBackground() {
     return (
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-            <div className="absolute inset-0 opacity-15">
+            {/* Animated background paths */}
+            <div className="absolute inset-0 opacity-20">
                 <FloatingPaths position={1} />
                 <FloatingPaths position={-1} />
+            </div>
+            
+            {/* Enhanced star field */}
+            <div className="absolute inset-0">
+                {/* Large glowing stars */}
+                <div className="absolute top-10 left-20 w-3 h-3 bg-cyan-400 rounded-full animate-pulse shadow-lg shadow-cyan-400/50" style={{ animationDelay: '0s', animationDuration: '4s' }}></div>
+                <div className="absolute top-32 right-16 w-2 h-2 bg-blue-400 rounded-full animate-pulse shadow-lg shadow-blue-400/40" style={{ animationDelay: '1.5s', animationDuration: '3.5s' }}></div>
+                <div className="absolute top-16 left-1/3 w-2.5 h-2.5 bg-cyan-300 rounded-full animate-pulse shadow-lg shadow-cyan-300/30" style={{ animationDelay: '2.5s', animationDuration: '5s' }}></div>
+                <div className="absolute top-48 right-32 w-1.5 h-1.5 bg-blue-300 rounded-full animate-pulse shadow-md shadow-blue-300/30" style={{ animationDelay: '3.2s', animationDuration: '4.2s' }}></div>
+                
+                {/* Medium animated stars */}
+                <div className="absolute top-24 left-40 w-1 h-1 bg-white rounded-full animate-pulse opacity-80" style={{ animationDelay: '0.8s', animationDuration: '2.8s' }}></div>
+                <div className="absolute top-36 right-48 w-1.5 h-1.5 bg-cyan-200 rounded-full animate-pulse opacity-70" style={{ animationDelay: '1.2s', animationDuration: '3.1s' }}></div>
+                <div className="absolute top-8 left-60 w-1 h-1 bg-blue-200 rounded-full animate-pulse opacity-60" style={{ animationDelay: '2.1s', animationDuration: '2.9s' }}></div>
+                <div className="absolute top-44 right-24 w-0.5 h-0.5 bg-white rounded-full animate-pulse opacity-90" style={{ animationDelay: '0.5s', animationDuration: '2.3s' }}></div>
+                
+                {/* Small twinkling stars */}
+                <div className="absolute top-12 right-64 w-0.5 h-0.5 bg-cyan-100 rounded-full animate-pulse opacity-50" style={{ animationDelay: '1.8s', animationDuration: '1.9s' }}></div>
+                <div className="absolute top-28 left-24 w-0.5 h-0.5 bg-blue-100 rounded-full animate-pulse opacity-40" style={{ animationDelay: '0.3s', animationDuration: '2.1s' }}></div>
+                <div className="absolute top-52 right-40 w-0.5 h-0.5 bg-white rounded-full animate-pulse opacity-60" style={{ animationDelay: '2.8s', animationDuration: '1.7s' }}></div>
+                <div className="absolute top-20 left-80 w-0.5 h-0.5 bg-cyan-50 rounded-full animate-pulse opacity-30" style={{ animationDelay: '1.5s', animationDuration: '2.5s' }}></div>
+                <div className="absolute top-40 right-72 w-0.5 h-0.5 bg-blue-50 rounded-full animate-pulse opacity-50" style={{ animationDelay: '3.5s', animationDuration: '1.8s' }}></div>
+                
+                {/* Shooting stars */}
+                <div className="absolute top-6 right-12 w-12 h-0.5 bg-gradient-to-r from-transparent via-cyan-300 to-transparent opacity-80 animate-pulse" style={{ animationDelay: '4s', animationDuration: '6s', transform: 'rotate(-45deg)' }}></div>
+                <div className="absolute top-24 left-8 w-8 h-0.5 bg-gradient-to-r from-transparent via-blue-200 to-transparent opacity-70 animate-pulse" style={{ animationDelay: '2s', animationDuration: '5s', transform: 'rotate(-30deg)' }}></div>
+                <div className="absolute top-48 right-56 w-10 h-0.5 bg-gradient-to-r from-transparent via-white to-transparent opacity-60 animate-pulse" style={{ animationDelay: '6s', animationDuration: '7s', transform: 'rotate(-60deg)' }}></div>
+                
+                {/* Constellation connections */}
+                <svg className="absolute inset-0 w-full h-full" style={{ opacity: 0.15 }}>
+                    <line x1="20%" y1="10%" x2="24%" y2="32%" stroke="cyan" strokeWidth="0.5" opacity="0.3" />
+                    <line x1="76%" y1="16%" x2="84%" y2="48%" stroke="blue" strokeWidth="0.5" opacity="0.3" />
+                    <line x1="40%" y1="24%" x2="48%" y2="36%" stroke="cyan" strokeWidth="0.3" opacity="0.2" />
+                    <line x1="60%" y1="8%" x2="72%" y2="16%" stroke="blue" strokeWidth="0.3" opacity="0.2" />
+                </svg>
             </div>
         </div>
     );
