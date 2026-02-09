@@ -1,5 +1,5 @@
 import * as React from "react"
-import { cn } from "../../lib/utils"
+import { cn } from "@/lib/utils"
 
 const Card = React.forwardRef<
   HTMLDivElement,
@@ -8,7 +8,7 @@ const Card = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "rounded-xl border border-border-primary bg-bg-card text-text-primary shadow-lg hover:border-accent-cyan hover:shadow-accent-cyan/20 transition-all duration-200",
+      "rounded-xl bg-bg-card text-text-primary transition-all duration-200",
       className
     )}
     {...props}

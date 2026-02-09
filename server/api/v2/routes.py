@@ -16,9 +16,7 @@ from ...python.routes.auth import router as auth_router
 from ...python.routes.upload import router as upload_router
 from ...python.routes.analysis import router as analysis_router
 from ...python.routes.dashboard import router as dashboard_router
-from ...python.routes.image import router as image_router
-from ...python.routes.video import router as video_router
-from ...python.routes.audio import router as audio_router
+
 from ...python.routes.face import router as face_router
 from ...python.routes.system import router as system_router
 from ...python.routes.webcam import router as webcam_router
@@ -43,9 +41,7 @@ router.include_router(auth_router, prefix="/auth", tags=["auth"])
 router.include_router(upload_router, prefix="/upload", tags=["upload"])
 router.include_router(analysis_router, prefix="/analysis", tags=["analysis"])
 router.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])
-router.include_router(image_router, prefix="/analysis/image", tags=["image"])
-router.include_router(video_router, prefix="/analysis/video", tags=["video"])
-router.include_router(audio_router, prefix="/analysis/audio", tags=["audio"])
+# Note: image, video, audio routes are handled by analysis_router (unified endpoint)
 router.include_router(face_router, prefix="/face", tags=["face"])
 router.include_router(system_router, prefix="/system", tags=["system"])
 router.include_router(webcam_router, prefix="/analysis/webcam", tags=["webcam"])

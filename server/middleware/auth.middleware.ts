@@ -7,7 +7,8 @@ import { z } from 'zod';
 import { ZodError } from 'zod';
 import RedisStore from 'rate-limit-redis';
 import { createClient } from 'redis';
-import { AuthenticatedRequest } from '../types/auth';
+import { AuthenticatedRequest, AuthenticatedUser } from '../types/auth';
+import { User } from '@supabase/supabase-js';
 
 // In-memory store for rate limiting when Redis is not available
 class MemoryStore {
@@ -89,6 +90,12 @@ sendCommand: (...args: unknown[]) => (redisClient as any).sendCommand(...args),
 
 // Initialize the store immediately and store the promise
 const storePromise = initializeRateLimitStore();
+
+// Auth state cache to prevent repeated Supabase calls
+const authCache = new Map<string, { user: User; expires: number }>();
+
+// Cache TTL in milliseconds
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 // Rate limiting configuration
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
@@ -254,7 +261,27 @@ export const authenticate = async (req: AuthenticatedRequest, res: Response, nex
       });
     }
 
-    // Verify token with Supabase
+    // Check cache first to prevent repeated Supabase calls
+    if (authCache.has(token)) {
+      const cached = authCache.get(token)!;
+      if (Date.now() < cached.expires) {
+        // Convert Supabase User to AuthenticatedUser
+        const authenticatedUser: AuthenticatedUser = {
+          id: cached.user.id,
+          email: cached.user.email || '',
+          role: cached.user.user_metadata?.role as string,
+          email_verified: cached.user.email_confirmed_at != null,
+          user_metadata: cached.user.user_metadata || {}
+        };
+        req.user = authenticatedUser;
+        return next();
+      } else {
+        // Cache expired, remove it
+        authCache.delete(token);
+      }
+    }
+
+    // Verify token with Supabase only if not cached
     const { data: { user }, error } = await supabase.auth.getUser(token);
     
     if (error) {
@@ -280,6 +307,15 @@ export const authenticate = async (req: AuthenticatedRequest, res: Response, nex
         message: 'Invalid or expired token',
         code: 'INVALID_TOKEN'
       });
+    }
+
+    // Cache successful authentication result
+    if (!error && user) {
+      authCache.set(token, {
+        user,
+        expires: Date.now() + CACHE_TTL
+      });
+      logger.debug('Authentication result cached', { userId: user.id });
     }
 
     // Check if user exists and email is verified
@@ -310,13 +346,14 @@ export const authenticate = async (req: AuthenticatedRequest, res: Response, nex
     }
 
     // Attach user to request with minimal required data
-    req.user = {
+    const authenticatedUser: AuthenticatedUser = {
       id: user.id,
       email: user.email || '',
       role: user.user_metadata?.role || 'user',
       email_verified: !!user.email_confirmed_at,
       user_metadata: user.user_metadata || {}
     };
+    req.user = authenticatedUser;
     
     // Set security headers
     res.setHeader('X-Content-Type-Options', 'nosniff');

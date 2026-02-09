@@ -1,8 +1,15 @@
-import { useDashboardStats } from '../hooks/useDashboardStats';
-import { useAnalytics } from '../hooks/useAnalytics';
-import { Button } from '../components/ui/button';
+import { useDashboardStats } from '@/hooks/useDashboardStats';
+import { useAnalytics } from '@/hooks/useAnalytics';
+import { Button } from '@/components/ui/button';
 import { Download } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+
+interface RecentActivityItem {
+  id: string;
+  type: string;
+  date: string;
+  status: string;
+}
 
 export default function Analytics() {
   const { data: stats, error } = useDashboardStats();
@@ -102,7 +109,7 @@ export default function Analytics() {
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
-            {stats?.recentActivity?.slice(0, 10).map((item: any, i: number) => (
+            {stats?.recentActivity?.slice(0, 10).map((item: RecentActivityItem, i: number) => (
               <div 
                 key={item.id || i}
                 className="flex items-center justify-between p-2 border rounded"

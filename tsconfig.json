@@ -2,10 +2,10 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "moduleResolution": "node",
     "resolveJsonModule": true,
-    "allowJs": false,
+    "allowJs": true,
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -18,12 +18,15 @@
     "paths": {
       "@shared/*": ["./shared/*"],
       "@server/*": ["./server/*"],
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@client/*": ["./client/*"]
     },
     "typeRoots": [
       "./node_modules/@types",
-      "./server/types"
-    ]
+      "./server/types",
+      "./client/types"
+    ],
+    "types": ["node", "react", "react-dom"]
   },
   "include": [
     "**/*.ts",
@@ -32,8 +35,15 @@
   "exclude": [
     "node_modules",
     "dist",
+    "client/dist",
+    "server/dist",
     "client",
+    "server",
     "**/*.test.ts",
-    "**/*.spec.ts"
+    "**/*.test.tsx",
+    "**/*.spec.ts",
+    "**/*.spec.tsx",
+    "**/__tests__/**/*",
+    "**/__mocks__/**/*"
   ]
 }

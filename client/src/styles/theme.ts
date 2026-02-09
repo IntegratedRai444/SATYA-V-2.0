@@ -3,7 +3,7 @@
  * Centralized theme constants for consistent styling across the application
  */
 
-export const darkTheme = {
+const darkTheme = {
   colors: {
     // Background colors
     bg: {
@@ -18,23 +18,16 @@ export const darkTheme = {
       primary: '#ffffff',
       secondary: '#b3b3b3',
       muted: '#666666',
-      accent: '#00a8ff',
     },
-    // Accent colors
+    // Accent colors - simplified to single primary
     accent: {
-      cyan: '#00a8ff',
-      cyanDark: '#0088cc',
-      cyanLight: '#33b8ff',
-      green: '#00ff88',
-      orange: '#ff8800',
-      red: '#ff4444',
-      purple: '#8b5cf6',
+      primary: '#3b82f6', // Blue instead of cyan
+      secondary: '#2c5282',
     },
     // Border colors
     border: {
       primary: '#333333',
       secondary: '#444444',
-      accent: '#00a8ff',
     },
   },
   typography: {
@@ -79,8 +72,6 @@ export const darkTheme = {
     md: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
     lg: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
     xl: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
-    cyan: '0 0 20px rgba(0, 168, 255, 0.3)',
-    cyanLg: '0 0 40px rgba(0, 168, 255, 0.5)',
   },
   transitions: {
     fast: '150ms',
@@ -91,23 +82,20 @@ export const darkTheme = {
 
 export type Theme = typeof darkTheme;
 
-// Export individual theme sections for convenience
-export const { colors, typography, spacing, borderRadius, shadows, transitions } = darkTheme;
-
 // Helper function to get theme value
 export const getThemeValue = (path: string): string => {
   const keys = path.split('.');
-  let value: any = darkTheme;
+  let value: unknown = darkTheme;
   
   for (const key of keys) {
-    value = value[key];
+    value = (value as Record<string, unknown>)[key];
     if (value === undefined) {
       console.warn(`Theme value not found for path: ${path}`);
       return '';
     }
   }
   
-  return value;
+  return typeof value === 'string' ? value : String(value);
 };
 
 export default darkTheme;

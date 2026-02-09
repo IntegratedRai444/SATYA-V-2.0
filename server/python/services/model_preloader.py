@@ -37,10 +37,8 @@ class ModelPreloader:
             start_time = datetime.now()
             
             # Try to import and initialize image models
-            from detectors.image_detector import ImageDetector
-            
-            # Initialize detector (this loads the models)
-            detector = ImageDetector()
+            from detectors.image_detector import get_detector_by_type
+            detector = get_detector_by_type('image')
             
             # Check if models are loaded
             if hasattr(detector, 'model') and detector.model is not None:
@@ -65,7 +63,7 @@ class ModelPreloader:
             start_time = datetime.now()
             
             from detectors.video_detector import VideoDetector
-            detector = VideoDetector()
+            detector = get_detector_by_type('video')
             
             if hasattr(detector, 'model') and detector.model is not None:
                 self.preloaded_models['video'] = detector
@@ -89,7 +87,7 @@ class ModelPreloader:
             start_time = datetime.now()
             
             from detectors.audio_detector import AudioDetector
-            detector = AudioDetector()
+            detector = get_detector_by_type('audio')
             
             if hasattr(detector, 'model') and detector.model is not None:
                 self.preloaded_models['audio'] = detector
@@ -113,7 +111,7 @@ class ModelPreloader:
             start_time = datetime.now()
             
             from detectors.text_nlp_detector import TextNLPDetector
-            detector = TextNLPDetector()
+            detector = get_detector_by_type('text')
             
             if hasattr(detector, 'model') and detector.model is not None:
                 self.preloaded_models['text'] = detector

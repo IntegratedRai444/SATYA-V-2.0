@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { healthController } from '../controllers/health.controller';
+import { checkDatabaseConnection } from '../services/database';
 
 export const healthRouter = Router();
 
@@ -73,5 +74,49 @@ healthRouter.get('/ready', healthController.readinessCheck);
  *                   example: 'live'
  */
 healthRouter.get('/live', healthController.livenessCheck);
+
+/**
+ * @swagger
+ * /health/database:
+ *   get:
+ *     summary: Database health check
+ *     description: Check database connection specifically
+ *     responses:
+ *       200:
+ *         description: Database is healthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: 'healthy'
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: '2023-01-01T00:00:00.000Z'
+ *       503:
+ *         description: Database is unhealthy
+ */
+healthRouter.get('/database', async (_req, res) => {
+  try {
+    // Check database connection
+    const isHealthy = await checkDatabaseConnection();
+    
+    res.status(isHealthy ? 200 : 503).json({
+      status: isHealthy ? 'healthy' : 'unhealthy',
+      message: isHealthy ? 'Database connection successful' : 'Database connection failed',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'unhealthy',
+      message: 'Database health check failed',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
 
 export default healthRouter;

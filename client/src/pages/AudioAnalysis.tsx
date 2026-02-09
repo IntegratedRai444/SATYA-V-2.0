@@ -1,9 +1,9 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Loader2, Upload, Mic, CheckCircle, AlertCircle, FileText, BarChart3, Eye } from 'lucide-react';
-import { useAudioAnalysis } from '../hooks/useApi';
-import { pollAnalysisResult } from '../lib/analysis/pollResult';
-import { AnalysisResult } from '../lib/api/services/analysisService';
-import type { AnalysisJobStatus } from '../lib/analysis/pollResult';
+import { useAudioAnalysis } from '@/hooks/useApi';
+import { pollAnalysisResult } from '@/lib/analysis/pollResult';
+import { AnalysisResult } from '@/lib/api/services/analysisService';
+import type { AnalysisJobStatus } from '@/lib/analysis/pollResult';
 
 export default function AudioAnalysis() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);

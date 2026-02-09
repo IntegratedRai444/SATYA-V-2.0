@@ -146,6 +146,66 @@ export class WebSocketManager {
     return `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
+  // Extract token from query parameter or Authorization header
+  private extractToken(info: { req: IncomingMessage; origin: string; secure: boolean }): string | null {
+    // Debug logging to see what we're receiving
+    logger.debug('WebSocket token extraction attempt', {
+      url: info.req.url,
+      headers: Object.keys(info.req.headers),
+      hasAuthHeader: !!info.req.headers['authorization']
+    });
+    
+    // Check Authorization header first
+    const authHeader = info.req.headers['authorization'];
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+      logger.debug('Token extracted from Authorization header');
+      return token;
+    }
+    
+    // Check query parameter - the URL might be just the path, so we need to handle it differently
+    const requestUrl = info.req.url;
+    logger.debug('Raw request URL:', requestUrl);
+    
+    if (requestUrl) {
+      // Method 1: Check if URL contains token directly
+      if (requestUrl.includes('?token=')) {
+        const urlParts = requestUrl.split('?');
+        if (urlParts.length > 1) {
+          const queryParams = new URLSearchParams(urlParts[1]);
+          const token = queryParams.get('token');
+          if (token) {
+            logger.debug('Token extracted from query parameter (method 1)');
+            return token;
+          }
+        }
+      }
+      
+      // Method 2: Check if the original request URL (if available) has the token
+      // Sometimes the full URL is available in headers or as a property
+      const fullUrl = (info.req as unknown as { originalUrl?: string; url?: string }).originalUrl || 
+                      (info.req as unknown as { originalUrl?: string; url?: string }).url;
+      if (fullUrl && fullUrl.includes('?token=')) {
+        const urlParts = fullUrl.split('?');
+        if (urlParts.length > 1) {
+          const queryParams = new URLSearchParams(urlParts[1]);
+          const token = queryParams.get('token');
+          if (token) {
+            logger.debug('Token extracted from full URL (method 2)');
+            return token;
+          }
+        }
+      }
+    }
+    
+    logger.warn('No token found in WebSocket request', {
+      url: requestUrl,
+      availableHeaders: Object.keys(info.req.headers)
+    });
+    
+    return null;
+  }
+
   // Parse incoming WebSocket message
   private parseMessage(data: RawData): WebSocketMessage | null {
     try {
@@ -203,18 +263,40 @@ export class WebSocketManager {
   public initialize(server: Server): void {
     this.wss = new WebSocketServer({ 
       server, 
-      path: '/ws', // Use simple path that doesn't conflict with Express routes
+      path: '/api/v2/dashboard/ws', // Match frontend connection URL
       verifyClient: async (info: { req: IncomingMessage; origin: string; secure: boolean; }, callback: (res: boolean, code?: number, message?: string) => void) => {
         logger.debug('WebSocket connection attempt', {
           url: info.req.url,
           headers: info.req.headers,
           host: info.req.headers.host
         });
+
+        // Extract token from query parameter or Authorization header
+        const token = this.extractToken(info);
         
-        // TEMP: Disable authentication for testing
-        logger.info('WebSocket connection allowed (auth disabled for testing)');
-        callback(true);
-        return;
+        if (!token) {
+          logger.warn('WebSocket connection rejected: No token provided');
+          callback(false, 1008, 'No authentication token provided');
+          return;
+        }
+
+        // Verify JWT token
+        try {
+          const { supabase } = await import('../config/supabase');
+          const { data: { user } } = await supabase.auth.getUser(token);
+          
+          if (!user) {
+            logger.warn('WebSocket connection rejected: Invalid token');
+            callback(false, 1008, 'Invalid authentication token');
+            return;
+          }
+
+          logger.info('WebSocket connection authenticated successfully', { userId: user.id, email: user.email });
+          callback(true);
+        } catch (error) {
+          logger.error('WebSocket authentication error:', error);
+          callback(false, 1008, 'Authentication failed');
+        }
       }
     });
 
@@ -226,14 +308,37 @@ export class WebSocketManager {
   }
 
   private async handleConnection(ws: WebSocketClient, req: IncomingMessage): Promise<void> {
-    // TEMP: Disable authentication for testing
-    logger.info('WebSocket connection established (auth disabled for testing)');
+    // Token was already verified in verifyClient, so we can extract user info from the verified connection
+    // The verifyClient callback already authenticated the user, so we can proceed with connection setup
+    
+    // Extract token for user info (we know it's valid since verifyClient passed)
+    const token = this.extractToken({ req, origin: req.headers.origin || '', secure: false });
+    
+    if (!token) {
+      // This shouldn't happen if verifyClient worked, but add safety check
+      logger.warn('WebSocket connection failed: No token in handleConnection');
+      ws.terminate();
+      return;
+    }
+
+    // Get user info from token (this should work since verifyClient already validated it)
+    const authResult = await supabaseAuthService.verifyToken(token);
+    if (!authResult) {
+      logger.warn('WebSocket connection rejected: Could not verify token in handleConnection');
+      ws.terminate();
+      return;
+    }
+
+    logger.info('WebSocket connection authenticated successfully', { 
+      userId: authResult.userId, 
+      email: authResult.email 
+    });
     
     // Initialize client properties
     ws.clientId = this.generateClientId();
-    ws.userId = 'test-user-id'; // Mock user ID for testing
-    ws.username = 'testuser';
-    ws.sessionId = 'test-session';
+    ws.userId = authResult.userId;
+    ws.username = authResult.username;
+    ws.sessionId = authResult.sessionId;
     ws.ipAddress = req.socket.remoteAddress || 'unknown';
     ws.connectedAt = Date.now();
     ws.connectionTime = Date.now();

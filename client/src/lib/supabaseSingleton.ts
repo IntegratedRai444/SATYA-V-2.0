@@ -11,6 +11,7 @@ declare global {
   interface Window {
     supabaseLogged?: boolean;
     _supabaseClientInstance?: ReturnType<typeof createClient<Database>>;
+    _supabaseInitialized?: boolean;
   }
 }
 
@@ -40,10 +41,21 @@ if (!supabaseUrl.includes('supabase.co')) {
 
 // Token refresh settings
 const TOKEN_REFRESH_MARGIN = 5 * 60 * 1000; // 5 minutes before expiry
-let refreshTimeout: NodeJS.Timeout | null = null;
+let refreshTimeout: ReturnType<typeof setTimeout> | null = null;
 
-// Session management (extracted to separate function)
+// Debouncing to prevent rapid auth calls
+let lastAuthCall = 0;
+const AUTH_CALL_DEBOUNCE = 1000; // 1 second debounce
+
+// Set up auth state change listener only once
+let authListenerSetup = false;
 function setupSessionManagement(client: ReturnType<typeof createClient<Database>>) {
+  // Prevent multiple listeners
+  if (authListenerSetup) {
+    console.warn('Auth listener already setup, skipping duplicate initialization');
+    return;
+  }
+  authListenerSetup = true;
   // Schedule token refresh before it expires
   function scheduleTokenRefresh(expiresAt: number | undefined) {
     if (!expiresAt) return;
@@ -77,17 +89,15 @@ function setupSessionManagement(client: ReturnType<typeof createClient<Database>
     }
   }
 
-  // Set up auth state change listener only once
-  client.auth.onAuthStateChange((event, session) => {
-    if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.expires_at) {
-      scheduleTokenRefresh(session.expires_at);
-    } else if (event === 'SIGNED_OUT') {
-      clearRefreshTimeout();
-    }
-  });
-
   // Initialize session refresh on first load
   client.auth.getSession().then(({ data: { session } }) => {
+    const now = Date.now();
+    if (now - lastAuthCall < AUTH_CALL_DEBOUNCE) {
+      console.log('Auth call debounced, skipping duplicate call');
+      return session;
+    }
+    lastAuthCall = now;
+    
     if (session?.expires_at) {
       scheduleTokenRefresh(session.expires_at);
     }
@@ -97,28 +107,45 @@ function setupSessionManagement(client: ReturnType<typeof createClient<Database>
 // Create and export singleton Supabase client
 let supabaseClient: ReturnType<typeof createClient<Database>>;
 
-if (supabaseUrl && supabaseAnonKey) {
-  supabaseClient = createClient<Database>(supabaseUrl, supabaseAnonKey, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-      debug: isDev,
-    },
-    global: {
-      headers: {
-        'x-application-name': 'satyaai-client',
-        'x-client-version': '1.0.0',
-      },
-    },
-    // Disable Go-based auth client to prevent conflicts
-    db: {
-      schema: 'public',
-    },
-  });
+// Prevent multiple initialization in browser environment
+if (typeof window !== 'undefined' && window._supabaseInitialized) {
+  console.warn('⚠️ Supabase client already initialized, returning existing instance');
+}
 
-  // Set up session management only for first instance
-  setupSessionManagement(supabaseClient);
+if (supabaseUrl && supabaseAnonKey) {
+  if (typeof window !== 'undefined' && window._supabaseInitialized) {
+    console.warn('⚠️ Supabase client already initialized, returning existing instance');
+    // Return existing instance if already initialized
+    supabaseClient = window._supabaseClientInstance!;
+  } else {
+    supabaseClient = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        debug: isDev,
+      },
+      global: {
+        headers: {
+          'x-application-name': 'satyaai-client',
+          'x-client-version': '1.0.0',
+        },
+      },
+      // Disable Go-based auth client to prevent conflicts
+      db: {
+        schema: 'public',
+      },
+    });
+    
+    // Set up session management only for first instance
+    setupSessionManagement(supabaseClient);
+    
+    // Mark as initialized
+    if (typeof window !== 'undefined') {
+      window._supabaseInitialized = true;
+      window._supabaseClientInstance = supabaseClient;
+    }
+  }
 } else {
   console.warn('⚠️ Creating mock Supabase client - authentication features disabled');
   // Create a mock client that won't crash but won't work

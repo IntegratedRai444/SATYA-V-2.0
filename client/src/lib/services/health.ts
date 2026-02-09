@@ -41,11 +41,13 @@ class HealthService {
     // Initial check
     await this.checkHealth();
     
-    // Set up periodic checks
-    this.checkInterval = setInterval(
-      () => this.checkHealth(),
-      this.CHECK_INTERVAL
-    );
+    // Set up periodic checks only in production
+    if (import.meta.env.PROD) {
+      this.checkInterval = setInterval(
+        () => this.checkHealth(),
+        this.CHECK_INTERVAL
+      );
+    }
     
     // Cleanup on page unload
     window.addEventListener('beforeunload', this.cleanup);
@@ -63,7 +65,7 @@ class HealthService {
     const startTime = performance.now();
     
     try {
-      const result = await api.get<HealthCheckResult>('/api/health');
+      const result = await api.get<HealthCheckResult>('/health');
       this.lastCheck = result;
       
       // Track health check metrics

@@ -99,21 +99,20 @@
   /* Border Radius */
   --radius: 0.5rem;
 
-  /* Chart Colors (Cyan theme) */
-  --chart-1: 199 100% 50%; /* #00a8ff */
-  --chart-2: 199 100% 60%;
-  --chart-3: 199 100% 70%;
-  --chart-4: 160 100% 50%; /* #00ff88 green */
-  --chart-5: 30 100% 50%; /* #ff8800 orange */
+  /* Chart Colors (Blue theme) */
+  --chart-1: 59 130% 246%; /* Blue accent */
+  --chart-2: 59 130% 60%;
+  --chart-3: 59 130% 70%;
+  --chart-4: 160 100% 50%; /* Green */
+  --chart-5: 30 100% 50%; /* Orange */
+  --chart-6: 0 100% 63%; /* Red */
 
-  /* SatyaAI Custom Colors */
-  --cyan: 199 100% 50%; /* #00a8ff */
-  --cyan-dark: 199 100% 40%; /* #0088cc */
-  --cyan-light: 199 100% 60%; /* #33b8ff */
-  --green: 160 100% 50%; /* #00ff88 */
-  --orange: 30 100% 50%; /* #ff8800 */
-  --red: 0 100% 63%; /* #ff4444 */
-  --purple: 258 86% 62%; /* #8b5cf6 */
+  /* SatyaAI Custom Colors - Simplified */
+  --primary-accent: 59 130% 246%; /* Blue instead of cyan */
+  --secondary-accent: 47 130% 246%;
+  --success: 160 100% 50%; /* Green */
+  --warning: 30 100% 50%; /* Orange */
+  --error: 0 100% 63%; /* Red */
 
   /* Background Shades */
   --bg-primary: 0 0% 4%; /* #0a0a0a */
@@ -126,12 +125,12 @@
   --text-primary: 0 0% 100%; /* #ffffff */
   --text-secondary: 0 0% 70%; /* #b3b3b3 */
   --text-muted: 0 0% 40%; /* #666666 */
-  --text-accent: 199 100% 50%; /* #00a8ff */
+  --text-accent: 59 130% 50%; /* Blue accent */
 
   /* Border Shades */
   --border-primary: 0 0% 20%; /* #333333 */
   --border-secondary: 0 0% 27%; /* #444444 */
-  --border-accent: 199 100% 50%; /* #00a8ff */
+  --border-accent: 59 130% 50%; /* Blue accent */
 }
 
 @layer base {

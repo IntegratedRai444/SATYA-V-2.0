@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
-import type { Express } from 'express';
 import path from 'path';
 import { validateRequest } from '../middleware/validate-request';
 import { logger } from '../config/logger';
@@ -10,8 +9,7 @@ import FormData from 'form-data';
 import { randomUUID } from 'crypto';
 import { AuthenticatedRequest } from '../types/auth';
 import webSocketManager from '../services/websocket-manager';
-import jobManager from '../services/job-manager';
-import { AbortController } from 'abort-controller';
+import { setImmediate } from 'timers';
 
 // Helper function to send job progress updates
 const sendJobProgress = (userId: string, jobId: string, stage: string, progress: number) => {
@@ -25,18 +23,6 @@ const sendJobProgress = (userId: string, jobId: string, stage: string, progress:
     }
   });
 };
-
-// Type definition for analysis result
-interface AnalysisResult {
-  status: string;
-  confidence?: number;
-  is_deepfake?: boolean;
-  model_name?: string;
-  model_version?: string;
-  summary?: Record<string, unknown>;
-  proof?: Record<string, unknown>;
-  error?: string;
-}
 
 const router = Router();
 
@@ -316,382 +302,563 @@ const handleAnalysisError = async (error: unknown, res: Response, jobId?: string
   });
 };
 
-// Input validation middleware for analysis requests (defined but not used - available for future use)
-/*
-const validateAnalysisRequest = [
-  // Check if file exists
-  (req: Request, res: Response, next: NextFunction) => {
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        code: 'NO_FILE_PROVIDED',
-        message: 'No file was uploaded',
-      });
-    }
-    next();
-  },
-  
-  // Validate file size
-  (req: Request, res: Response, next: NextFunction) => {
-    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
-    if (req.file && req.file.size > MAX_FILE_SIZE) {
-      return res.status(400).json({
-        success: false,
-        code: 'FILE_TOO_LARGE',
-        message: `File size exceeds the limit of ${MAX_FILE_SIZE / (1024 * 1024)}MB`,
-      });
-    }
-    next();
-  },
-  
-  // Validate MIME type
-  (req: Request, res: Response, next: NextFunction) => {
-    if (req.file) {
-      const allowedTypes = Object.keys(ALLOWED_FILE_TYPES);
-      if (!allowedTypes.includes(req.file.mimetype)) {
+// Image analysis endpoint
+router.post(
+  '/api/v2/analysis/image',
+  upload.single('file'),
+  validateRequest,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const type = 'image';
+    const correlationId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const file = req.file;
+    const userId = req.user?.id;
+
+    logger.info(`[ANALYSIS REQUEST] ${type} analysis started`, {
+      correlationId,
+      type,
+      userId,
+      filename: file?.originalname,
+      fileSize: file?.size,
+    });
+
+    try {
+      // Validate file
+      if (!file) {
         return res.status(400).json({
           success: false,
-          code: 'INVALID_FILE_TYPE',
-          message: `Invalid file type. Allowed types: ${allowedTypes.join(', ')}`,
+          error: 'No file uploaded',
         });
       }
-    }
-    next();
-  }
-];
-*/
 
-// Analyze image
-router.post(
-  '/image',
-  upload.single('file'),  // Changed from 'image' to 'file' to match frontend
-  async (req: AuthenticatedRequest, res: Response) => {
-    let job: { id: string; report_code: string } | null = null;
-    const correlationId = req.headers['x-request-id'] as string || randomUUID();
-    
-    logger.info(`[REQ RECEIVED] Image analysis request`, {
-      correlationId,
-      filename: req.file?.originalname,
-      userId: req.user?.id,
-      fileSize: req.file?.size
-    });
-    
-    try {
-      if (!req.file) {
-        logger.error(`[VALIDATION FAILED] No file uploaded`, { correlationId });
-        return res.status(400).json({ error: 'No file uploaded' });
-      }
-
-      const userId = req.user?.id;
-      if (!userId) {
-        logger.error(`[AUTH FAILED] User not authenticated`, { correlationId });
-        return res.status(401).json({ error: 'User not authenticated' });
-      }
-
-      logger.info(`[AUTH OK] User authenticated`, { correlationId, userId });
-
-      // Create analysis job in Supabase
-      job = await createAnalysisJob(userId, {
-        modality: 'image',
-        filename: req.file.originalname,
-        mime_type: req.file.mimetype,
-        size_bytes: req.file.size,
+      // Create job with standardized ID
+      const jobId = `job_${randomUUID()}`;
+      
+      // Create job in database
+      const job = await createAnalysisJob(userId || '', {
+        modality: type as 'image' | 'video' | 'audio',
+        filename: file.originalname,
+        mime_type: file.mimetype,
+        size_bytes: file.size,
         metadata: {
-          originalName: req.file.originalname,
-          uploadedAt: new Date().toISOString()
-        }
+          originalName: file.originalname,
+          mimeType: file.mimetype,
+          size: file.size,
+        },
       });
 
-      // Emit job started event
-      webSocketManager.sendEventToUser(userId, {
-        type: 'JOB_STARTED',
-        jobId: job.id,
-        timestamp: Date.now(),
-        data: {
-          modality: 'image',
-          filename: req.file.originalname
-        }
-      });
-
-      // Add job to job manager for cancellation support
-      const abortController = new AbortController();
-      jobManager.addJob(job.id, userId, 'image', abortController);
-
-      // Process the image using Python service
-      // Convert file buffer to base64 and send as JSON
-      logger.info('[UPLOAD RECEIVED] Processing image upload for Python service');
-      
-      // Send preprocessing progress
-      sendJobProgress(userId, job.id, 'preprocessing', 10);
-      
-      const base64Data = req.file.buffer.toString('base64');
-      const jsonData = {
-        media_type: 'image',
-        data_base64: base64Data,
-        mime_type: req.file.mimetype,
-        filename: req.file.originalname
-      };
-
-      // Send analyzing progress
-      sendJobProgress(userId, job.id, 'analyzing', 30);
-
-      logger.info(`[SENDING TO PYTHON] Sending image analysis request to Python service`, { correlationId });
-      req.file.buffer = Buffer.alloc(0);
-
-      logger.info(`[SENDING TO PYTHON] Sending image analysis request to Python service`, { correlationId });
-      const result = await pythonBridge.postWithUser('/api/v2/analysis/unified/image', jsonData, {
-        id: userId,
-        email: req.user?.email || '',
-        role: req.user?.role || 'user'
-      }) as {
-        success: boolean;
-        media_type: string;
-        fake_score: number;
-        label: string;
-        processing_time: number;
-        error?: string;
-        model_name?: string;
-        model_version?: string;
-        confidence?: number;
-        proof?: Record<string, unknown>;
-        metadata?: Record<string, unknown>;
-      };
-
-      logger.info(`[PYTHON RESPONSE RECEIVED] Got response from Python service`, { 
+      logger.info(`[ANALYSIS JOB] Created job ${jobId}`, {
         correlationId,
-        success: result.success,
-        processingTime: result.processing_time
+        jobId,
+        type,
       });
 
-      // Save results to Supabase
-      if (result && result.success) {
-        // Send finalizing progress
-        sendJobProgress(userId, job.id, 'finalizing', 90);
-        
-        await updateAnalysisJobWithResults(job.id, {
-          status: 'completed',
-          confidence: result.confidence || 0,
-          is_deepfake: result.label === 'Deepfake',
-          model_name: result.model_name || 'SatyaAI-Image',
-          model_version: result.model_version || '1.0.0',
-          summary: result.metadata || {},
-          analysis_data: result,
-          proof_json: result.proof || {}
-        });
-
-        // Send completed progress
-        sendJobProgress(userId, job.id, 'completed', 100);
-
-        // Emit real-time WebSocket event
-        webSocketManager.sendEventToUser(userId, {
-          type: 'JOB_COMPLETED',
-          jobId: job.id,
-          timestamp: Date.now(),
-          data: {
-            success: true,
-            result: {
-              confidence: result.confidence || 0,
-              is_deepfake: result.label === 'Deepfake',
-              model_name: result.model_name || 'SatyaAI-Image',
-              processing_time: result.processing_time
-            }
-          }
-        });
-
-        res.json({
-          success: true,
-          result: {
-            ...result,
-            jobId: job.id,
-            reportCode: job.report_code
-          }
-        });
-      } else {
-        // Mark job as failed
-        await updateAnalysisJobWithResults(job.id, {
-          status: 'failed',
-          error_message: result?.error || 'Analysis failed'
-        });
-
-        res.status(500).json({
-          success: false,
-          error: result?.error || 'Analysis failed'
-        });
-      }
-    } catch (error) {
-      await handleAnalysisError(error, res, job?.id);
-    }
-  }
-);
-
-// Analyze audio
-router.post(
-  '/audio',
-  upload.single('file'),  // Changed from 'audio' to 'file' to match frontend
-  async (req: AuthenticatedRequest, res: Response) => {
-    let job: { id: string; report_code: string } | null = null;
-    
-    try {
-      if (!req.file) {
-        return res.status(400).json({ error: 'No file uploaded' });
-      }
-
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.status(401).json({ error: 'User not authenticated' });
-      }
-
-      // Create analysis job in Supabase
-      job = await createAnalysisJob(userId, {
-        modality: 'audio',
-        filename: req.file.originalname,
-        mime_type: req.file.mimetype,
-        size_bytes: req.file.size,
-        metadata: {
-          originalName: req.file.originalname,
-          uploadedAt: new Date().toISOString()
-        }
-      });
-
-      // Emit job started event
-      webSocketManager.sendEventToUser(userId, {
-        type: 'JOB_STARTED',
-        jobId: job.id,
-        timestamp: Date.now(),
-        data: {
-          modality: 'audio',
-          filename: req.file.originalname
-        }
-      });
-
-      // Process the audio using Python service
-      // Convert file buffer to base64 and send as JSON
-      logger.info('[UPLOAD RECEIVED] Processing audio upload for Python service');
-      
-      // Send preprocessing progress
-      sendJobProgress(userId, job.id, 'preprocessing', 10);
-      
-      const base64Data = req.file.buffer.toString('base64');
-      const jsonData = {
-        media_type: 'audio',
-        data_base64: base64Data,
-        mime_type: req.file.mimetype,
-        filename: req.file.originalname
-      };
-
-      // Send analyzing progress
-      sendJobProgress(userId, job.id, 'analyzing', 30);
-
-      // Clear the file buffer from memory immediately after base64 conversion
-      req.file.buffer = Buffer.alloc(0);
-
-      logger.info('[SENDING TO PYTHON] Sending audio analysis request to Python service');
-      const result = await pythonBridge.postWithUser('/api/v2/analysis/unified/audio', jsonData, {
-        id: userId,
-        email: req.user?.email || '',
-        role: req.user?.role || 'user'
-      }) as {
-        success: boolean;
-        media_type: string;
-        fake_score: number;
-        label: string;
-        processing_time: number;
-        error?: string;
-        model_name?: string;
-        model_version?: string;
-        confidence?: number;
-        proof?: Record<string, unknown>;
-        metadata?: Record<string, unknown>;
-      };
-
-      logger.info('[PYTHON RESPONSE RECEIVED] Got response from Python service');
-
-      // Save results to Supabase
-      if (result && result.success) {
-        // Send finalizing progress
-        sendJobProgress(userId, job.id, 'finalizing', 90);
-        
-        await updateAnalysisJobWithResults(job.id, {
-          status: 'completed',
-          confidence: result.confidence || 0,
-          is_deepfake: result.label === 'Deepfake',
-          model_name: result.model_name || 'SatyaAI-Audio',
-          model_version: result.model_version || '1.0.0',
-          summary: result.metadata || {},
-          analysis_data: result,
-          proof_json: result.proof || {}
-        });
-
-        // Send completed progress
-        sendJobProgress(userId, job.id, 'completed', 100);
-
-        res.json({
-          success: true,
-          result: {
-            ...result,
-            jobId: job.id,
-            reportCode: job.report_code
-          }
-        });
-      } else {
-        // Mark job as failed
-        await updateAnalysisJobWithResults(job.id, {
-          status: 'failed',
-          error_message: result?.error || 'Analysis failed'
-        });
-
-        res.status(500).json({
-          success: false,
-          error: result?.error || 'Analysis failed'
-        });
-      }
-    } catch (error) {
-      await handleAnalysisError(error, res, job?.id);
-    }
-  }
-);
-
-// Batch analysis
-router.post(
-  '/batch',
-  upload.array('files', 10), // Max 10 files
-  async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
-        return res.status(400).json({ error: 'No files uploaded' });
-      }
-
-      // Process each file
-      const results = await Promise.all(
-        (req.files as Express.Multer.File[]).map(async (file) => {
-          try {
-            const result = await (pythonBridge as unknown as { post: (url: string, data: unknown) => Promise<unknown> }).post('/analyze/batch', {
-              media_type: 'multimodal',
-              file: file.buffer.toString('base64'),
-              mime_type: file.mimetype,
-              filename: file.originalname,
-            });
-            return {
-              filename: file.originalname,
-              success: true,
-              data: (result as { data: unknown }).data,
-            };
-          } catch (error) {
-            return {
-              filename: file.originalname,
-              success: false,
-              error: error instanceof Error ? error.message : 'Analysis failed',
-            };
-          }
-        })
-      );
-
-      res.json({
+      // Send immediate response with job_id
+      res.status(202).json({
         success: true,
-        results,
+        job_id: jobId,
+        status: 'processing',
       });
+
+      // Process in background
+      setImmediate(async () => {
+        try {
+          // Send progress update
+          if (userId) {
+            sendJobProgress(userId, jobId, 'uploading', 10);
+          }
+
+          // Forward to Python service for inference only
+          const formData = new FormData();
+          formData.append('file', file.buffer, {
+            filename: file.originalname,
+            contentType: file.mimetype,
+          });
+          formData.append('job_id', jobId);
+          formData.append('user_id', userId || '');
+
+          if (userId) {
+            sendJobProgress(userId, jobId, 'analyzing', 30);
+          }
+
+          const pythonResponse = await pythonBridge.post(`/api/v2/analysis/unified/${type}`, formData, {
+            headers: {
+              ...formData.getHeaders(),
+              'X-User-ID': userId,
+              'X-Job-ID': jobId,
+            },
+            timeout: 300000, // 5 minutes
+          }) as {
+            data: {
+              confidence: number;
+              is_deepfake: boolean;
+              model_name: string;
+              model_version: string;
+              analysis_data: Record<string, unknown>;
+              proof: Record<string, unknown>;
+            };
+          };
+
+          if (userId) {
+            sendJobProgress(userId, jobId, 'processing', 70);
+          }
+
+          // Python returns inference-only payload
+          const inferenceResult = pythonResponse.data;
+          
+          // Node owns the job lifecycle - update with results
+          await updateAnalysisJobWithResults(job.id, {
+            status: 'completed',
+            confidence: inferenceResult.confidence,
+            is_deepfake: inferenceResult.is_deepfake,
+            model_name: inferenceResult.model_name,
+            model_version: inferenceResult.model_version,
+            analysis_data: inferenceResult.analysis_data,
+            proof_json: inferenceResult.proof,
+          });
+
+          if (userId) {
+            sendJobProgress(userId, jobId, 'completed', 100);
+
+            // Send WebSocket event
+            webSocketManager.sendEventToUser(userId, {
+              type: 'JOB_COMPLETED',
+              jobId,
+              timestamp: Date.now(),
+              data: {
+                status: 'completed',
+                confidence: inferenceResult.confidence,
+                is_deepfake: inferenceResult.is_deepfake,
+                model_name: inferenceResult.model_name,
+                model_version: inferenceResult.model_version,
+              },
+            });
+          }
+
+          logger.info(`[ANALYSIS COMPLETED] Job ${jobId} finished successfully`, {
+            correlationId,
+            jobId,
+            type,
+            confidence: inferenceResult.confidence,
+            is_deepfake: inferenceResult.is_deepfake,
+          });
+
+        } catch (error) {
+          // Handle analysis error
+          const errorMessage = error && typeof error === 'object' && 'response' in error 
+            ? ((error as unknown) as { response: { data?: { detail?: string } } }).response?.data?.detail || ((error as unknown) as Error).message || 'Analysis failed'
+            : ((error as unknown) as Error).message || 'Analysis failed';
+          
+          await updateAnalysisJobWithResults(job.id, {
+            status: 'failed',
+            error_message: errorMessage,
+          });
+
+          if (userId) {
+            // Send WebSocket error event
+            webSocketManager.sendEventToUser(userId, {
+              type: 'JOB_FAILED',
+              jobId,
+              timestamp: Date.now(),
+              data: {
+                error: errorMessage,
+              },
+            });
+          }
+
+          logger.error(`[ANALYSIS FAILED] Job ${jobId} failed`, {
+            correlationId,
+            jobId,
+            type,
+            error: errorMessage,
+          });
+        }
+      });
+
     } catch (error) {
-      await handleAnalysisError(error, res);
+      logger.error(`[ANALYSIS ERROR] ${type} analysis failed`, {
+        correlationId,
+        type,
+        error: (error as Error).message,
+      });
+      
+      return res.status(500).json({
+        success: false,
+        error: 'Internal server error',
+      });
+    }
+  }
+);
+
+// Video analysis endpoint
+router.post(
+  '/api/v2/analysis/video',
+  upload.single('file'),
+  validateRequest,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const type = 'video';
+    const correlationId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const file = req.file;
+    const userId = req.user?.id;
+
+    logger.info(`[ANALYSIS REQUEST] ${type} analysis started`, {
+      correlationId,
+      type,
+      userId,
+      filename: file?.originalname,
+      fileSize: file?.size,
+    });
+
+    try {
+      // Validate file
+      if (!file) {
+        return res.status(400).json({
+          success: false,
+          error: 'No file uploaded',
+        });
+      }
+
+      // Create job with standardized ID
+      const jobId = `job_${randomUUID()}`;
+      
+      // Create job in database
+      const job = await createAnalysisJob(userId || '', {
+        modality: type as 'image' | 'video' | 'audio',
+        filename: file.originalname,
+        mime_type: file.mimetype,
+        size_bytes: file.size,
+        metadata: {
+          originalName: file.originalname,
+          mimeType: file.mimetype,
+          size: file.size,
+        },
+      });
+
+      logger.info(`[ANALYSIS JOB] Created job ${jobId}`, {
+        correlationId,
+        jobId,
+        type,
+      });
+
+      // Send immediate response with job_id
+      res.status(202).json({
+        success: true,
+        job_id: jobId,
+        status: 'processing',
+      });
+
+      // Process in background
+      setImmediate(async () => {
+        try {
+          // Send progress update
+          if (userId) {
+            sendJobProgress(userId, jobId, 'uploading', 10);
+          }
+
+          // Forward to Python service for inference only
+          const formData = new FormData();
+          formData.append('file', file.buffer, {
+            filename: file.originalname,
+            contentType: file.mimetype,
+          });
+          formData.append('job_id', jobId);
+          formData.append('user_id', userId || '');
+
+          if (userId) {
+            sendJobProgress(userId, jobId, 'analyzing', 30);
+          }
+
+          const pythonResponse = await pythonBridge.post(`/api/v2/analysis/unified/${type}`, formData, {
+            headers: {
+              ...formData.getHeaders(),
+              'X-User-ID': userId,
+              'X-Job-ID': jobId,
+            },
+            timeout: 300000, // 5 minutes
+          }) as {
+            data: {
+              confidence: number;
+              is_deepfake: boolean;
+              model_name: string;
+              model_version: string;
+              analysis_data: Record<string, unknown>;
+              proof: Record<string, unknown>;
+            };
+          };
+
+          if (userId) {
+            sendJobProgress(userId, jobId, 'processing', 70);
+          }
+
+          // Python returns inference-only payload
+          const inferenceResult = pythonResponse.data;
+          
+          // Node owns the job lifecycle - update with results
+          await updateAnalysisJobWithResults(job.id, {
+            status: 'completed',
+            confidence: inferenceResult.confidence,
+            is_deepfake: inferenceResult.is_deepfake,
+            model_name: inferenceResult.model_name,
+            model_version: inferenceResult.model_version,
+            analysis_data: inferenceResult.analysis_data,
+            proof_json: inferenceResult.proof,
+          });
+
+          if (userId) {
+            sendJobProgress(userId, jobId, 'completed', 100);
+
+            // Send WebSocket event
+            webSocketManager.sendEventToUser(userId, {
+              type: 'JOB_COMPLETED',
+              jobId,
+              timestamp: Date.now(),
+              data: {
+                status: 'completed',
+                confidence: inferenceResult.confidence,
+                is_deepfake: inferenceResult.is_deepfake,
+                model_name: inferenceResult.model_name,
+                model_version: inferenceResult.model_version,
+              },
+            });
+          }
+
+          logger.info(`[ANALYSIS COMPLETED] Job ${jobId} finished successfully`, {
+            correlationId,
+            jobId,
+            type,
+            confidence: inferenceResult.confidence,
+            is_deepfake: inferenceResult.is_deepfake,
+          });
+
+        } catch (error) {
+          // Handle analysis error
+          const errorMessage = error && typeof error === 'object' && 'response' in error 
+            ? ((error as unknown) as { response: { data?: { detail?: string } } }).response?.data?.detail || ((error as unknown) as Error).message || 'Analysis failed'
+            : ((error as unknown) as Error).message || 'Analysis failed';
+          
+          await updateAnalysisJobWithResults(job.id, {
+            status: 'failed',
+            error_message: errorMessage,
+          });
+
+          if (userId) {
+            // Send WebSocket error event
+            webSocketManager.sendEventToUser(userId, {
+              type: 'JOB_FAILED',
+              jobId,
+              timestamp: Date.now(),
+              data: {
+                error: errorMessage,
+              },
+            });
+          }
+
+          logger.error(`[ANALYSIS FAILED] Job ${jobId} failed`, {
+            correlationId,
+            jobId,
+            type,
+            error: errorMessage,
+          });
+        }
+      });
+
+    } catch (error) {
+      logger.error(`[ANALYSIS ERROR] ${type} analysis failed`, {
+        correlationId,
+        type,
+        error: (error as Error).message,
+      });
+      
+      return res.status(500).json({
+        success: false,
+        error: 'Internal server error',
+      });
+    }
+  }
+);
+
+// Audio analysis endpoint
+router.post(
+  '/api/v2/analysis/audio',
+  upload.single('file'),
+  validateRequest,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const type = 'audio';
+    const correlationId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const file = req.file;
+    const userId = req.user?.id;
+
+    logger.info(`[ANALYSIS REQUEST] ${type} analysis started`, {
+      correlationId,
+      type,
+      userId,
+      filename: file?.originalname,
+      fileSize: file?.size,
+    });
+
+    try {
+      // Validate file
+      if (!file) {
+        return res.status(400).json({
+          success: false,
+          error: 'No file uploaded',
+        });
+      }
+
+      // Create job with standardized ID
+      const jobId = `job_${randomUUID()}`;
+      
+      // Create job in database
+      const job = await createAnalysisJob(userId || '', {
+        modality: type as 'image' | 'video' | 'audio',
+        filename: file.originalname,
+        mime_type: file.mimetype,
+        size_bytes: file.size,
+        metadata: {
+          originalName: file.originalname,
+          mimeType: file.mimetype,
+          size: file.size,
+        },
+      });
+
+      logger.info(`[ANALYSIS JOB] Created job ${jobId}`, {
+        correlationId,
+        jobId,
+        type,
+      });
+
+      // Send immediate response with job_id
+      res.status(202).json({
+        success: true,
+        job_id: jobId,
+        status: 'processing',
+      });
+
+      // Process in background
+      setImmediate(async () => {
+        try {
+          // Send progress update
+          if (userId) {
+            sendJobProgress(userId, jobId, 'uploading', 10);
+          }
+
+          // Forward to Python service for inference only
+          const formData = new FormData();
+          formData.append('file', file.buffer, {
+            filename: file.originalname,
+            contentType: file.mimetype,
+          });
+          formData.append('job_id', jobId);
+          formData.append('user_id', userId || '');
+
+          if (userId) {
+            sendJobProgress(userId, jobId, 'analyzing', 30);
+          }
+
+          const pythonResponse = await pythonBridge.post(`/api/v2/analysis/unified/${type}`, formData, {
+            headers: {
+              ...formData.getHeaders(),
+              'X-User-ID': userId,
+              'X-Job-ID': jobId,
+            },
+            timeout: 300000, // 5 minutes
+          }) as {
+            data: {
+              confidence: number;
+              is_deepfake: boolean;
+              model_name: string;
+              model_version: string;
+              analysis_data: Record<string, unknown>;
+              proof: Record<string, unknown>;
+            };
+          };
+
+          if (userId) {
+            sendJobProgress(userId, jobId, 'processing', 70);
+          }
+
+          // Python returns inference-only payload
+          const inferenceResult = pythonResponse.data;
+          
+          // Node owns the job lifecycle - update with results
+          await updateAnalysisJobWithResults(job.id, {
+            status: 'completed',
+            confidence: inferenceResult.confidence,
+            is_deepfake: inferenceResult.is_deepfake,
+            model_name: inferenceResult.model_name,
+            model_version: inferenceResult.model_version,
+            analysis_data: inferenceResult.analysis_data,
+            proof_json: inferenceResult.proof,
+          });
+
+          if (userId) {
+            sendJobProgress(userId, jobId, 'completed', 100);
+
+            // Send WebSocket event
+            webSocketManager.sendEventToUser(userId, {
+              type: 'JOB_COMPLETED',
+              jobId,
+              timestamp: Date.now(),
+              data: {
+                status: 'completed',
+                confidence: inferenceResult.confidence,
+                is_deepfake: inferenceResult.is_deepfake,
+                model_name: inferenceResult.model_name,
+                model_version: inferenceResult.model_version,
+              },
+            });
+          }
+
+          logger.info(`[ANALYSIS COMPLETED] Job ${jobId} finished successfully`, {
+            correlationId,
+            jobId,
+            type,
+            confidence: inferenceResult.confidence,
+            is_deepfake: inferenceResult.is_deepfake,
+          });
+
+        } catch (error) {
+          // Handle analysis error
+          const errorMessage = error && typeof error === 'object' && 'response' in error 
+            ? ((error as unknown) as { response: { data?: { detail?: string } } }).response?.data?.detail || ((error as unknown) as Error).message || 'Analysis failed'
+            : ((error as unknown) as Error).message || 'Analysis failed';
+          
+          await updateAnalysisJobWithResults(job.id, {
+            status: 'failed',
+            error_message: errorMessage,
+          });
+
+          if (userId) {
+            // Send WebSocket error event
+            webSocketManager.sendEventToUser(userId, {
+              type: 'JOB_FAILED',
+              jobId,
+              timestamp: Date.now(),
+              data: {
+                error: errorMessage,
+              },
+            });
+          }
+
+          logger.error(`[ANALYSIS FAILED] Job ${jobId} failed`, {
+            correlationId,
+            jobId,
+            type,
+            error: errorMessage,
+          });
+        }
+      });
+
+    } catch (error) {
+      logger.error(`[ANALYSIS ERROR] ${type} analysis failed`, {
+        correlationId,
+        type,
+        error: (error as Error).message,
+      });
+      
+      return res.status(500).json({
+        success: false,
+        error: 'Internal server error',
+      });
     }
   }
 );
@@ -723,351 +890,54 @@ router.get('/status/:id', async (req: Request, res: Response) => {
   }
 });
 
-// Analyze video
-router.post(
-  '/video',
-  upload.single('file'),  // Changed from 'video' to 'file' to match frontend
-  validateRequest,
-  async (req: AuthenticatedRequest, res: Response) => {
-    let job: { id: string; report_code: string } | null = null;
-    
-    try {
-      if (!req.file) {
-        return res.status(400).json({
-          success: false,
-          error: 'Video file is required'
-        });
-      }
-
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.status(401).json({
-          success: false,
-          error: 'Authentication required'
-        });
-      }
-
-      // Create analysis job
-      job = await createAnalysisJob(userId, {
-        modality: 'video',
-        filename: req.file.originalname,
-        mime_type: req.file.mimetype,
-        size_bytes: req.file.size,
-        status: 'pending'
-      });
-
-      // Process the video using Python service
-      // Convert file buffer to base64 and send as JSON
-      logger.info('[UPLOAD RECEIVED] Processing video upload for Python service');
-      
-      const base64Data = req.file.buffer.toString('base64');
-      const jsonData = {
-        media_type: 'video',
-        data_base64: base64Data,
-        mime_type: req.file.mimetype,
-        filename: req.file.originalname
-      };
-
-      // Clear the file buffer from memory immediately after base64 conversion
-      req.file.buffer = Buffer.alloc(0);
-
-      logger.info('[SENDING TO PYTHON] Sending video analysis request to Python service');
-      const result = await pythonBridge.postWithUser('/api/v2/analysis/unified/video', jsonData, {
-        id: userId,
-        email: req.user?.email || '',
-        role: req.user?.role || 'user'
-      }) as {
-        success: boolean;
-        media_type: string;
-        fake_score: number;
-        label: string;
-        processing_time: number;
-        error?: string;
-        model_name?: string;
-        model_version?: string;
-        confidence?: number;
-        proof?: Record<string, unknown>;
-        metadata?: Record<string, unknown>;
-      };
-
-      logger.info('[PYTHON RESPONSE RECEIVED] Got response from Python service');
-
-      // Save results to Supabase
-      if (result && result.success) {
-        await updateAnalysisJobWithResults(job.id, {
-          status: 'completed',
-          confidence: result.confidence || 0,
-          is_deepfake: result.label === 'Deepfake',
-          model_name: result.model_name || 'SatyaAI-Video',
-          model_version: result.model_version || '1.0.0',
-          summary: result.metadata || {},
-          analysis_data: result,
-          proof_json: result.proof || {}
-        });
-
-        res.json({
-          success: true,
-          result: {
-            ...result,
-            jobId: job.id,
-            reportCode: job.report_code
-          }
-        });
-      } else {
-        // Mark job as failed
-        await updateAnalysisJobWithResults(job.id, {
-          status: 'failed',
-          error_message: result?.error || 'Analysis failed'
-        });
-
-        res.status(500).json({
-          success: false,
-          error: result?.error || 'Analysis failed'
-        });
-      }
-    } catch (error) {
-      await handleAnalysisError(error, res, job?.id);
-    }
-  }
-);
-
-// Analyze multimodal
-router.post(
-  '/multimodal',
-  upload.array('files', 5), // Max 5 files for multimodal
-  validateRequest,
-  async (req: AuthenticatedRequest, res: Response) => {
-    let job: { id: string; report_code: string } | null = null;
-    
-    try {
-      if (!req.files || req.files.length === 0) {
-        return res.status(400).json({
-          success: false,
-          error: 'At least one file is required for multimodal analysis'
-        });
-      }
-
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.status(401).json({
-          success: false,
-          error: 'Authentication required'
-        });
-      }
-
-      // Create analysis job
-      job = await createAnalysisJob(userId, {
-        modality: 'multimodal',
-        filename: `${req.files.length} files`,
-        mime_type: 'multimodal',
-        size_bytes: (req.files as Express.Multer.File[]).reduce((total: number, file: Express.Multer.File) => total + file.size, 0),
-        status: 'pending'
-      });
-
-      // Process using Python service
-      // Create FormData to match Python's UploadFile expectation
-      const form = new FormData();
-      
-      // Add each file as a separate form field
-      (req.files as Express.Multer.File[]).forEach((file, index) => {
-        form.append(`file${index}`, file.buffer, {
-          filename: file.originalname,
-          contentType: file.mimetype
-        });
-      });
-      
-      // Add metadata
-      form.append('jobId', job.id);
-
-      const result = await (pythonBridge as unknown as { request: (options: unknown) => Promise<unknown> }).request({
-        method: 'POST',
-        url: '/api/v2/analysis/multimodal',
-        data: form,
-        headers: {
-          ...form.getHeaders()
-        }
-      }) as { data: { success: boolean; result: { success: boolean; authenticity?: string; confidence?: number; is_deepfake?: boolean; model_name?: string; model_version?: string; summary?: Record<string, unknown>; proof?: Record<string, unknown>; error?: string } } };
-
-      // Save results to Supabase
-      if (result.data && result.data.success) {
-        const analysisResult = result.data.result;
-        await updateAnalysisJobWithResults(job.id, {
-          status: 'completed',
-          confidence: analysisResult.confidence || 0,
-          is_deepfake: analysisResult.is_deepfake || false,
-          model_name: analysisResult.model_name || 'SatyaAI-Multimodal',
-          model_version: analysisResult.model_version || '1.0.0',
-          summary: analysisResult.summary || {},
-          analysis_data: analysisResult,
-          proof_json: analysisResult.proof || {}
-        });
-
-        res.json({
-          success: true,
-          result: {
-            ...result.data,
-            jobId: job.id,
-            reportCode: job.report_code
-          }
-        });
-      } else {
-        // Mark job as failed
-        const errorData = result.data as { result?: { error?: string }; error?: string };
-        const errorMessage = errorData?.result?.error || errorData?.error || 'Analysis failed';
-        await updateAnalysisJobWithResults(job.id, {
-          status: 'failed',
-          error_message: errorMessage
-        });
-
-        res.status(500).json({
-          success: false,
-          error: errorMessage
-        });
-      }
-    } catch (error) {
-      await handleAnalysisError(error, res, job?.id);
-    }
-  }
-);
-
-// Analyze webcam capture
-router.post(
-  '/webcam',
-  upload.single('image'),
-  validateRequest,
-  async (req: AuthenticatedRequest, res: Response) => {
-    let job: { id: string; report_code: string } | null = null;
-    
-    try {
-      if (!req.file) {
-        return res.status(400).json({
-          success: false,
-          error: 'Webcam image is required'
-        });
-      }
-
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.status(401).json({
-          success: false,
-          error: 'Authentication required'
-        });
-      }
-
-      // Create analysis job
-      job = await createAnalysisJob(userId, {
-        modality: 'webcam',
-        filename: `webcam-${Date.now()}.jpg`,
-        mime_type: req.file.mimetype,
-        size_bytes: req.file.size,
-        status: 'pending'
-      });
-
-      // Process the webcam image using Python service
-      const result = await (pythonBridge as unknown as { request: (options: unknown) => Promise<unknown> }).request({
-        method: 'POST',
-        url: '/analysis/webcam',
-        data: {
-          media_type: 'image',
-          data_base64: req.file.buffer.toString('base64'),
-          mime_type: req.file.mimetype,
-          jobId: job.id,
-          filename: req.file.originalname,
-        },
-      }) as { data: { status: string; confidence?: number; is_deepfake?: boolean; model_name?: string; model_version?: string; summary?: Record<string, unknown>; proof?: Record<string, unknown>; error?: string } };
-
-      // Save results to Supabase
-      if (result.data && (result.data as AnalysisResult).status === 'success') {
-        await updateAnalysisJobWithResults(job.id, {
-          status: 'completed',
-          confidence: (result.data as AnalysisResult).confidence || 0,
-          is_deepfake: (result.data as AnalysisResult).is_deepfake || false,
-          model_name: (result.data as AnalysisResult).model_name || 'SatyaAI-Webcam',
-          model_version: (result.data as AnalysisResult).model_version || '1.0.0',
-          summary: (result.data as AnalysisResult).summary || {},
-          analysis_data: result.data,
-          proof_json: (result.data as AnalysisResult).proof || {}
-        });
-
-        res.json({
-          success: true,
-          result: {
-            ...result.data,
-            jobId: job.id,
-            reportCode: job.report_code
-          }
-        });
-      } else {
-        // Mark job as failed
-        await updateAnalysisJobWithResults(job.id, {
-          status: 'failed',
-          error_message: (result.data as AnalysisResult)?.error || 'Analysis failed'
-        });
-
-        // Emit real-time WebSocket error event
-        webSocketManager.sendEventToUser(userId, {
-          type: 'JOB_ERROR',
-          jobId: job.id,
-          timestamp: Date.now(),
-          data: {
-            success: false,
-            error: (result.data as AnalysisResult)?.error || 'Analysis failed'
-          }
-        });
-
-        res.status(500).json({
-          success: false,
-          error: (result.data as AnalysisResult)?.error || 'Analysis failed'
-        });
-      }
-    } catch (error) {
-      await handleAnalysisError(error, res, job?.id);
-    }
-  }
-);
-
-// Cancel a running job
-router.delete('/job/:jobId/cancel', async (req: AuthenticatedRequest, res: Response) => {
+// Get analysis results (for polling)
+router.get('/results/:jobId', async (req: Request, res: Response) => {
   try {
     const { jobId } = req.params;
-    const userId = req.user?.id;
-
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'User not authenticated'
-      });
-    }
-
-    if (!jobId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Job ID is required'
-      });
-    }
-
-    const cancelled = await jobManager.cancelJob(jobId, userId);
-
-    if (cancelled) {
-      res.json({
-        success: true,
-        message: 'Job cancelled successfully',
-        jobId
-      });
-    } else {
-      res.status(404).json({
-        success: false,
-        error: 'Job not found or cannot be cancelled',
-        jobId
-      });
-    }
+    
+    // Query the database for the job
+    const result = await pythonBridge.get(`/results/${jobId}`) as {
+      status: string;
+      result?: {
+        is_deepfake: boolean;
+        confidence: number;
+        model_name: string;
+        model_version: string;
+        analysis_data?: {
+          processing_time?: number;
+        };
+      };
+      error?: string;
+    };
+    
+    // Transform the result to match the expected format
+    const transformedResult = {
+      id: jobId,
+      status: result.status || 'processing',
+      result: result.result ? {
+        isAuthentic: !result.result.is_deepfake,
+        confidence: result.result.confidence,
+        details: {
+          isDeepfake: result.result.is_deepfake,
+          modelInfo: {
+            name: result.result.model_name,
+            version: result.result.model_version
+          }
+        },
+        metrics: {
+          processingTime: result.result.analysis_data?.processing_time || 0,
+          modelVersion: result.result.model_version
+        }
+      } : undefined,
+      error: result.error
+    };
+    
+    res.json(transformedResult);
   } catch (error) {
-    logger.error('Error cancelling job:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to cancel job'
-    });
+    await handleAnalysisError(error, res);
   }
 });
 
 export { router as analysisRouter };
+export default router;
+

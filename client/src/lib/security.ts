@@ -13,7 +13,7 @@ import logger from './logger';
 /**
  * Sanitize HTML content to prevent XSS
  */
-export function sanitizeHtml(dirty: string, options?: DOMPurify.Config): string {
+export function sanitizeHtml(dirty: string, options?: any): string {
   const clean = DOMPurify.sanitize(dirty, {
     ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'a', 'p', 'br', 'ul', 'ol', 'li'],
     ALLOWED_ATTR: ['href', 'title', 'target'],
@@ -21,7 +21,7 @@ export function sanitizeHtml(dirty: string, options?: DOMPurify.Config): string 
     ...options,
   });
   
-  return clean;
+  return clean.toString();
 }
 
 /**

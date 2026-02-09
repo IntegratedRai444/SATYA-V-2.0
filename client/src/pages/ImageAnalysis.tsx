@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Loader2, Upload, Eye, CheckCircle, AlertCircle, FileText, BarChart3, Camera } from 'lucide-react';
-import { useImageAnalysis } from '../hooks/useApi';
-import { pollAnalysisResult, AnalysisJobStatus } from '../lib/analysis/pollResult';
+import { useImageAnalysis } from '@/hooks/useApi';
+import { pollAnalysisResult, AnalysisJobStatus } from '@/lib/analysis/pollResult';
 
 interface PollError {
   message: string;
@@ -123,7 +123,7 @@ const ImageAnalysis = () => {
           if (job.status === 'completed' && job.result) {
             const analysisResult: LocalAnalysisResult = {
               result: {
-                isAuthentic: !job.result.details.isDeepfake, // Backend sends is_deepfake
+                isAuthentic: !job.result.details.isDeepfake, // Backend sends isDeepfake (camelCase)
                 confidence: job.result.confidence,
                 details: {
                   isDeepfake: job.result.details.isDeepfake,

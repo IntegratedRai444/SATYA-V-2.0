@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Loader } from 'lucide-react';
-import { useToast } from '../ui/use-toast';
+import { useToast } from '@/components/ui/use-toast';
 import ChatMessage, { MessageStatus } from './ChatMessage';
 import WelcomeMessage from './WelcomeMessage';
-import { sendMessage, getChatHistory, Message as MessageType, ChatHistoryItem } from '../../services/chatService';
+import { sendMessage, getChatHistory, Message as MessageType, ChatHistoryItem } from '@/services/chatService';
 import { v4 as uuidv4 } from 'uuid';
 
 interface Message extends MessageType {

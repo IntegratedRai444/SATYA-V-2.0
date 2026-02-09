@@ -21,9 +21,10 @@ pyjwt>=2.8.0
 cryptography>=42.0.0
 
 # ML/AI Core - Python 3.11 Compatible Versions
-torch==2.2.0
-torchvision==0.17.0
-torchaudio==2.2.0
+# Use CPU-only versions to avoid CUDA DLL issues on Windows
+torch==2.9.1+cpu
+torchvision==0.24.1+cpu
+torchaudio==2.9.1+cpu
 tensorflow>=2.15.0
 keras>=3.0.0
 huggingface-hub>=0.36.0
@@ -33,7 +34,7 @@ timm>=1.0.9
 efficientnet-pytorch>=0.7.1
 facenet-pytorch>=2.6.0
 speechbrain>=1.0.3
-tokenizers>=0.15.0,<0.16.0
+# tokenizers>=0.15.0,<0.16.0
 openai-whisper>=20231117
 faster-whisper>=1.0.3
 pytorch-lightning>=2.1.0

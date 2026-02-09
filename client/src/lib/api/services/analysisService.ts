@@ -53,7 +53,7 @@ export interface AnalysisResult {
 
 export interface JobStartResponse {
   success: boolean;
-  reportCode: string; // Changed from jobId to match backend
+  job_id: string; // Updated to match unified endpoint
 }
 
 export interface AnalysisProof {
@@ -84,13 +84,12 @@ export class AnalysisService extends BaseService {
     const formData = new FormData();
     formData.append('file', file);
 
-    // Add request metadata
     if (options.metadata) {
       formData.append('metadata', JSON.stringify(options.metadata));
     }
 
     try {
-      const response = await this.post<JobStartResponse>('/analysis/image', formData, {
+      const response = await this.post<JobStartResponse>('/api/v2/analysis/image', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -98,11 +97,11 @@ export class AnalysisService extends BaseService {
         timeout: 360000, // 6 minutes timeout
       });
 
-      if (!response.success || !response.reportCode) {
+      if (!response.success || !response.job_id) {
         throw new Error('Failed to start analysis job');
       }
 
-      return response.reportCode; // IMPORTANT: return reportCode, not result
+      return response.job_id;
     } catch (error) {
       console.error('Image analysis failed:', error);
       
@@ -138,7 +137,7 @@ export class AnalysisService extends BaseService {
     formData.append('file', file);
 
     try {
-      const response = await this.post<JobStartResponse>('/analysis/video', formData, {
+      const response = await this.post<JobStartResponse>('/api/v2/analysis/video', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -146,11 +145,11 @@ export class AnalysisService extends BaseService {
         timeout: 360000, // 6 minutes timeout
       });
 
-      if (!response.success || !response.reportCode) {
+      if (!response.success || !response.job_id) {
         throw new Error('Failed to start analysis job');
       }
 
-      return response.reportCode;
+      return response.job_id;
     } catch (error) {
       console.error('Video analysis error:', error);
       throw new Error('Failed to start video analysis');
@@ -165,7 +164,7 @@ export class AnalysisService extends BaseService {
     formData.append('file', file);
 
     try {
-      const response = await this.post<JobStartResponse>('/analysis/audio', formData, {
+      const response = await this.post<JobStartResponse>('/api/v2/analysis/audio', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -173,11 +172,11 @@ export class AnalysisService extends BaseService {
         timeout: 360000, // 6 minutes timeout
       });
 
-      if (!response.success || !response.reportCode) {
+      if (!response.success || !response.job_id) {
         throw new Error('Failed to start analysis job');
       }
 
-      return response.reportCode;
+      return response.job_id;
     } catch (error) {
       console.error('Audio analysis error:', error);
       throw new Error('Failed to start audio analysis');
@@ -199,7 +198,7 @@ export class AnalysisService extends BaseService {
     }
 
     try {
-      const response = await this.post<JobStartResponse>('/analysis/multimodal', formData, {
+      const response = await this.post<JobStartResponse>('/api/v2/analysis/multimodal', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -207,11 +206,11 @@ export class AnalysisService extends BaseService {
         timeout: 360000, // 6 minutes timeout
       });
 
-      if (!response.success || !response.reportCode) {
+      if (!response.success || !response.job_id) {
         throw new Error('Failed to start analysis job');
       }
 
-      return response.reportCode;
+      return response.job_id;
     } catch (error) {
       console.error('Multimodal analysis error:', error);
       throw new Error('Failed to start multimodal analysis');

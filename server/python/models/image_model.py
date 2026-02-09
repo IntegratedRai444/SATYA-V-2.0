@@ -40,12 +40,6 @@ except ImportError:
     TRANSFORMERS_AVAILABLE = False
     logger.warning("HuggingFace Transformers not available")
 
-# Constants
-DEFAULT_IMAGE_SIZE = 384
-NUM_ATTENTION_HEADS = 8
-EMBED_DIM = 192  # For Swin Transformer
-WINDOW_SIZE = 12  # For Swin Transformer
-
 
 # Custom Attention and Transformer Modules
 class MultiScaleCrossAttention(nn.Module):

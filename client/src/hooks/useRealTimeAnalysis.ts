@@ -168,20 +168,20 @@ export function useRealTimeAnalysis(options: RealTimeAnalysisOptions = {}) {
     // Initial poll
     await pollJob();
 
-    // Set up interval polling
-    const scheduleNextPoll = () => {
-      if (pollingIntervalRef.current) {
-        pollingIntervalRef.current = setTimeout(() => {
-          pollJob().then(() => {
-            if (isPolling) {
-              scheduleNextPoll();
-            }
-          });
-        }, 2000);
-      }
-    };
-    
-    scheduleNextPoll();
+    // Set up interval polling - DISABLED to prevent spam
+    // const scheduleNextPoll = () => {
+    //   if (pollingIntervalRef.current) {
+    //     pollingIntervalRef.current = setTimeout(() => {
+    //       pollJob().then(() => {
+    //         if (isPolling) {
+    //           scheduleNextPoll();
+    //         }
+    //       });
+    //     }, 5000); // Increased from 2000ms to 5000ms
+    //   }
+    // };
+    // 
+    // scheduleNextPoll();
   }, [jobId, isPolling, retryCount, maxRetries, autoRetry, onProgress, onComplete, onError, stopPolling]);
 
   // Start polling when WebSocket is not connected and we have a jobId

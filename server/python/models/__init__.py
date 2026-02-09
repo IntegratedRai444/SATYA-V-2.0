@@ -11,47 +11,6 @@ except ImportError as e:
     print(f"Warning: DeepfakeClassifier not available: {e}")
     DEEPFAKE_CLASSIFIER_AVAILABLE = False
 
-# Legacy models from individual model files (if they exist)
-try:
-    from .xception_detector import XceptionDeepfakeDetector
-    XCEPTION_DETECTOR_AVAILABLE = True
-except ImportError:
-    print("Warning: XceptionDeepfakeDetector not available")
-    XCEPTION_DETECTOR_AVAILABLE = False
-    XceptionDeepfakeDetector = None
-
-try:
-    from .efficientnet_detector import EfficientNetDeepfakeDetector
-    EFFICIENTNET_DETECTOR_AVAILABLE = True
-except ImportError:
-    print("Warning: EfficientNetDeepfakeDetector not available")
-    EFFICIENTNET_DETECTOR_AVAILABLE = False
-    EfficientNetDeepfakeDetector = None
-
-try:
-    from .resnet50_detector import ResNet50DeepfakeDetector
-    RESNET50_DETECTOR_AVAILABLE = True
-except ImportError:
-    print("Warning: ResNet50DeepfakeDetector not available")
-    RESNET50_DETECTOR_AVAILABLE = False
-    ResNet50DeepfakeDetector = None
-
-try:
-    from .audio_detector_legacy import AudioDeepfakeDetector as LegacyAudioDetector
-    LEGACY_AUDIO_DETECTOR_AVAILABLE = True
-except ImportError:
-    print("Warning: Legacy AudioDeepfakeDetector not available")
-    LEGACY_AUDIO_DETECTOR_AVAILABLE = False
-    LegacyAudioDetector = None
-
-try:
-    from .video_detector_legacy import VideoDeepfakeDetector as LegacyVideoDetector
-    LEGACY_VIDEO_DETECTOR_AVAILABLE = True
-except ImportError:
-    print("Warning: Legacy VideoDeepfakeDetector not available")
-    LEGACY_VIDEO_DETECTOR_AVAILABLE = False
-    LegacyVideoDetector = None
-
 # Enhanced modality models
 try:
     from .image_model import AdvancedImageDetector as ImageModel
@@ -106,11 +65,6 @@ MODEL_REGISTRY = {
     'text': TextDeepfakeDetector if TEXT_MODEL_AVAILABLE else None,
     'multimodal': MultimodalDeepfakeDetector if MULTIMODAL_MODEL_AVAILABLE else None,
     'ensemble': EnsembleDetector if ENSEMBLE_DETECTOR_AVAILABLE else None,
-    'xception_detector': XceptionDeepfakeDetector if XCEPTION_DETECTOR_AVAILABLE else None,
-    'efficientnet_detector': EfficientNetDeepfakeDetector if EFFICIENTNET_DETECTOR_AVAILABLE else None,
-    'resnet50_detector': ResNet50DeepfakeDetector if RESNET50_DETECTOR_AVAILABLE else None,
-    'legacy_audio': LegacyAudioDetector if LEGACY_AUDIO_DETECTOR_AVAILABLE else None,
-    'legacy_video': LegacyVideoDetector if LEGACY_VIDEO_DETECTOR_AVAILABLE else None,
 }
 
 # Transformer availability check
@@ -161,6 +115,10 @@ def get_model_info():
         'model_registry': {k: v is not None for k, v in MODEL_REGISTRY.items()}
     }
 
+def get_detector_by_type(model_type: str, **kwargs):
+    """Get a detector by type - alias for create_model for compatibility."""
+    return create_model(model_type, **kwargs)
+
 # Export main classes
 __all__ = [
     'DeepfakeClassifier',
@@ -170,15 +128,11 @@ __all__ = [
     'TextDeepfakeDetector',
     'MultimodalDeepfakeDetector',
     'EnsembleDetector',
-    'XceptionDeepfakeDetector',
-    'EfficientNetDeepfakeDetector',
-    'ResNet50DeepfakeDetector',
-    'LegacyAudioDetector',
-    'LegacyVideoDetector',
     'analyze_text_deepfake',
     'analyze_multimodal_deepfake',
     'get_available_models',
     'create_model',
+    'get_detector_by_type',
     'quick_analyze',
     'get_model_info'
 ]

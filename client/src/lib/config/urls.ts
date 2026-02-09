@@ -19,16 +19,20 @@ export const API_CONFIG = {
   AUTH_URL: getEnvVar('VITE_AUTH_API_URL', false) || 'http://localhost:5001/api/v2',
   ANALYSIS_URL: getEnvVar('VITE_ANALYSIS_API_URL', false) || 'http://localhost:5001/api/v2',
   
-  // WebSocket URL
-  WS_URL: getEnvVar('VITE_WS_URL', false) || 'ws://localhost:5001/api/v2/dashboard/ws',
+  // WebSocket URL with automatic protocol detection
+  WS_URL: getEnvVar('VITE_WS_URL', false) || (() => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = getEnvVar('VITE_API_HOST', false) || 'localhost:5001';
+    return `${protocol}//${host}/api/v2/dashboard/ws`;
+  })(),
   
   // Supabase Configuration
   SUPABASE_URL: getEnvVar('VITE_SUPABASE_URL'),
   SUPABASE_ANON_KEY: getEnvVar('VITE_SUPABASE_ANON_KEY'),
   
-  // Python ML Server (for direct connection if needed)
-  PYTHON_URL: 'http://localhost:8000',
-  PYTHON_HEALTH_URL: 'http://localhost:8000/health',
+  // Python ML Server (for reference only - frontend should not connect directly)
+  // Note: All Python requests go through Node.js backend
+  PYTHON_URL_REFERENCE: 'http://localhost:8000',
 } as const;
 
 // URL Builder Functions
@@ -81,7 +85,7 @@ export const API_ENDPOINTS = {
 // Health Check URLs
 export const HEALTH_URLS = {
   NODE_API: API_CONFIG.BASE_URL.replace('/api/v2', '') + '/health',
-  PYTHON_ML: API_CONFIG.PYTHON_HEALTH_URL,
+  PYTHON_ML: API_CONFIG.PYTHON_URL_REFERENCE + '/health',
   FRONTEND: window.location.origin,
 } as const;
 

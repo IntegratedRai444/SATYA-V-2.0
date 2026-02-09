@@ -115,7 +115,7 @@ const getProgressColor = (item: AnalysisProgress) => {
   }
 };
 
-const AnalysisProgress: React.FC<AnalysisProgressProps> = ({ 
+const AnalysisProgressComponent: React.FC<AnalysisProgressProps> = ({ 
   progressItems, 
   onRemove, 
   onComplete 
@@ -181,4 +181,4 @@ const AnalysisProgress: React.FC<AnalysisProgressProps> = ({
   );
 };
 
-export default AnalysisProgress;
+export default AnalysisProgressComponent;

@@ -1,18 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import ChatInterface from '../components/chat/ChatInterface';
+import ChatInterface from '@/components/chat/ChatInterface';
 import { Zap, MessageCircle } from 'lucide-react';
 
 const AIAssistant: React.FC = () => {
   const location = useLocation();
-  const [initialPrompt, setInitialPrompt] = useState<string | null>(null);
-
-  useEffect(() => {
-    // Check if there's a quick prompt from navigation state
-    if (location.state && (location.state as { quickPrompt?: string }).quickPrompt) {
-      setInitialPrompt((location.state as { quickPrompt?: string }).quickPrompt || null);
-    }
-  }, [location.state]);
+  
+  // Initialize state from navigation state
+  const initialQuickPrompt = location.state && (location.state as { quickPrompt?: string }).quickPrompt 
+    ? (location.state as { quickPrompt?: string }).quickPrompt 
+    : null;
+  
+  const [initialPrompt] = useState<string | null>(initialQuickPrompt || null);
 
   return (
     <div className="flex flex-col h-full bg-[#0a0a0a]">

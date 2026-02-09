@@ -10,7 +10,7 @@ import {
   HelpCircle
 } from 'lucide-react';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
-import { useSupabaseAuth } from '../../hooks/useSupabaseAuth';
+import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 
 const Navbar = () => {
   const location = useLocation();

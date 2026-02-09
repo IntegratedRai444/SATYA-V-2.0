@@ -105,20 +105,31 @@ export function useBaseWebSocket(options: BaseWebSocketOptions = {}) {
         onError?.(errorObj);
     }, [onError]);
 
-    // Schedule reconnection with exponential backoff
+    // Schedule reconnection with exponential backoff and jitter
     const scheduleReconnect = useCallback(() => {
-        if (reconnectTimeoutRef.current) {
-            clearTimeout(reconnectTimeoutRef.current);
-        }
-
-        if (!isMountedRef.current) {
+        if (reconnectTimeoutRef.current || !isMountedRef.current) {
             return;
         }
 
-        const delay = Math.min(reconnectInterval * Math.pow(2, reconnectCountRef.current), 30000);
+        // Exponential backoff with jitter to prevent thundering herd
+        const baseDelay = Math.min(
+            reconnectInterval * Math.pow(2, reconnectCountRef.current),
+            30000
+        );
+        
+        // Add jitter (randomness) to prevent synchronized reconnections
+        const jitter = Math.random() * 0.5 * baseDelay;
+        const delay = Math.floor(baseDelay + jitter);
+        
         reconnectCountRef.current += 1;
 
-        logger.info(`Scheduling reconnect attempt ${reconnectCountRef.current} in ${delay}ms`);
+        logger.info(`Scheduling reconnect attempt ${reconnectCountRef.current} in ${delay}ms (with jitter)`);
+        
+        // Prevent infinite reconnection attempts
+        if (reconnectCountRef.current >= reconnectAttempts) {
+            logger.error(`Max reconnection attempts (${reconnectAttempts}) reached. Giving up.`);
+            return;
+        }
 
         reconnectTimeoutRef.current = window.setTimeout(() => {
             if (isMountedRef.current) {

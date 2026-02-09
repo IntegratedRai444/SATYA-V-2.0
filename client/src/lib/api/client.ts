@@ -3,6 +3,8 @@ import { API_CONFIG } from '../config/urls';
 import { v4 as uuidv4 } from 'uuid';
 import { metrics, trackError as logError } from '@/lib/services/metrics';
 import { getAccessToken } from "../auth/getAccessToken";
+import { getCsrfToken } from './services/csrfService';
+import { getSecureRefreshToken, setSecureAccessToken, clearSecureTokens } from '../auth/secureTokenStorage';
 
 // Export types needed by services
 export interface ApiResponse<T = unknown> {
@@ -148,11 +150,10 @@ const createEnhancedAxiosInstance = (baseURL: string): AxiosInstance => {
   
   // Request interceptor for caching and metrics
   instance.interceptors.request.use(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (config: any) => {
       const requestId = uuidv4();
-      config.id = requestId;
-      config.metadata = {
+      (config as any).id = requestId;
+      (config as any).metadata = {
         requestId,
         startTime: Date.now(),
         source: createCancellableSource()
@@ -178,14 +179,14 @@ const createEnhancedAxiosInstance = (baseURL: string): AxiosInstance => {
       // Add CSRF token to all non-GET requests
       if (config.method?.toUpperCase() !== 'GET') {
         try {
-          // TEMPORARILY DISABLED FOR DEBUGGING
-          // const token = await getCsrfToken();
-          // if (token) {
-          //   config.headers = config.headers || {};
-          //   config.headers['X-CSRF-Token'] = token;
-          // }
+          const token = await getCsrfToken();
+          if (token) {
+            config.headers = config.headers || {};
+            config.headers['X-CSRF-Token'] = token;
+          }
         } catch (error) {
-          console.warn('CSRF token fetch skipped for debugging:', error);
+          console.warn('Failed to fetch CSRF token:', error);
+          // Continue without CSRF token in case of failure
         }
       }
 
@@ -292,17 +293,13 @@ const createEnhancedAxiosInstance = (baseURL: string): AxiosInstance => {
   return instance;
 };
 
-// Create separate instances for auth and analysis
-const authApiClient = createEnhancedAxiosInstance(import.meta.env.VITE_AUTH_API_URL);
-const analysisApiClient = createEnhancedAxiosInstance(import.meta.env.VITE_ANALYSIS_API_URL);
+// Create unified API client instance
+const apiClient = createEnhancedAxiosInstance(import.meta.env.VITE_API_URL);
 
 // Function to set the auth service reference (kept for backward compatibility)
 export const setAuthService = () => {
   // No-op: kept for backward compatibility
 };
-
-// Default export is the analysis client for backward compatibility
-const apiClient = createEnhancedAxiosInstance(import.meta.env.VITE_API_URL);
 
 // Token refresh state management
 let isRefreshing = false;
@@ -327,7 +324,7 @@ const refreshTokenWithQueue = async (): Promise<string> => {
   
   try {
     refreshPromise = (async () => {
-      const refreshToken = localStorage.getItem('refresh_token');
+      const refreshToken = getSecureRefreshToken();
       if (!refreshToken) {
         throw new Error('No refresh token available');
       }
@@ -339,7 +336,7 @@ const refreshTokenWithQueue = async (): Promise<string> => {
       );
       
       const { accessToken } = response.data;
-      localStorage.setItem('access_token', accessToken);
+      setSecureAccessToken(accessToken);
       
       // Resolve all queued requests
       refreshQueue.forEach(({ resolve }) => resolve(accessToken));
@@ -397,13 +394,11 @@ const processBatch = async () => {
   }
 };
 
-// Process batch queue every batchInterval ms
 setInterval(processBatch, batchInterval);
 
 // Request interceptor for batching
 apiClient.interceptors.request.use(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async (config: any) => {
+  async (config: AxiosRequestConfig) => {
     // Skip batching for now to simplify type issues
     // Skip deduplication for non-idempotent methods
     const isIdempotent = ['GET', 'HEAD', 'OPTIONS'].includes(config.method?.toUpperCase() || '');
@@ -415,12 +410,6 @@ apiClient.interceptors.request.use(
       config.params ? JSON.stringify(config.params) : '',
       config.data ? JSON.stringify(config.data) : ''
     ].join('_');
-    
-    // Check for duplicate requests
-    if (isIdempotent && pendingRequests.has(requestKey)) {
-      // Return a config that will trigger the existing request
-      return config;
-    }
     
     // Add auth token if available
     const token = await getAccessToken();
@@ -453,7 +442,7 @@ apiClient.interceptors.request.use(
       }
     };
     
-    // Track the request
+    // Track request
     metrics.track({
       type: 'api',
       name: 'api.request',
@@ -467,7 +456,7 @@ apiClient.interceptors.request.use(
       },
     });
     
-    // Store the request promise for deduplication
+    // Store as pending request for deduplication
     if (isIdempotent) {
       const requestPromise = axios({
         ...requestConfig,
@@ -479,7 +468,7 @@ apiClient.interceptors.request.use(
         pendingRequests.delete(requestKey);
       });
       pendingRequests.set(requestKey, requestPromise);
-      return requestConfig;
+      return requestConfig as AxiosRequestConfig;
     }
     
     return requestConfig;
@@ -595,10 +584,9 @@ apiClient.interceptors.response.use(
         });
       }
       console.error('Session expired. Please log in again.');
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
+      // Clear tokens securely
+      clearSecureTokens();
       window.location.href = '/login';
-      return Promise.reject(refreshError);
     }
   }
 );
@@ -696,15 +684,15 @@ cancelRequest: (requestId: string, message: string = 'Request cancelled'): boole
   }
 };
 
-// Client instances
+// Client instances (unified to single client)
 export const clients = {
   main: apiClient,
-  auth: authApiClient,
-  analysis: analysisApiClient
+  auth: apiClient,  // All use the same unified client
+  analysis: apiClient
 };
 
 // Response creation is handled by Axios internally
 
-// Export the API clients
-export { apiClient, authApiClient, analysisApiClient };
+// Export the API client
+export { apiClient };
 export default api;

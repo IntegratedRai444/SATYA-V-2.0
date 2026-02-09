@@ -42,7 +42,7 @@ class DatabaseManager:
 
     async def test_connection(self) -> bool:
         """
-        Test database connection with a simple query
+        Test database connection with a simple query - single attempt only
         """
         if self.supabase is None:
             logger.warning("⚠️ Cannot test connection - Supabase not available")
@@ -61,39 +61,7 @@ class DatabaseManager:
                 return False
                 
         except Exception as e:
-            error_str = str(e)
-            logger.error(f"❌ Database connection test failed: {error_str}")
-            
-            # Check if it's an API key issue
-            if "Invalid API key" in error_str or "401" in error_str:
-                logger.error("🔑 API Key Issue Detected!")
-                logger.error("💡 Possible solutions:")
-                logger.error("   1. Check if the API key is expired")
-                logger.error("   2. Verify the key has correct permissions")
-                logger.error("   3. Try regenerating the key in Supabase dashboard")
-                
-                # Try alternative connection test with a different approach
-                try:
-                    logger.info("🔄 Trying alternative connection test...")
-                    # Test with a different table that might have different permissions
-                    result = self.supabase.table("tasks").select("count").limit(1).execute()
-                    if result is not None:
-                        self._connection_tested = True
-                        logger.info("✅ Alternative connection test successful")
-                        return True
-                except Exception as alt_e:
-                    logger.error(f"❌ Alternative connection test also failed: {alt_e}")
-            
-            # Try RPC call as last resort
-            try:
-                logger.info("🔄 Trying RPC connection test...")
-                result = self.supabase.rpc('get_server_time').execute()
-                self._connection_tested = True
-                logger.info("✅ RPC connection test successful")
-                return True
-            except Exception as rpc_e:
-                logger.error(f"❌ RPC connection test also failed: {rpc_e}")
-            
+            logger.warning(f"⚠️ Database connection test failed: {str(e)[:100]}...")
             return False
 
     async def disconnect(self):
@@ -145,9 +113,14 @@ class DatabaseManager:
         """Check if database connection has been tested and successful"""
         return self._connection_tested
 
-    async def execute_with_retry(self, operation, max_retries=3, retry_delay=1.0):
+    async def execute_with_retry(self, operation, max_retries=1, retry_delay=1.0):
         """
-        Execute database operation with retry logic
+        Execute database operation with minimal retry logic
+        
+        Args:
+            operation: Async operation to execute
+            max_retries: Maximum number of retry attempts (default: 1)
+            retry_delay: Delay between retries (default: 1.0s)
         """
         for attempt in range(max_retries):
             try:

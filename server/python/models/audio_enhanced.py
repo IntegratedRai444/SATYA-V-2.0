@@ -7,6 +7,10 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+# Configure logging first
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 import librosa
 import numpy as np
 import soundfile as sf
@@ -27,10 +31,6 @@ try:
 except ImportError:
     TRANSFORMERS_AVAILABLE = False
     logger.warning("Transformers not available, using basic audio processing only")
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 
 class AudioPreprocessor:

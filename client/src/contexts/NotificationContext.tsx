@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { notificationService, Notification } from '../services/notificationService';
+import { notificationService, Notification } from '@/services/notificationService';
 import { useToast } from '@/components/ui/use-toast';
 
 interface NotificationContextType {
@@ -108,6 +108,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useNotifications() {
     const context = useContext(NotificationContext);
     if (!context) {

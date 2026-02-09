@@ -108,151 +108,100 @@ class AnalysisResponse(BaseModel):
     summary: dict
     proof: dict
 
-@router.post("/analyze/image")
-async def analyze_image_unified(request: Request, data: UnifiedAnalysisRequest):
-    """
-    Unified image analysis endpoint - accepts standardized JSON format
-    """
+@router.post("/analyze/{media_type}")
+async def analyze_unified_media(
+    media_type: str,
+    file: UploadFile = File(...),
+    job_id: str = Form(...),
+    user_id: str = Form(None),
+    request: Request = None
+):
+    """Unified media analysis endpoint - returns inference-only payload"""
     start_time = datetime.utcnow()
-    logger.info(f"[REQUEST RECEIVED] Image analysis for {data.filename}")
+    logger.info(f"[INFERENCE REQUEST] {media_type} analysis for job_id: {job_id}")
     
     try:
-        # Validate ML service availability
-        if not hasattr(request.app.state, "sentinel_agent"):
-            logger.error("[MODEL INFERENCE FAILED] ML models not initialized")
-            return UnifiedAnalysisResponse(
-                success=False,
-                media_type="image",
-                fake_score=0.0,
-                label="Unknown",
-                processing_time=0,
-                error="Analysis service unavailable - ML models not initialized"
+        # Validate media type
+        if media_type not in ["image", "video", "audio"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid media type: {media_type}"
             )
-
-        # Decode base64 image
-        try:
-            logger.info("[FILE DECODED] Decoding base64 image data")
-            image_data = base64.b64decode(data.data_base64)
-        except Exception as e:
-            logger.error(f"[FILE DECODED] Invalid base64 data: {str(e)}")
-            return UnifiedAnalysisResponse(
-                success=False,
-                media_type="image",
-                fake_score=0.0,
-                label="Unknown",
-                processing_time=0,
-                error=f"Invalid image data: {str(e)}"
-            )
-
-        # Validate image data
-        if len(image_data) == 0:
-            logger.error("[FILE DECODED] Empty image data")
-            return UnifiedAnalysisResponse(
-                success=False,
-                media_type="image",
-                fake_score=0.0,
-                label="Unknown",
-                processing_time=0,
-                error="Empty image data"
-            )
-
+            
+        # Read file content
+        content = await file.read()
+        
         # Create analysis request
         analysis_request = AnalysisRequest(
-            analysis_type=AnalysisType.IMAGE,
-            content=image_data,
+            analysis_type=AnalysisType[media_type.upper()],
+            content=content,
             metadata={
-                "filename": data.filename,
-                "mime_type": data.mime_type,
-                "request_id": f"req_{uuid.uuid4().hex[:8]}",
+                "filename": file.filename,
+                "content_type": file.content_type,
+                "job_id": job_id,
+                "user_id": user_id,
             },
         )
-
-        # Execute analysis with timeout guard
-        logger.info("[MODEL INFERENCE START] Starting image analysis")
         
-        # Check if ML service is available
+        # Process with ML model - inference only
         if not hasattr(request.app.state, "sentinel_agent") or request.app.state.sentinel_agent is None:
-            logger.error("[ML SERVICE UNAVAILABLE] SentinelAgent not initialized")
-            return UnifiedAnalysisResponse(
-                success=False,
-                media_type="image",
-                fake_score=0.0,
-                label="Unknown",
-                processing_time=0,
-                error="ML service temporarily unavailable - please try again later"
+            raise HTTPException(
+                status_code=503,
+                detail="ML service unavailable"
             )
         
-        try:
-            # Add timeout wrapper for ML inference (5 minutes max)
-            import asyncio
-            result = await asyncio.wait_for(
-                request.app.state.sentinel_agent.analyze(analysis_request),
-                timeout=300.0  # 5 minutes
-            )
-            logger.info("[MODEL INFERENCE DONE] Analysis completed")
-        except asyncio.TimeoutError:
-            logger.error("[MODEL INFERENCE TIMEOUT] Analysis timed out after 5 minutes")
-            return UnifiedAnalysisResponse(
-                success=False,
-                media_type="image",
-                fake_score=0.0,
-                label="Unknown",
-                processing_time=300000,  # 5 minutes in ms
-                error="Analysis timeout - file too large or complex. Please try with a smaller file."
-            )
-
+        # Execute inference with timeout
+        import asyncio
+        result = await asyncio.wait_for(
+            request.app.state.sentinel_agent.analyze(analysis_request),
+            timeout=300.0  # 5 minutes
+        )
+        
         if not result or not hasattr(result, "conclusions") or not result.conclusions:
-            logger.error("[MODEL INFERENCE FAILED] No valid analysis results")
-            return UnifiedAnalysisResponse(
-                success=False,
-                media_type="image",
-                fake_score=0.0,
-                label="Unknown",
-                processing_time=0,
-                error="Failed to analyze image: No valid analysis results"
+            raise HTTPException(
+                status_code=500,
+                detail="No valid inference results"
             )
-
+        
         # Get the primary conclusion
         primary_conclusion = max(
             result.conclusions, key=lambda c: (c.confidence, c.severity)
         )
-
+        
         # Extract model info
         model_info = {}
         if result.conclusions:
             model_info = result.conclusions[0].metadata.get("model_info", {})
-
+        
         processing_time = (datetime.utcnow() - start_time).total_seconds() * 1000
-
-        response = UnifiedAnalysisResponse(
-            success=True,
-            media_type="image",
-            fake_score=float(primary_conclusion.confidence),
-            label="Deepfake" if primary_conclusion.is_deepfake else "Authentic",
-            processing_time=processing_time,
-            model_name=model_info.get("name", "SatyaAI-Image"),
-            model_version=model_info.get("version", "1.0.0"),
-            confidence=float(primary_conclusion.confidence),
-            proof=getattr(result, 'proof', {}),
-            metadata={
-                "processing_time": getattr(result, 'processing_time', 0),
-                "evidence_id": result.evidence_ids[0] if hasattr(result, "evidence_ids") and result.evidence_ids else data.filename,
-            }
+        
+        # Return inference-only payload - Node owns job lifecycle
+        return {
+            "confidence": float(primary_conclusion.confidence),
+            "is_deepfake": primary_conclusion.is_deepfake,
+            "model_name": model_info.get("name", f"SatyaAI-{media_type.capitalize()}"),
+            "model_version": model_info.get("version", "1.0.0"),
+            "analysis_data": {
+                "processing_time": processing_time,
+                "evidence_id": result.evidence_ids[0] if hasattr(result, "evidence_ids") and result.evidence_ids else file.filename,
+                "media_type": media_type,
+                "inference_timestamp": datetime.utcnow().isoformat(),
+            },
+            "proof": getattr(result, 'proof', {}),
+        }
+        
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail="Analysis timeout"
         )
-
-        logger.info(f"[RESPONSE SENT] Image analysis completed successfully")
-        return response
-
+    except HTTPException:
+        raise
     except Exception as e:
-        processing_time = (datetime.utcnow() - start_time).total_seconds() * 1000
-        logger.error(f"[MODEL INFERENCE FAILED] Image analysis failed: {str(e)}", exc_info=True)
-        return UnifiedAnalysisResponse(
-            success=False,
-            media_type="image",
-            fake_score=0.0,
-            label="Unknown",
-            processing_time=processing_time,
-            error=f"Failed to process image: {str(e)}"
+        logger.error(f"[INFERENCE ERROR] {media_type} analysis failed: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Inference failed: {str(e)}"
         )
 
 @router.post("/analyze/video")

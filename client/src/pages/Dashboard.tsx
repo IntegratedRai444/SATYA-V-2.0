@@ -135,11 +135,11 @@ const Dashboard: React.FC = () => {
     }
   ];
 
-  // Rotate models every 8-10 seconds
+  // Rotate models every 15 seconds (reduced frequency)
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentModelIndex((prev) => (prev + 1) % aiModels.length);
-    }, 8000); // 8 seconds
+    }, 15000); // 15 seconds (reduced from 8)
 
     return () => clearInterval(interval);
   }, [aiModels.length]);

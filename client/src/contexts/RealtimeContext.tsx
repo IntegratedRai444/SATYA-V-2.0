@@ -67,7 +67,7 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const addNotification = useCallback((notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
     const newNotification: Notification = {
       ...notification,
-      id: `${Date.now()} -${Math.random().toString(36).substr(2, 9)} `,
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       timestamp: new Date(),
       read: false,
     };
@@ -158,10 +158,10 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (scanMessage.payload.status === 'completed' || scanMessage.payload.status === 'failed') {
           addNotification({
             type: scanMessage.payload.status === 'completed' ? 'success' : 'error',
-            title: `Scan ${scanMessage.payload.status} `,
+            title: `Scan ${scanMessage.payload.status}`,
             message: scanMessage.payload.fileName
-              ? `File "${scanMessage.payload.fileName}" scan ${scanMessage.payload.status} `
-              : `Scan ${scanMessage.payload.status} `
+              ? `File "${scanMessage.payload.fileName}" scan ${scanMessage.payload.status}`
+              : `Scan ${scanMessage.payload.status}`
           });
         }
       }
@@ -186,7 +186,7 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, []);
 
-  // Set up WebSocket listeners
+  // Set up WebSocket listeners - ONLY ONCE PER SESSION
   useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -245,7 +245,7 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       addNotification({
         type: 'info',
         title: 'Reconnecting',
-        message: `Attempting to reconnect(${data.attempt} / ${data.maxAttempts})...`,
+        message: `Attempting to reconnect (${data.attempt} / ${data.maxAttempts})...`,
       });
     });
 
@@ -255,7 +255,7 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       addNotification({
         type: 'error',
         title: 'Connection Error',
-        message: `Failed to connect to real - time service: ${error.message} `,
+        message: `Failed to connect to real-time service: ${error.message}`,
       });
     });
 
@@ -266,7 +266,7 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       unsubscribeDisconnected();
       unsubscribeError();
       unsubscribeReconnecting();
-
+      
       // Clean up all scan subscriptions
       Object.values(subscriptions.current).forEach(unsubscribe => unsubscribe());
       subscriptions.current = {};
@@ -276,7 +276,7 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         webSocketService.disconnect();
       }
     };
-  }, [isAuthenticated, addNotification]);
+  }, [isAuthenticated, addNotification]); // Only depend on auth state, not on every auth change
 
   // Calculate unread count
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -317,3 +317,5 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     </RealtimeContext.Provider>
   );
 };
+
+export default RealtimeProvider;

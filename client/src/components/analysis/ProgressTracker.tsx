@@ -1,13 +1,19 @@
 import React from 'react';
-import { Progress } from '../ui/progress';
+import { Progress } from '@/components/ui/progress';
 import { CheckCircle, XCircle, Clock, AlertCircle, Loader2 } from 'lucide-react';
-import { useJobProgress } from '../../hooks/useWebSocket';
+import { useJobProgress } from '@/hooks/useWebSocket';
 
 interface ProgressTrackerProps {
   jobId: string | null;
-  onComplete?: (result: any) => void;
+  onComplete?: (result: AnalysisResult) => void;
   onError?: (error: string) => void;
   className?: string;
+}
+
+interface AnalysisResult {
+  success: boolean;
+  data?: unknown;
+  error?: string;
 }
 
 export function ProgressTracker({ 
@@ -29,7 +35,7 @@ export function ProgressTracker({
   // Handle completion
   React.useEffect(() => {
     if (isCompleted && progress?.result && onComplete) {
-      onComplete(progress.result);
+      onComplete(progress.result as AnalysisResult);
     }
   }, [isCompleted, progress?.result, onComplete]);
 

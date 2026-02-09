@@ -1,9 +1,9 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Loader2, Upload, Video, CheckCircle, AlertCircle, Eye, Film } from 'lucide-react';
-import { useVideoAnalysis } from '../hooks/useApi';
-import { pollAnalysisResult } from '../lib/analysis/pollResult';
-import logger from '../lib/logger';
-import { formatFileSize } from '../lib/file-utils';
+import { useVideoAnalysis } from '@/hooks/useApi';
+import { pollAnalysisResult } from '@/lib/analysis/pollResult';
+import logger from '@/lib/logger';
+import { formatFileSize } from '@/lib/file-utils';
 
 interface AnalysisResult {
   result: {
@@ -53,7 +53,7 @@ export default function VideoAnalysis() {
 
   const validateFile = (file: File): boolean => {
     const validTypes = ['video/mp4', 'video/mpeg', 'video/quicktime', 'video/x-msvideo', 'video/webm'];
-    const maxSize = 500 * 1024 * 1024; // 500MB
+    const maxSize = 100 * 1024 * 1024; // 100MB
 
     if (!validTypes.includes(file.type)) {
       setError('Please upload only video files (MP4, MOV, AVI, WebM)');
@@ -61,7 +61,7 @@ export default function VideoAnalysis() {
     }
 
     if (file.size > maxSize) {
-      setError('File size must be less than 500MB');
+      setError('File size must be less than 100MB');
       return false;
     }
 

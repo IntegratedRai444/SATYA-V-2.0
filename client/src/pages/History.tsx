@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Button } from '../components/ui/button';
-import { useAnalysisHistory } from '../hooks/useApi';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { useAnalysisHistory } from '@/hooks/useApi';
 
 // Define proper types for history items
 interface HistoryItem {

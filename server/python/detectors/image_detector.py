@@ -10,25 +10,36 @@ import numpy as np
 from PIL import Image
 
 # Configure logging
+import logging
 logger = logging.getLogger(__name__)
 
-# Import the centralized ML classifier
-try:
-    from models.deepfake_classifier import get_model_info, predict_image
-    ML_CLASSIFIER_AVAILABLE = True
-except ImportError as e:
-    ML_CLASSIFIER_AVAILABLE = False
-    logger.error(f"Failed to import ML classifier: {e}")
-    # Don't raise - just continue without ML
+# Initialize with safe defaults
+ML_CLASSIFIER_AVAILABLE = False
+ADVANCED_IMAGE_MODEL_AVAILABLE = False
 
-# Import advanced image model for enhanced detection
+# Try to import the centralized ML classifier
 try:
-    from models.image_model import DeepfakeDetector as AdvancedImageDetector
+    from models.deepfake_classifier import get_model_info, predict_image, is_model_available
+    ML_CLASSIFIER_AVAILABLE = is_model_available()
+    if not ML_CLASSIFIER_AVAILABLE:
+        logger.warning("ML classifier is not available. Running in limited mode.")
+    else:
+        logger.info("ML classifier is available")
+except ImportError as e:
+    logger.warning(f"Failed to import ML classifier: {e}")
+    # Continue without ML
+
+try:
+    from models.image_model import SwinTransformer as AdvancedImageDetector
+    # Just check if we can import it, don't try to use it yet
     ADVANCED_IMAGE_MODEL_AVAILABLE = True
     logger.info("Advanced image model (Swin Transformer) available")
 except ImportError as e:
     ADVANCED_IMAGE_MODEL_AVAILABLE = False
     logger.warning(f"Advanced image model not available: {e}")
+except Exception as e:
+    ADVANCED_IMAGE_MODEL_AVAILABLE = False
+    logger.warning(f"Error initializing advanced image model: {e}")
 
 # Import forensic analysis (non-ML analysis)
 try:
@@ -223,13 +234,10 @@ class ImageDetector:
         self.model_path = model_path  # Kept for backward compatibility
         self.enable_gpu = enable_gpu
         self.use_advanced_model = use_advanced_model
-        
-        # Check if ML classifier is available
-        if not ML_CLASSIFIER_AVAILABLE:
-            raise RuntimeError("Deepfake classifier is not available. Check your installation.")
+        self.models_available = False
+        self.advanced_model = None
         
         # Initialize advanced model if requested and available
-        self.advanced_model = None
         if use_advanced_model and ADVANCED_IMAGE_MODEL_AVAILABLE:
             try:
                 self.advanced_model = AdvancedImageDetector(
@@ -237,17 +245,42 @@ class ImageDetector:
                     device='cuda' if enable_gpu else 'cpu'
                 )
                 logger.info("Advanced Swin Transformer model initialized")
+                self.models_available = True
             except Exception as e:
                 logger.error(f"Failed to initialize advanced model: {e}")
                 self.advanced_model = None
+        
+        # Check if ML classifier is available
+        if ML_CLASSIFIER_AVAILABLE:
+            try:
+                # Verify classifier is working
+                model_info = get_model_info()
+                logger.info(f"Using centralized ML classifier: {model_info}")
+                self.models_available = True
+            except Exception as e:
+                logger.error(f"Failed to initialize ML classifier: {e}")
+        
+        if not self.models_available:
+            logger.warning("No ML models available. Running in limited mode with basic analysis only.")
             
+        # Set up basic image processing
+        self._setup_basic_analysis()
+    
+    def _setup_basic_analysis(self):
+        """
+        Initialize basic image analysis components that don't require ML models.
+        This method sets up the basic analysis pipeline that will work even without ML models.
+        """
         try:
-            # Verify classifier is working
-            model_info = get_model_info()
-            logger.info(f"Using centralized ML classifier: {model_info}")
+            # Initialize basic image processing components
+            self.forensic_analyzer = ForensicAnalyzer()
+            logger.info("Basic image analysis components initialized")
         except Exception as e:
-            logger.error(f"Failed to initialize ML classifier: {e}")
-            raise
+            logger.warning(f"Failed to initialize basic analysis components: {e}")
+            # Set a flag to indicate basic analysis is not available
+            self.basic_analysis_available = False
+        else:
+            self.basic_analysis_available = True
     
     def load_models(self):
         """

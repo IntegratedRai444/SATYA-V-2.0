@@ -178,20 +178,43 @@ class SentinelAgent:
     """Satya Sentinel - Advanced AI Agent for Deepfake Detection"""
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """Initialize the Sentinel agent"""
+        """
+        Initialize Sentinel agent with configurable detectors.
+        Uses singleton pattern to prevent multiple detector initialization.
+        Lazy loading - models loaded only when first requested.
+        """
         self.config = config or {}
         self.reasoning_engine = get_reasoning_engine()
-        self.analysis_handlers = {
-            AnalysisType.IMAGE: self._analyze_image,
-            AnalysisType.VIDEO: self._analyze_video,
-            AnalysisType.AUDIO: self._analyze_audio,
-            AnalysisType.TEXT: self._analyze_text,
-            AnalysisType.MULTIMODAL: self._analyze_multimodal,
-            AnalysisType.METADATA: self._analyze_metadata,
-            AnalysisType.WEBCAM: self._analyze_webcam,
-        }
         self._shutdown = False
-        logger.info("Satya Sentinel Agent initialized")
+        
+        # Use detector singleton to prevent multiple initialization
+        from services.detector_singleton import get_detector_singleton
+        self.detector_singleton = get_detector_singleton()
+        
+        # Set up analysis handlers for available detectors (check lazily)
+        self.analysis_handlers = {}
+        self._setup_analysis_handlers()
+        
+        logger.info(f"Satya Sentinel Agent initialized with {len(self.analysis_handlers)} analysis handlers (lazy loading enabled)")
+    
+    def _setup_analysis_handlers(self):
+        """
+        Set up analysis handlers for available detectors (check lazily)
+        """
+        if self.detector_singleton.is_detector_available('image'):
+            self.analysis_handlers[AnalysisType.IMAGE] = self._analyze_image
+            self.analysis_handlers[AnalysisType.WEBCAM] = self._analyze_webcam
+            
+        if self.detector_singleton.is_detector_available('video'):
+            self.analysis_handlers[AnalysisType.VIDEO] = self._analyze_video
+            
+        if self.detector_singleton.is_detector_available('audio'):
+            self.analysis_handlers[AnalysisType.AUDIO] = self._analyze_audio
+            
+        # Always support these handlers as they don't require ML models
+        self.analysis_handlers[AnalysisType.TEXT] = self._analyze_text
+        self.analysis_handlers[AnalysisType.METADATA] = self._analyze_metadata
+        self.analysis_handlers[AnalysisType.MULTIMODAL] = self._analyze_multimodal
 
     async def analyze(self, request: AnalysisRequest) -> AnalysisResult:
         """
@@ -270,13 +293,13 @@ class SentinelAgent:
         if not request.content:
             raise ValueError("No image content provided for analysis")
 
-        # Initialize detector if needed
-        if not hasattr(self, "image_detector") or not self.image_detector:
-            from .detectors.image_detector import ImageDetector
-
-            self.image_detector = ImageDetector(
-                enable_gpu=self.config.get("enable_gpu", False)
-            )
+        # Get detector from singleton
+        image_detector = self.detector_singleton.get_detector('image', {
+            'enable_gpu': self.config.get('enable_gpu', False)
+        })
+        
+        if not image_detector:
+            raise RuntimeError("Image detector not available")
 
         try:
             # Load and prepare image
@@ -292,7 +315,7 @@ class SentinelAgent:
             image_np = np.array(image)
 
             # Execute ML inference (will raise on failure)
-            analysis_result = self.image_detector.analyze(
+            analysis_result = image_detector.analyze(
                 image_np,
                 detect_faces=True,
                 analyze_forensics=True,
@@ -434,13 +457,17 @@ class SentinelAgent:
         if not request.content and not request.content_uri:
             raise ValueError("No video content or URI provided for analysis")
 
-        # Verify video detector and required models are properly loaded
-        if not hasattr(self, "video_detector") or not self.video_detector:
+        # Check if video detector is available and models are loaded
+        video_detector = self.detector_singleton.get_detector('video', {
+            'enable_gpu': self.config.get('enable_gpu', False)
+        })
+        
+        if not video_detector:
             logger.error("Video analysis failed: Video detector not initialized")
             raise RuntimeError("Video analysis is not available: ML service error")
 
         # Verify frame analysis model is loaded and ready
-        if not getattr(self.video_detector, "image_detector", None):
+        if not getattr(video_detector, "models_loaded", False):
             logger.error("Video analysis failed: Frame analysis model not loaded")
             raise RuntimeError(
                 "Video analysis failed: Required ML models not available"
@@ -458,9 +485,13 @@ class SentinelAgent:
             raise ValueError("No video content or URI provided for analysis")
 
         # Check if video detector is available and models are loaded
-        if not hasattr(self, "video_detector") or not self.video_detector:
-            from .detectors.video_detector import VideoDetector
-            self.video_detector = VideoDetector()
+        video_detector = self.detector_singleton.get_detector('video', {
+            'enable_gpu': self.config.get('enable_gpu', False)
+        })
+        
+        if not video_detector:
+            logger.error("Video analysis failed: Video detector not initialized")
+            raise RuntimeError("Video analysis is not available: ML service error")
 
         if not getattr(self.video_detector, "models_loaded", False):
             raise RuntimeError("Video analysis failed: ML models failed to load")
@@ -474,7 +505,7 @@ class SentinelAgent:
             logger.info(f"🎥 Starting video analysis {analysis_id}")
 
             # Execute real ML analysis
-            analysis_result = self.video_detector.analyze(request.content)
+            analysis_result = video_detector.analyze(request.content)
 
             # Validate ML results
             required_fields = ["is_deepfake", "confidence", "model_info"]
@@ -556,7 +587,7 @@ class SentinelAgent:
 
             # Execute ML analysis
             ml_start = time.time()
-            analysis_result = self.video_detector.detect(video_path)
+            analysis_result = video_detector.detect(video_path)
             ml_duration = time.time() - ml_start
 
             if (
@@ -670,7 +701,11 @@ class SentinelAgent:
             raise ValueError("No audio content or URI provided for analysis")
 
         # Verify audio detector is properly loaded
-        if not hasattr(self, "audio_detector") or not self.audio_detector:
+        audio_detector = self.detector_singleton.get_detector('audio', {
+            'enable_gpu': self.config.get('enable_gpu', False)
+        })
+        
+        if not audio_detector:
             logger.error("Audio analysis failed: Audio detector not initialized")
             raise RuntimeError("Audio analysis is not available: ML service error")
 
@@ -686,11 +721,15 @@ class SentinelAgent:
             raise ValueError("No audio content or URI provided for analysis")
 
         # Check if audio detector is available and models are loaded
-        if not hasattr(self, "audio_detector") or not self.audio_detector:
-            from .detectors.audio_detector import AudioDetector
-            self.audio_detector = AudioDetector(device='cpu')
+        audio_detector = self.detector_singleton.get_detector('audio', {
+            'enable_gpu': self.config.get('enable_gpu', False)
+        })
+        
+        if not audio_detector:
+            logger.error("Audio analysis failed: Audio detector not initialized")
+            raise RuntimeError("Audio analysis is not available: ML service error")
 
-        if not getattr(self.audio_detector, "models_loaded", False):
+        if not getattr(audio_detector, "models_loaded", False):
             raise RuntimeError("Audio analysis failed: ML models failed to load")
 
         # Create analysis context
@@ -702,7 +741,7 @@ class SentinelAgent:
             logger.info(f"🎵 Starting audio analysis {analysis_id}")
 
             # Execute real ML analysis
-            analysis_result = self.audio_detector.analyze(request.content)
+            analysis_result = audio_detector.analyze(request.content)
 
             # Validate ML results
             required_fields = ["is_deepfake", "confidence", "model_info"]
@@ -783,17 +822,17 @@ class SentinelAgent:
                 # Log model info
                 model_info = {
                     "model_name": getattr(
-                        self.audio_detector, "model_name", "wav2vec2"
+                        getattr(video_detector, "model_name", "video_detector")
                     ),
                     "model_version": getattr(
-                        self.audio_detector, "model_version", "1.0"
+                        video_detector, "model_version", "1.0"
                     ),
                     "analysis_time": datetime.utcnow().isoformat(),
                 }
 
                 # Execute ML analysis
                 ml_start = datetime.utcnow()
-                analysis_result = self.audio_detector.detect(audio_path)
+                analysis_result = audio_detector.detect(audio_path)
                 ml_duration = (datetime.utcnow() - ml_start).total_seconds()
 
                 # Validate ML results
@@ -1005,21 +1044,13 @@ class SentinelAgent:
 
         # Check if required detectors are available
         missing_detectors = []
-        if "image" in valid_modalities and (
-            not hasattr(self, "image_detector") or not self.image_detector
-        ):
+        if "image" in valid_modalities and not self.detector_singleton.is_detector_available('image'):
             missing_detectors.append("image")
-        if "video" in valid_modalities and (
-            not hasattr(self, "video_detector") or not self.video_detector
-        ):
+        if "video" in valid_modalities and not self.detector_singleton.is_detector_available('video'):
             missing_detectors.append("video")
-        if "audio" in valid_modalities and (
-            not hasattr(self, "audio_detector") or not self.audio_detector
-        ):
+        if "audio" in valid_modalities and not self.detector_singleton.is_detector_available('audio'):
             missing_detectors.append("audio")
-        if "text" in valid_modalities and (
-            not hasattr(self, "text_detector") or not self.text_detector
-        ):
+        if "text" in valid_modalities and not self.detector_singleton.is_detector_available('text'):
             missing_detectors.append("text")
 
         if missing_detectors:
@@ -1173,7 +1204,7 @@ class SentinelAgent:
             image_np = np.array(image)
 
             # Execute ML inference (will raise on failure)
-            analysis_result = self.image_detector.analyze(
+            analysis_result = image_detector.analyze(
                 image_np,
                 detect_faces=True,
                 analyze_forensics=True,
@@ -1279,7 +1310,11 @@ class SentinelAgent:
             raise ValueError("No webcam frame data provided for analysis")
 
         # Verify image detector is properly loaded
-        if not hasattr(self, "image_detector") or not self.image_detector:
+        image_detector = self.detector_singleton.get_detector('image', {
+            'enable_gpu': self.config.get('enable_gpu', False)
+        })
+        
+        if not image_detector:
             logger.error("Webcam analysis failed: Image detector not initialized")
             raise RuntimeError("Webcam analysis is not available: ML service error")
 

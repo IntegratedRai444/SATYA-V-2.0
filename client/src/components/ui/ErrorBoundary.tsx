@@ -1,7 +1,7 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Copy, ExternalLink } from 'lucide-react';
-import logger from '../../utils/logger';
-import { classifyError, handleError } from '../../utils/errorHandling';
+import logger from '@/lib/logger';
+import { classifyError, handleError } from '@/utils/errorHandling';
 
 export interface ErrorBoundaryProps {
   children: ReactNode;

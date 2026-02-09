@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Button } from '../components/ui/button';
-import ChatInterface from '../components/chat/ChatInterface';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import ChatInterface from '@/components/chat/ChatInterface';
 import { MessageCircle, X } from 'lucide-react';
 
 export default function Help() {

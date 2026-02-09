@@ -8,7 +8,6 @@ import { notificationsRouter } from './notifications';
 import { userRouter } from './user';
 import { resultsRouter } from './results.routes';
 import { modelsRouter } from './models.routes';
-import { websocketRouter } from './websocket';
 import { createApiError } from '../middleware/api-version';
 import { authenticate } from '../middleware/auth.middleware';
 import { authRouter } from './auth';
@@ -53,8 +52,8 @@ v2Router.use('/results', authenticate, resultsRouter);
 // Models routes (PUBLIC - for model info)
 v2Router.use('/models', modelsRouter);
 
-// WebSocket routes (PUBLIC - for upgrade)
-v2Router.use('/dashboard/ws', websocketRouter);
+// Note: WebSocket connections are handled directly by the WebSocket server
+// at /api/v2/dashboard/ws - no Express route needed
 
 // Versioned API routes
 router.use('/', v2Router);

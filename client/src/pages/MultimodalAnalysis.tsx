@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Loader2, Upload, Eye, CheckCircle, AlertCircle, FileText, BarChart3, Layers, FileImage, FileVideo, FileAudio } from 'lucide-react';
-import { useMultimodalAnalysis } from '../hooks/useApi';
-import { pollAnalysisResult } from '../lib/analysis/pollResult';
+import { useMultimodalAnalysis } from '@/hooks/useApi';
+import { pollAnalysisResult } from '@/lib/analysis/pollResult';
 
 interface AnalysisResult {
   result: {
