@@ -106,8 +106,9 @@ class VideoDetector:
                 convnet_path = models_dir / "video" / "temporal_3dcnn.pth"
                 if convnet_path.exists():
                     self.temporal_model = TemporalConvNet()
-                    state_dict = torch.load(convnet_path, map_location='cpu')
+                    state_dict = torch.load(convnet_path, map_location='cuda' if torch.cuda.is_available() else 'cpu')
                     self.temporal_model.load_state_dict(state_dict)
+                    self.temporal_model.to('cuda' if torch.cuda.is_available() else 'cpu')
                     self.temporal_model.eval()
                     logger.info("✅ Temporal 3D CNN model loaded for advanced analysis")
                 
@@ -115,8 +116,9 @@ class VideoDetector:
                 lstm_path = models_dir / "video" / "temporal_lstm.pth"
                 if lstm_path.exists():
                     self.temporal_lstm = TemporalLSTM()
-                    state_dict = torch.load(lstm_path, map_location='cpu')
+                    state_dict = torch.load(lstm_path, map_location='cuda' if torch.cuda.is_available() else 'cpu')
                     self.temporal_lstm.load_state_dict(state_dict)
+                    self.temporal_lstm.to('cuda' if torch.cuda.is_available() else 'cpu')
                     self.temporal_lstm.eval()
                     logger.info("✅ Temporal LSTM model loaded for advanced analysis")
                     

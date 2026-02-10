@@ -43,7 +43,9 @@ class AudioPreprocessor:
         hop_length: int = 128,
         n_mels: int = 64,
         use_transformers: bool = True,
+        device: str = None,
     ):
+        self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
         self.sample_rate = sample_rate
         self.n_fft = n_fft
         self.hop_length = hop_length
@@ -57,14 +59,14 @@ class AudioPreprocessor:
         # Mel spectrogram transform
         self.mel_spectrogram = torchaudio.transforms.MelSpectrogram(
             sample_rate=sample_rate, n_fft=n_fft, hop_length=hop_length, n_mels=n_mels
-        )
+        ).to(self.device)
 
         # MFCC transform
         self.mfcc = torchaudio.transforms.MFCC(
             sample_rate=sample_rate,
             n_mfcc=20,
             melkwargs={"n_fft": n_fft, "n_mels": n_mels, "hop_length": hop_length},
-        )
+        ).to(self.device)
 
     def _init_transformers_models(self):
         """Initialize HuggingFace transformer models for audio."""
@@ -75,7 +77,7 @@ class AudioPreprocessor:
             )
             self.wav2vec2_model = Wav2Vec2ForSequenceClassification.from_pretrained(
                 "facebook/wav2vec2-base-960h"
-            )
+            ).to(self.device)
             
             # HuBERT for robust audio analysis
             self.hubert_processor = AutoProcessor.from_pretrained(
@@ -83,9 +85,9 @@ class AudioPreprocessor:
             )
             self.hubert_model = AutoModelForAudioClassification.from_pretrained(
                 "facebook/hubert-large-l609-l9"
-            )
+            ).to(self.device)
             
-            logger.info("Loaded HuggingFace audio models successfully")
+            logger.info(f"Loaded HuggingFace audio models on {self.device}")
         except Exception as e:
             logger.warning(f"Failed to load HuggingFace models: {e}")
             self.use_transformers = False

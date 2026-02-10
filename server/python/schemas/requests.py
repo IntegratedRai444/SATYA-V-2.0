@@ -5,7 +5,7 @@ import re
 from enum import Enum
 from typing import List, Optional, Union
 
-from pydantic import BaseModel, Field, HttpUrl, validator
+from pydantic import BaseModel, Field, field_validator, HttpUrl
 
 
 class MediaType(str, Enum):
@@ -46,32 +46,34 @@ class FileUploadRequest(BaseRequest):
     )
     media_type: MediaType = Field(..., description="Type of media being uploaded")
 
-    @validator("filename")
-    def validate_filename(cls, v, values):
+    @field_validator("filename")
+    @classmethod
+    def validate_filename(cls, v, info):
         """Validate file extension"""
-        if "media_type" not in values:
+        if "media_type" not in info.data:
             return v
 
         ext = "." + v.rsplit(".", 1)[-1].lower()
-        allowed_exts = ALLOWED_EXTENSIONS[values["media_type"]]
+        allowed_exts = ALLOWED_EXTENSIONS[info.data["media_type"]]
 
         if ext not in allowed_exts:
             raise ValueError(
-                f"Invalid file extension for {values['media_type']}. "
+                f"Invalid file extension for {info.data['media_type']}. "
                 f"Allowed extensions: {', '.join(allowed_extensions)}"
             )
         return v
 
-    @validator("file")
-    def validate_file_size(cls, v, values):
+    @field_validator("file")
+    @classmethod
+    def validate_file_size(cls, v, info):
         """Validate file size"""
-        if "media_type" not in values:
+        if "media_type" not in info.data:
             return v
 
-        max_size = MAX_FILE_SIZES[values["media_type"]]
+        max_size = MAX_FILE_SIZES[info.data["media_type"]]
         if len(v) > max_size:
             raise ValueError(
-                f"File too large. Maximum size for {values['media_type']} "
+                f"File too large. Maximum size for {info.data['media_type']} "
                 f"is {max_size // (1024 * 1024)}MB"
             )
         return v

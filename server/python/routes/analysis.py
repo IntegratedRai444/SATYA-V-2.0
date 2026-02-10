@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
@@ -33,14 +33,16 @@ class UnifiedAnalysisRequest(BaseModel):
     mime_type: str
     filename: str
     
-    @validator('media_type')
+    @field_validator('media_type')
+    @classmethod
     def validate_media_type(cls, v):
         allowed_types = ['image', 'video', 'audio']
         if v not in allowed_types:
             raise ValueError(f"media_type must be one of {allowed_types}")
         return v
     
-    @validator('data_base64')
+    @field_validator('data_base64')
+    @classmethod
     def validate_base64(cls, v):
         if not v:
             raise ValueError("data_base64 cannot be empty")
@@ -50,7 +52,8 @@ class UnifiedAnalysisRequest(BaseModel):
             raise ValueError("data_base64 must be valid base64")
         return v
     
-    @validator('filename')
+    @field_validator('filename')
+    @classmethod
     def validate_filename(cls, v):
         if not v:
             raise ValueError("filename cannot be empty")

@@ -2,7 +2,7 @@
 Satya Sentinel Agent
 Advanced AI agent for deepfake detection and analysis
 
-This module enforces that all analysis must go through the SentinelAgent
+This module enforces that all analysis must go through SentinelAgent
 with proper ML execution and proof generation.
 """
 
@@ -14,10 +14,13 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from enum import Enum
+from enum import Enum, auto
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 
-from pydantic import BaseModel, Field, ValidationError, validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Import ML models
 try:
@@ -103,10 +106,11 @@ class AnalysisResult(BaseModel):
     class Config:
         arbitrary_types_allowed = True
 
-    @validator("confidence_level", always=True)
-    def set_confidence_level(cls, v, values):
+    @field_validator("confidence_level", mode="before")
+    @classmethod
+    def set_confidence_level(cls, v, info):
         """Set confidence level based on confidence score"""
-        confidence = values.get("confidence", 0)
+        confidence = info.data.get("confidence", 0)
         if confidence >= 0.9:
             return ConfidenceLevel.VERY_HIGH
         elif confidence >= 0.7:
@@ -117,11 +121,12 @@ class AnalysisResult(BaseModel):
             return ConfidenceLevel.LOW
         return ConfidenceLevel.VERY_LOW
 
-    @validator("proof", always=True)
-    def validate_proof(cls, v, values):
-        """Validate the proof of analysis"""
+    @field_validator("proof", mode="before")
+    @classmethod
+    def validate_proof(cls, v, info):
+        """Validate proof of analysis"""
         # Skip validation if there's an error
-        if values.get("error"):
+        if info.data.get("error"):
             return v
 
         # Proof is required for successful analysis
@@ -184,6 +189,32 @@ class SentinelAgent:
         Lazy loading - models loaded only when first requested.
         """
         self.config = config or {}
+        # Enable GPU by default if available (with DLL error handling)
+        try:
+            import torch
+            gpu_available = torch.cuda.is_available()
+            if gpu_available:
+                # Test CUDA device to catch DLL issues
+                try:
+                    device = torch.device('cuda:0')
+                    test_tensor = torch.randn(1, 3, 224, 224).to(device)
+                    _ = test_tensor.sum()
+                    logger.info("✅ CUDA device test passed - GPU enabled")
+                    self.config.setdefault('enable_gpu', True)
+                except Exception as cuda_error:
+                    logger.error(f"❌ CUDA device test failed: {cuda_error}")
+                    logger.warning("⚠️ Falling back to CPU due to CUDA DLL issues")
+                    self.config.setdefault('enable_gpu', False)
+            else:
+                logger.warning("⚠️ CUDA not available - using CPU")
+                self.config.setdefault('enable_gpu', False)
+        except ImportError:
+            logger.warning("⚠️ PyTorch not available - using CPU")
+            self.config.setdefault('enable_gpu', False)
+        except Exception as e:
+            logger.error(f"❌ GPU detection failed: {e}")
+            self.config.setdefault('enable_gpu', False)
+            
         self.reasoning_engine = get_reasoning_engine()
         self._shutdown = False
         
@@ -404,20 +435,26 @@ class SentinelAgent:
     ) -> Dict[str, Any]:
         """
         Enforce ML execution and generate proof of analysis
-
+        
         This wrapper ensures that all analysis goes through a consistent path
         with proper ML execution and proof generation.
         """
         # Track execution start time
         start_time = time.time()
-
+        
+        # Set timeout for analysis (5 minutes maximum)
+        timeout_seconds = 300
+        
         try:
-            # Execute the actual analysis
-            result = await analysis_func(request)
-
+            # Execute the actual analysis with timeout
+            result = await asyncio.wait_for(
+                analysis_func(request),
+                timeout=timeout_seconds
+            )
+            
             # Calculate inference duration
             inference_duration = time.time() - start_time
-
+            
             # Generate proof of analysis
             model_info = get_model_info(modality)
             proof = generate_proof(
@@ -433,15 +470,16 @@ class SentinelAgent:
                     "content_size": len(request.content) if request.content else 0,
                 },
             )
-
+            
             # Add proof to result
             result["proof"] = proof.to_dict()
-
+            
             # Verify the proof is valid (this will raise if invalid)
             AnalysisResult(**result)
-
             return result
-
+        except asyncio.TimeoutError:
+            logger.error(f"Analysis timeout for {modality} after {timeout_seconds}s")
+            raise RuntimeError(f"Analysis timeout: {modality} analysis exceeded {timeout_seconds}s")
         except Exception as e:
             logger.error(f"Analysis failed for {modality}: {str(e)}", exc_info=True)
             raise RuntimeError(f"Analysis failed: {str(e)}")

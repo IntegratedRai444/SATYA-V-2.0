@@ -126,7 +126,8 @@ class AudioDetector:
                     sample_rate=self.sample_rate,
                     n_fft=self.config.get('n_fft', 512),
                     hop_length=self.config.get('hop_length', 128),
-                    n_mels=self.config.get('n_mels', 64)
+                    n_mels=self.config.get('n_mels', 64),
+                    device=self.device
                 )
                 logger.info("Enhanced audio processor initialized")
             except Exception as e:

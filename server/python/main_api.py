@@ -1,204 +1,88 @@
-"""
-
-SatyaAI Python-First FastAPI Application
-
-Complete backend in Python with direct ML integration
-
-"""
-
-
+"""SatyaAI Python-First FastAPI Application"""
 
 import logging
-
 import os
-
 import sys
-
 import time
-
 import asyncio
-
 from contextlib import asynccontextmanager
-
 from datetime import datetime
-
 from pathlib import Path
-
 from dotenv import load_dotenv
-
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+load_dotenv()
+load_dotenv('../../.env')
 
-
-# Load environment variables from local .env file first, then root
-
-load_dotenv()  # Load from server/python/.env
-
-load_dotenv('../../.env')  # Load from root .env
-
-
-
-# Force enable ML models for development and testing
 os.environ['ENABLE_ML_MODELS'] = 'true'
 os.environ['FORCE_ML_LOADING'] = 'true'
 
-
-
 from fastapi import FastAPI, HTTPException, Request, status, UploadFile, File, Depends
-
 from fastapi.exceptions import RequestValidationError
-
 from fastapi.middleware.gzip import GZipMiddleware
-
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-
 from fastapi.middleware.cors import CORSMiddleware
-
 from fastapi.responses import JSONResponse
-
 from starlette.middleware.base import BaseHTTPMiddleware
-
-
-
-# Add parent directory to path
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-
-
-# Configure logging with proper encoding for Windows
-
 if sys.platform == "win32":
-
-    # Configure console output for Windows
-
     import io
-
-    import sys
-
-
-
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
-
-
-# Configure logging
-
 handlers = [logging.StreamHandler()]
-
-
-
 logging.basicConfig(
-
     level=os.getenv("LOG_LEVEL", "INFO").upper() if os.getenv("LOG_LEVEL") else "INFO",
-
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-
     handlers=handlers,
-
 )
-
 logger = logging.getLogger(__name__)
-
-
 
 from config import Settings
 
-
-
-# Initialize settings with error handling
-
 try:
-
     settings = Settings()
-
     logger.info("✅ Configuration loaded successfully")
-
 except Exception as e:
-
     logger.error(f"❌ Failed to load configuration: {e}")
-
     logger.error("Please check your environment variables and .env file")
-
     sys.exit(1)
 
-
-
-# Import services
-
 try:
-
     from services.cache import CacheManager
-
     CACHE_AVAILABLE = True
-
 except ImportError as e:
-
     logger.warning(f"Cache service not available: {e}")
-
     CACHE_AVAILABLE = False
-
     CacheManager = None
 
-
-
 try:
-
     from services.database import DatabaseManager
-
     DATABASE_AVAILABLE = True
-
 except ImportError as e:
-
     logger.warning(f"Database service not available: {e}")
-
     DATABASE_AVAILABLE = False
-
     DatabaseManager = None
 
-
-
-# Import model preloader
-
 try:
-
     from services.model_preloader import model_preloader
-
     PRELOADER_AVAILABLE = True
-
     logger.info("✅ Model preloader available")
-
 except ImportError as e:
-
     logger.warning(f"Model preloader not available: {e}")
-
     PRELOADER_AVAILABLE = False
-
     model_preloader = None
 
-
-
-# Import error recovery
-
 try:
-
     from services.error_recovery import error_recovery
-
     ERROR_RECOVERY_AVAILABLE = True
-
     logger.info("✅ Error recovery service available")
-
 except ImportError as e:
-
     logger.warning(f"Error recovery service not available: {e}")
-
     ERROR_RECOVERY_AVAILABLE = False
-
     error_recovery = None
-
-
 
 # WebSocket is handled by Node.js backend - not needed in Python
 
@@ -209,11 +93,25 @@ WEBSOCKET_AVAILABLE = False
 WebSocketManager = None
 
 
+# Import CUDA fixes for Windows
+try:
+    from cuda_fix import apply_cuda_fixes
+    CUDA_FIX_AVAILABLE = True
+except ImportError:
+    CUDA_FIX_AVAILABLE = False
+    logger.warning("CUDA fix module not available - GPU detection may be limited")
+
+# Apply CUDA fixes early
+if CUDA_FIX_AVAILABLE:
+    try:
+        cuda_available = apply_cuda_fixes()
+        logger.info(f"🔧 CUDA fixes applied - GPU available: {cuda_available}")
+    except Exception as e:
+        logger.error(f"❌ Failed to apply CUDA fixes: {e}")
 
 # Set DB_AVAILABLE based on individual service availability
 
 DB_AVAILABLE = DATABASE_AVAILABLE and CACHE_AVAILABLE
-
 
 
 # Import middleware
@@ -233,7 +131,6 @@ except ImportError as e:
     MIDDLEWARE_AVAILABLE = False
 
 
-
 # Import ML services
 
 # Force enable ML models for development
@@ -247,7 +144,6 @@ ENABLE_ML_OPTIMIZATION = True
 STRICT_MODE_ENABLED = True
 
 
-
 # Force enable all ML models via environment
 
 os.environ['ENABLE_ML_MODELS'] = 'true'
@@ -259,11 +155,9 @@ os.environ['ENABLE_ML_OPTIMIZATION'] = 'true'
 os.environ['STRICT_MODE_ENABLED'] = 'true'
 
 
-
 # Initialize ML_AVAILABLE flag
 
 ML_AVAILABLE = False
-
 
 
 if ENABLE_ML_MODELS:
@@ -277,7 +171,6 @@ if ENABLE_ML_MODELS:
         logger.info(f"✅ PyTorch available: {torch.__version__}")
 
         
-
         # Now try to import detectors
 
         from detectors.audio_detector import AudioDetector
@@ -313,7 +206,6 @@ else:
     ML_AVAILABLE = False
 
 
-
 # Import routers - ONLY analysis and health per constraints
 try:
     from routes.analysis import router as analysis_router
@@ -322,7 +214,6 @@ try:
     ROUTES_AVAILABLE = True
 except ImportError as e:
     ROUTES_AVAILABLE = False
-
 
 
 # Import unified detector for consistent interface
@@ -374,13 +265,11 @@ except ImportError as e:
     DetectorType = None
 
 
-
 # Import monitoring
 
 try:
 
     from prometheus_fastapi_instrumentator import Instrumentator
-
 
 
     PROMETHEUS_AVAILABLE = True
@@ -390,9 +279,6 @@ except ImportError:
     logger.warning("Prometheus not available")
 
     PROMETHEUS_AVAILABLE = False
-
-
-
 
 
 # Lifespan context manager for startup/shutdown
@@ -408,9 +294,7 @@ async def lifespan(app: FastAPI):
     global ML_AVAILABLE, DB_AVAILABLE
 
     
-
     logger.info("🚀 Starting SatyaAI Python API Server...")
-
 
 
     # Startup
@@ -428,13 +312,11 @@ async def lifespan(app: FastAPI):
                 preload_results = await model_preloader.preload_all_models()
 
                 
-
                 success_count = sum(1 for success in preload_results.values() if success)
 
                 total_count = len(preload_results)
 
                 
-
                 if success_count > 0:
 
                     logger.info(f"✅ Preloaded {success_count}/{total_count} model types")
@@ -448,7 +330,6 @@ async def lifespan(app: FastAPI):
                     logger.warning("⚠️ No models were preloaded")
 
                     
-
             except Exception as e:
 
                 logger.error(f"❌ Model preloading failed: {e}")
@@ -456,7 +337,6 @@ async def lifespan(app: FastAPI):
                 logger.info("🔄 Models will be loaded on-demand instead")
 
         
-
         # Initialize database
 
         if DB_AVAILABLE:
@@ -468,83 +348,30 @@ async def lifespan(app: FastAPI):
                 from services.database import get_db_manager
 
 
-
                 db_manager = get_db_manager()
-
 
 
                 # Enhanced database connection test with retry logic
 
-                max_retries = 3
-
+                max_retries = 5
                 for attempt in range(max_retries):
-
                     try:
-
                         # Test connection with timeout
-
                         connection_result = await asyncio.wait_for(
-
                             db_manager.test_connection(), 
-
-                            timeout=10.0  # 10 second timeout
-
+                            timeout=30.0  # 30 second timeout
                         )
-
-                        
-
-                        if connection_result:
-
-                            logger.info("✅ Database connected successfully")
-
-                            
-
-                            # Perform health check
-
-                            health_status = await db_manager.health_check()
-
-                            logger.info(f"📊 Database health: {health_status}")
-
-                            break
-
-                        else:
-
-                            raise Exception("Connection test returned False")
-
-                            
-
-                    except asyncio.TimeoutError:
-
-                        logger.error(f"❌ Database connection timeout (attempt {attempt + 1}/{max_retries})")
-
+                        break  # Success, exit retry loop
+                    except Exception as e:
+                        logger.error(f"❌ Database initialization failed: {e}")
+                        logger.warning("⚠️ Continuing without database - some features may be limited")
                         if attempt == max_retries - 1:
-
-                            logger.warning("⚠️ Database connection failed after timeout - continuing without database")
-
-                            logger.warning("⚠️ Some features may be limited without database connectivity")
-
-                    except Exception as db_error:
-
-                        logger.error(f"❌ Database connection test failed (attempt {attempt + 1}/{max_retries}): {db_error}")
-
-                        if attempt == max_retries - 1:
-
-                            logger.warning("⚠️ Continuing without database - some features may be limited")
-
-                        else:
-
-                            logger.info(f"🔄 Retrying database connection in 2 seconds...")
-
-                            await asyncio.sleep(2)
-
-                            
+                            logger.warning("⚠️ Max retries reached, continuing without database")
+                        break
 
             except Exception as e:
-
-                logger.error(f"❌ Database initialization failed: {e}")
-
+                logger.error(f"❌ Database setup failed: {e}")
                 logger.warning("⚠️ Continuing without database - some features may be limited")
-
 
 
         # Load ML models (CRITICAL - must succeed for production)
@@ -552,15 +379,10 @@ async def lifespan(app: FastAPI):
         if ML_AVAILABLE:
 
             logger.info("🤖 Loading ML models - CRITICAL for production...")
-
             
-
             # Initialize SentinelAgent with all detectors
-
             try:
-
                 from sentinel_agent import SentinelAgent
-
                 app.state.sentinel_agent = SentinelAgent()
                 
                 # Force initialize image detector for testing
@@ -587,291 +409,139 @@ async def lifespan(app: FastAPI):
                 logger.info("✅ SentinelAgent initialized - some models may be lazy loaded")
 
             except Exception as e:
-
                 logger.error(f"⚠️ ML model initialization warning: {e}")
-
                 logger.warning("⚠️ Continuing without full ML model support - models will load on demand")
 
             
-
             # Initialize unified detector for consistent interface (non-critical)
-
             if UNIFIED_DETECTOR_AVAILABLE and not hasattr(app.state, 'unified_detector'):
-
                 try:
-
                     import torch  # Import torch here for availability check
-
                     config = {
-
                         "MODEL_PATH": "models",
-
                         "ENABLE_GPU": torch.cuda.is_available(),
-
                         "ENABLE_FORENSICS": True,
-
                         "ENABLE_MULTIMODAL": True
-
                     }
-
                     app.state.unified_detector = get_unified_detector(config)
-
                     logger.info("✅ Unified detector initialized with consistent interface")
-
                 except Exception as e:
-
                     logger.warning(f"⚠️ Unified detector initialization failed (non-critical): {e}")
-
                     app.state.unified_detector = None
 
             
-
             # Initialize SatyaAI Core with multi-modal fusion (only if unified detector not available)
-
             if SATYAAI_CORE_AVAILABLE and not hasattr(app.state, 'satyaai_core'):
-
                 try:
-
                     import torch
-
                     config = {
-
                         "MODEL_PATH": "models",
-
                         "ENABLE_GPU": torch.cuda.is_available(),
-
                         "ENABLE_SENTINEL": True,
-
                         "MAX_WORKERS": 4,
-
                         "CACHE_RESULTS": True
-
                     }
-
                     app.state.satyaai_core = SatyaAICore(config)
-
                     logger.info("✅ SatyaAI Core initialized with multi-modal fusion")
-
                 except Exception as e:
-
                     logger.warning(f"⚠️ SatyaAI Core initialization failed (non-critical): {e}")
-
                     app.state.satyaai_core = None
 
             
-
             # Only initialize model placeholders if ML is still available
-
             if ML_AVAILABLE:
-
                 # Models are already loaded via SentinelAgent
-
                 logger.info("✅ All ML models loaded via SentinelAgent")
-
         else:
-
             logger.warning("⚠️ ML models not available - analysis features disabled")
-
             # Ensure app state has ML flags set to False
-
             app.state.sentinel_agent = None
-
             app.state.satyaai_core = None
-
             app.state.unified_detector = None
-
             app.state.image_detector = None
-
             app.state.video_detector = None
-
             app.state.audio_detector = None
-
             app.state.text_nlp_detector = None
-
             app.state.multimodal_detector = None
-
-
-
+        
         # Initialize cache
-
         if DB_AVAILABLE:
-
             logger.info("💾 Initializing cache...")
-
             try:
-
                 from services.cache import CacheManager
-
-
-
                 app.state.cache = CacheManager()
-
                 logger.info("✅ Cache initialized")
-
             except Exception as e:
-
                 logger.warning(f"⚠️ Cache initialization failed: {e}")
 
-
-
+        
         logger.info("✅ SatyaAI API Server started successfully")
 
-
-
     except Exception as e:
-
         logger.error(f"❌ Failed to start server: {e}", exc_info=True)
-
         raise
-
-
 
     yield
 
-
-
     # Shutdown
-
     logger.info("🛑 Shutting down SatyaAI API Server...")
-
-
-
     try:
-
         # Cleanup resources
-
         if DB_AVAILABLE:
-
             logger.info("Closing database connections...")
-
             await db_manager.disconnect()
-
-
-
         logger.info("✅ Server shutdown complete")
-
-
-
     except Exception as e:
-
         logger.error(f"Error during shutdown: {e}", exc_info=True)
 
 
-
-
-
 # Initialize FastAPI app with lifespan (single instance)
-
 app = FastAPI(
-
     title="SatyaAI Internal API",
-
     docs_url="/api/docs",  # Enable Swagger UI at /api/docs
-
     redoc_url="/api/redoc",  # Enable ReDoc at /api/redoc
-
     description="Python-First REST API for deepfake detection using ML/DL/NLP",
-
     version="2.0.0",
-
     lifespan=lifespan,
-
 )
 
-
-
 # ============================================================================
-
 # MIDDLEWARE CONFIGURATION
-
 # ============================================================================
-
-
 
 # CORS Configuration
-
 app.add_middleware(
-
     CORSMiddleware,
-
     allow_origins=settings.CORS_ALLOW_ORIGINS,
-
     allow_credentials=settings.CORS_CREDENTIALS,
-
     allow_methods=settings.CORS_ALLOW_METHODS,
-
     allow_headers=settings.CORS_ALLOW_HEADERS,
-
     expose_headers=settings.CORS_EXPOSE_HEADERS,
-
     max_age=settings.CORS_MAX_AGE,
-
 )
 
-
-
 # Handle OPTIONS method for CORS preflight for all routes
-
 @app.options("/{full_path:path}")
-
 async def preflight_handler(request: Request, full_path: str):
-
     response = JSONResponse(
-
         content={"status": "ok"},
-
         status_code=200
-
     )
-
-    
-
-    # Get the origin from the request
-
     origin = request.headers.get("Origin")
-
-    
-
-    # Set CORS headers
-
     if origin in settings.CORS_ALLOW_ORIGINS or any(
-
         origin and origin.startswith(domain) 
-
         for domain in ["http://localhost", "https://satyaai.app"]
-
     ):
-
         response.headers["Access-Control-Allow-Origin"] = origin
-
-    
-
     response.headers["Access-Control-Allow-Methods"] = ", ".join(settings.CORS_ALLOW_METHODS)
-
     response.headers["Access-Control-Allow-Headers"] = ", ".join(h for h in settings.CORS_ALLOW_HEADERS if h != "*")
-
     response.headers["Access-Control-Allow-Credentials"] = "true"
-
     response.headers["Access-Control-Max-Age"] = str(settings.CORS_MAX_AGE)
-
-    
-
-    # Add security headers
-
     response.headers["Vary"] = "Origin"
-
-    
-
     return response
 
-
-
-
-
 # Add browser blocking middleware (commented out for testing)
-
 # app.add_middleware(BlockBrowserMiddleware)
-
 
 
 # Add Supabase auth middleware if available - TEMPORARILY DISABLED FOR TESTING - RESTART TRIGGER
@@ -903,7 +573,6 @@ else:
     logger.warning(" Supabase auth middleware disabled for testing")
 
 
-
 # Add rate limiting middleware if available
 
 if MIDDLEWARE_AVAILABLE:
@@ -921,11 +590,9 @@ if MIDDLEWARE_AVAILABLE:
         logger.error(f"Failed to add rate limiting middleware: {e}")
 
 
-
 # Compression - Compress responses > 1KB
 
 app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=6)
-
 
 
 # Trusted hosts (security)
@@ -937,15 +604,11 @@ app.add_middleware(
 )
 
 
-
 # ============================================================================
 
 # CUSTOM MIDDLEWARE
 
 # ============================================================================
-
-
-
 
 
 @app.middleware("http")
@@ -957,7 +620,6 @@ async def add_process_time_header(request: Request, call_next):
     start_time = time.time()
 
 
-
     try:
 
         response = await call_next(request)
@@ -965,13 +627,11 @@ async def add_process_time_header(request: Request, call_next):
         process_time = time.time() - start_time
 
 
-
         # Add headers
 
         response.headers["X-Process-Time"] = f"{process_time:.4f}"
 
         response.headers["X-Request-ID"] = str(id(request))
-
 
 
         # Log request
@@ -987,9 +647,7 @@ async def add_process_time_header(request: Request, call_next):
         )
 
 
-
         return response
-
 
 
     except Exception as e:
@@ -1013,17 +671,11 @@ async def add_process_time_header(request: Request, call_next):
         )
 
 
-
-
-
 # ============================================================================
 
 # EXCEPTION HANDLERS
 
 # ============================================================================
-
-
-
 
 
 @app.exception_handler(404)
@@ -1049,9 +701,6 @@ async def not_found_handler(request: Request, exc):
         },
 
     )
-
-
-
 
 
 @app.exception_handler(500)
@@ -1081,9 +730,6 @@ async def server_error_handler(request: Request, exc):
     )
 
 
-
-
-
 @app.exception_handler(RequestValidationError)
 
 async def validation_error_handler(request: Request, exc: RequestValidationError):
@@ -1111,15 +757,11 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
     )
 
 
-
-
-
 # ============================================================================
 
 # PROMETHEUS METRICS (Optional)
 
 # ============================================================================
-
 
 
 if PROMETHEUS_AVAILABLE:
@@ -1129,13 +771,9 @@ if PROMETHEUS_AVAILABLE:
     logger.info("📊 Prometheus metrics enabled at /metrics")
 
 
-
-
-
 def register_router(router, prefix: str, tags: list[str], router_name: str) -> None:
 
     """Safely register a router with comprehensive error handling.
-
 
 
     Args:
@@ -1197,9 +835,6 @@ if ROUTES_AVAILABLE:
 # Python focuses on ML computation only
 
 # ============================================================================
-
-
-
 
 
 @app.post("/test/analyze")
@@ -1340,9 +975,6 @@ async def root():
     }
 
 
-
-
-
 @app.get("/health")
 
 async def health_check():
@@ -1366,9 +998,6 @@ async def health_check():
     }
 
 
-
-
-
 # ===========================================================================
 
 @app.get("/api/v2/models/status")
@@ -1382,7 +1011,6 @@ async def models_status():
         model_info = {}
 
         
-
         if ML_AVAILABLE and hasattr(app.state, 'sentinel_agent') and app.state.sentinel_agent:
 
             try:
@@ -1480,7 +1108,6 @@ async def models_status():
             }
 
         
-
         return {
 
             "success": True,
@@ -1518,9 +1145,6 @@ async def models_status():
         }
 
 
-
-
-
 @app.get("/health/wiring")
 
 async def wiring_check():
@@ -1554,9 +1178,6 @@ async def wiring_check():
     return {"routes": routes}
 
 
-
-
-
 @app.post("/api/v2/analysis/unified/image")
 
 async def analyze_image_unified(
@@ -1574,7 +1195,6 @@ async def analyze_image_unified(
     Unified image analysis with consistent interface.
 
     
-
     Args:
 
         file: Image file to analyze
@@ -1584,7 +1204,6 @@ async def analyze_image_unified(
         current_user: Authenticated user (if auth enabled)
 
         
-
     Returns:
 
         Standardized analysis result
@@ -1602,7 +1221,6 @@ async def analyze_image_unified(
         )
 
     
-
     try:
 
         # Read and validate file
@@ -1614,7 +1232,6 @@ async def analyze_image_unified(
             raise ValueError("Invalid file")
 
         
-
         # Perform unified analysis
 
         detector = app.state.unified_detector
@@ -1622,7 +1239,6 @@ async def analyze_image_unified(
         result = detector.detect_image(contents, analyze_forensics=analyze_forensics)
 
         
-
         # Add metadata
 
         result_dict = result.to_dict()
@@ -1638,7 +1254,6 @@ async def analyze_image_unified(
         })
 
         
-
         logger.info(f"Unified image analysis: {result.authenticity} ({result.confidence:.2f})")
 
         return {
@@ -1650,13 +1265,11 @@ async def analyze_image_unified(
         }
 
         
-
     except Exception as e:
 
         logger.error(f"Unified image analysis failed: {e}")
 
         raise HTTPException(status_code=500, detail=str(e))
-
 
 
 @app.post("/api/v2/analysis/unified/video")
@@ -1676,7 +1289,6 @@ async def analyze_video_unified(
     Unified video analysis with consistent interface.
 
     
-
     Args:
 
         file: Video file to analyze
@@ -1686,7 +1298,6 @@ async def analyze_video_unified(
         current_user: Authenticated user (if auth enabled)
 
         
-
     Returns:
 
         Standardized analysis result
@@ -1704,7 +1315,6 @@ async def analyze_video_unified(
         )
 
     
-
     try:
 
         # Read and validate file
@@ -1716,7 +1326,6 @@ async def analyze_video_unified(
             raise ValueError("Invalid file")
 
         
-
         # Perform unified analysis
 
         detector = app.state.unified_detector
@@ -1724,7 +1333,6 @@ async def analyze_video_unified(
         result = detector.detect_video(contents, analyze_frames=analyze_frames)
 
         
-
         # Add metadata
 
         result_dict = result.to_dict()
@@ -1740,7 +1348,6 @@ async def analyze_video_unified(
         })
 
         
-
         logger.info(f"Unified video analysis: {result.authenticity} ({result.confidence:.2f})")
 
         return {
@@ -1752,13 +1359,11 @@ async def analyze_video_unified(
         }
 
         
-
     except Exception as e:
 
         logger.error(f"Unified video analysis failed: {e}")
 
         raise HTTPException(status_code=500, detail=str(e))
-
 
 
 @app.post("/api/v2/analysis/unified/audio")
@@ -1776,7 +1381,6 @@ async def analyze_audio_unified(
     Unified audio analysis with consistent interface.
 
     
-
     Args:
 
         file: Audio file to analyze
@@ -1784,7 +1388,6 @@ async def analyze_audio_unified(
         current_user: Authenticated user (if auth enabled)
 
         
-
     Returns:
 
         Standardized analysis result
@@ -1802,7 +1405,6 @@ async def analyze_audio_unified(
         )
 
     
-
     try:
 
         # Read and validate file
@@ -1814,7 +1416,6 @@ async def analyze_audio_unified(
             raise ValueError("Invalid file")
 
         
-
         # Perform unified analysis
 
         detector = app.state.unified_detector
@@ -1822,7 +1423,6 @@ async def analyze_audio_unified(
         result = detector.detect_audio(contents)
 
         
-
         # Add metadata
 
         result_dict = result.to_dict()
@@ -1838,7 +1438,6 @@ async def analyze_audio_unified(
         })
 
         
-
         logger.info(f"Unified audio analysis: {result.authenticity} ({result.confidence:.2f})")
 
         return {
@@ -1850,13 +1449,11 @@ async def analyze_audio_unified(
         }
 
         
-
     except Exception as e:
 
         logger.error(f"Unified audio analysis failed: {e}")
 
         raise HTTPException(status_code=500, detail=str(e))
-
 
 
 @app.get("/api/v2/analysis/unified/status")
@@ -1868,7 +1465,6 @@ async def get_unified_detector_status():
     Get the status of the unified detector.
 
     
-
     Returns:
 
         Status information about the unified detector and available modalities
@@ -1886,7 +1482,6 @@ async def get_unified_detector_status():
         }
 
     
-
     if not hasattr(app.state, 'unified_detector') or app.state.unified_detector is None:
 
         return {
@@ -1898,7 +1493,6 @@ async def get_unified_detector_status():
         }
 
     
-
     try:
 
         detector = app.state.unified_detector
@@ -1926,7 +1520,6 @@ async def get_unified_detector_status():
         }
 
 
-
 @app.post("/api/v2/analysis/multimodal")
 
 async def analyze_multimodal(
@@ -1937,26 +1530,7 @@ async def analyze_multimodal(
 
 ):
 
-    """
-
-    Multi-modal analysis combining image, audio, and video detection.
-
-    
-
-    Args:
-
-        request: FastAPI request object to access form data
-
-        current_user: Authenticated user (if auth enabled)
-
-        
-
-    Returns:
-
-        Fused analysis results from multiple modalities
-
-    """
-
+   
     if not UNIFIED_DETECTOR_AVAILABLE or not hasattr(app.state, 'unified_detector') or app.state.unified_detector is None:
 
         raise HTTPException(
@@ -1968,7 +1542,6 @@ async def analyze_multimodal(
         )
 
     
-
     try:
 
         # Get form data
@@ -1976,7 +1549,6 @@ async def analyze_multimodal(
         form = await request.form()
 
         
-
         # Read media files from form data
 
         image_files = []
@@ -1986,7 +1558,6 @@ async def analyze_multimodal(
         video_files = []
 
         
-
         # Extract files from form data
 
         for key, value in form.items():
@@ -2000,7 +1571,6 @@ async def analyze_multimodal(
                     continue
 
                     
-
                 # Determine file type by content and extension
 
                 filename = value.filename or ""
@@ -2018,7 +1588,6 @@ async def analyze_multimodal(
                     video_files.append(content)
 
         
-
         # Check if at least one modality is provided
 
         if not any([image_files, audio_files, video_files]):
@@ -2032,19 +1601,16 @@ async def analyze_multimodal(
             )
 
         
-
         # Perform multi-modal analysis using unified detector
 
         detector = app.state.unified_detector
 
         
-
         # Analyze each modality and combine results
 
         results = []
 
         
-
         # Analyze images
 
         for image_buffer in image_files:
@@ -2054,7 +1620,6 @@ async def analyze_multimodal(
             results.append(result.to_dict())
 
         
-
         # Analyze audio files
 
         for audio_buffer in audio_files:
@@ -2064,7 +1629,6 @@ async def analyze_multimodal(
             results.append(result.to_dict())
 
         
-
         # Analyze video files
 
         for video_buffer in video_files:
@@ -2074,7 +1638,6 @@ async def analyze_multimodal(
             results.append(result.to_dict())
 
         
-
         # Combine results (simple fusion - take average confidence and majority vote for authenticity)
 
         if results:
@@ -2086,7 +1649,6 @@ async def analyze_multimodal(
             is_authentic = authentic_count > len(results) / 2
 
             
-
             combined_result = {
 
                 "success": True,
@@ -2130,7 +1692,6 @@ async def analyze_multimodal(
             }
 
         
-
         logger.info(f"Multimodal analysis completed: {combined_result.get('success', False)}")
 
         return {
@@ -2142,13 +1703,11 @@ async def analyze_multimodal(
         }
 
         
-
     except Exception as e:
 
         logger.error(f"Multimodal analysis failed: {e}")
 
         raise HTTPException(status_code=500, detail=str(e))
-
 
 
 @app.get("/api/v2/analysis/multimodal/status")
@@ -2160,7 +1719,6 @@ async def get_multimodal_status():
     Get the status of multi-modal fusion engine.
 
     
-
     Returns:
 
         Status information about available modalities and fusion engine
@@ -2180,7 +1738,6 @@ async def get_multimodal_status():
         }
 
     
-
     if not hasattr(app.state, 'unified_detector') or app.state.unified_detector is None:
 
         return {
@@ -2194,7 +1751,6 @@ async def get_multimodal_status():
         }
 
     
-
     try:
 
         detector = app.state.unified_detector
@@ -2234,7 +1790,6 @@ async def get_multimodal_status():
         }
 
 
-
 @app.get("/api/v2/database/status")
 
 async def get_database_status():
@@ -2244,7 +1799,6 @@ async def get_database_status():
     Get the status of Supabase database connection.
 
     
-
     Returns:
 
         Database connection status and configuration details
@@ -2258,7 +1812,6 @@ async def get_database_status():
         status = validate_supabase_connection()
 
         
-
         if status["status"] == "connected":
 
             return {
@@ -2310,7 +1863,6 @@ async def get_database_status():
             }
 
             
-
     except Exception as e:
 
         logger.error(f"Failed to get database status: {e}")
@@ -2330,9 +1882,6 @@ async def get_database_status():
         }
 
 
-
-
-
 # WebSocket implementation removed - handled by Node.js backend
 
 # All WebSocket communication should go through Node.js at /api/v2/dashboard/ws
@@ -2340,13 +1889,11 @@ async def get_database_status():
 # This keeps Python focused on ML computation only
 
 
-
 # ===========================================================================
 
 # CANONICAL API ENDPOINTS - Forward to /api/v2 routes
 
 # ===========================================================================
-
 
 
 @app.post("/analyze")
@@ -2364,7 +1911,6 @@ async def analyze_canonical(
     Canonical analysis endpoint - auto-detects media type and routes appropriately.
 
     
-
     This is the main entry point for analysis requests.
 
     Automatically detects whether the uploaded file is image, video, or audio
@@ -2372,7 +1918,6 @@ async def analyze_canonical(
     and forwards to the appropriate specialized endpoint.
 
     
-
     Args:
 
         request: FastAPI request object
@@ -2380,7 +1925,6 @@ async def analyze_canonical(
         current_user: Authenticated user (if auth enabled)
 
         
-
     Returns:
 
         Analysis results from the appropriate detector
@@ -2394,7 +1938,6 @@ async def analyze_canonical(
         form = await request.form()
 
         
-
         # Extract file from form
 
         file = None
@@ -2408,13 +1951,11 @@ async def analyze_canonical(
                 break
 
         
-
         if not file:
 
             raise HTTPException(status_code=400, detail="No file provided")
 
         
-
         # Read file content
 
         content = await file.read()
@@ -2424,7 +1965,6 @@ async def analyze_canonical(
             raise HTTPException(status_code=400, detail="Invalid file")
 
         
-
         # Auto-detect file type
 
         import magic
@@ -2432,11 +1972,9 @@ async def analyze_canonical(
         mime_type = magic.from_buffer(content, mime=True)
 
         
-
         logger.info(f"Canonical analysis: auto-detected type {mime_type} for file {file.filename}")
 
         
-
         # Route to appropriate endpoint based on MIME type
 
         if mime_type.startswith('image/'):
@@ -2448,19 +1986,16 @@ async def analyze_canonical(
             from io import BytesIO
 
             
-
             # Create UploadFile object for forwarding
 
             file_obj = UploadFile(file.filename, BytesIO(content), content_type=mime_type)
 
             
-
             # Call the existing image analysis endpoint
 
             return await analyze_image_unified(file_obj, True, current_user)
 
             
-
         elif mime_type.startswith('video/'):
 
             # Forward to video analysis
@@ -2470,13 +2005,11 @@ async def analyze_canonical(
             from io import BytesIO
 
             
-
             file_obj = UploadFile(file.filename, BytesIO(content), content_type=mime_type)
 
             return await analyze_video_unified(file_obj, None, True, current_user)
 
             
-
         elif mime_type.startswith('audio/'):
 
             # Forward to audio analysis
@@ -2486,13 +2019,11 @@ async def analyze_canonical(
             from io import BytesIO
 
             
-
             file_obj = UploadFile(file.filename, BytesIO(content), content_type=mime_type)
 
             return await analyze_audio_unified(file_obj, current_user)
 
             
-
         else:
 
             raise HTTPException(
@@ -2504,7 +2035,6 @@ async def analyze_canonical(
             )
 
             
-
     except HTTPException:
 
         raise
@@ -2514,9 +2044,6 @@ async def analyze_canonical(
         logger.error(f"Canonical analysis failed: {e}")
 
         raise HTTPException(status_code=500, detail=str(e))
-
-
-
 
 
 @app.post("/analyze/image")
@@ -2536,11 +2063,9 @@ async def analyze_image_canonical(
     Canonical image analysis endpoint.
 
     
-
     Forwards requests to /api/v2/analysis/unified/image
 
     
-
     Args:
 
         file: Image file to analyze
@@ -2550,7 +2075,6 @@ async def analyze_image_canonical(
         current_user: Authenticated user (if auth enabled)
 
         
-
     Returns:
 
         Image analysis results
@@ -2560,9 +2084,6 @@ async def analyze_image_canonical(
     logger.info(f"Canonical image analysis: {file.filename}")
 
     return await analyze_image_unified(file, analyze_forensics, current_user)
-
-
-
 
 
 @app.post("/analyze/video")
@@ -2584,11 +2105,9 @@ async def analyze_video_canonical(
     Canonical video analysis endpoint.
 
     
-
     Forwards requests to /api/v2/analysis/unified/video
 
     
-
     Args:
 
         file: Video file to analyze
@@ -2600,7 +2119,6 @@ async def analyze_video_canonical(
         current_user: Authenticated user (if auth enabled)
 
         
-
     Returns:
 
         Video analysis results
@@ -2610,9 +2128,6 @@ async def analyze_video_canonical(
     logger.info(f"Canonical video analysis: {file.filename}")
 
     return await analyze_video_unified(file, analyze_frames, analyze_forensics, current_user)
-
-
-
 
 
 @app.post("/analyze/audio")
@@ -2630,11 +2145,9 @@ async def analyze_audio_canonical(
     Canonical audio analysis endpoint.
 
     
-
     Forwards requests to /api/v2/analysis/unified/audio
 
     
-
     Args:
 
         file: Audio file to analyze
@@ -2642,7 +2155,6 @@ async def analyze_audio_canonical(
         current_user: Authenticated user (if auth enabled)
 
         
-
     Returns:
 
         Audio analysis results
@@ -2654,9 +2166,6 @@ async def analyze_audio_canonical(
     return await analyze_audio_unified(file, current_user)
 
 
-
-
-
 @app.get("/analyze/info")
 
 async def analyze_get_info():
@@ -2666,7 +2175,6 @@ async def analyze_get_info():
     GET endpoint for /analyze - returns API information.
 
     
-
     Returns:
 
         Information about available analysis endpoints and supported formats
@@ -2706,23 +2214,14 @@ async def analyze_get_info():
     }
 
 
-
-
-
-
-
-
-
 if __name__ == "__main__":
 
     import uvicorn
 
 
-
     from config import settings
 
     
-
     uvicorn.run(
 
         "main_api:app",

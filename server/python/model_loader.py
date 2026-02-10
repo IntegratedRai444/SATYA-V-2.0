@@ -144,10 +144,56 @@ class BaseModelLoader:
         }
         
     def _get_device(self, device_str: str) -> torch.device:
-        """Get the appropriate device for model execution."""
+        """Get the appropriate device for model execution with robust error handling."""
         if device_str == 'auto':
-            return torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        return torch.device(device_str)
+            # Test CUDA availability with DLL error handling
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    # Test actual CUDA device access
+                    try:
+                        device = torch.device('cuda:0')
+                        test_tensor = torch.randn(1, 3, 224, 224).to(device)
+                        _ = test_tensor.sum()
+                        logger.info("✅ CUDA device auto-detected and tested")
+                        return device
+                    except Exception as cuda_error:
+                        logger.error(f"❌ CUDA device test failed: {cuda_error}")
+                        logger.warning("⚠️ Falling back to CPU due to CUDA DLL issues")
+                        return torch.device('cpu')
+                else:
+                    logger.warning("⚠️ CUDA not available - using CPU")
+                    return torch.device('cpu')
+            except ImportError:
+                logger.warning("⚠️ PyTorch not available - using CPU")
+                return torch.device('cpu')
+            except Exception as e:
+                logger.error(f"❌ Device auto-detection failed: {e}")
+                return torch.device('cpu')
+        
+        # Manual device selection with testing
+        try:
+            import torch
+            if device_str.startswith('cuda'):
+                if torch.cuda.is_available():
+                    try:
+                        device = torch.device(device_str)
+                        test_tensor = torch.randn(1, 3, 224, 224).to(device)
+                        _ = test_tensor.sum()
+                        logger.info(f"✅ CUDA device {device_str} tested successfully")
+                        return device
+                    except Exception as cuda_error:
+                        logger.error(f"❌ CUDA device {device_str} test failed: {cuda_error}")
+                        logger.warning("⚠️ Falling back to CPU due to CUDA DLL issues")
+                        return torch.device('cpu')
+                else:
+                    logger.warning(f"⚠️ CUDA requested but not available - using CPU")
+                    return torch.device('cpu')
+            else:
+                return torch.device(device_str)
+        except Exception as e:
+            logger.error(f"❌ Device selection failed: {e}")
+            return torch.device('cpu')
         
     def _init_transforms(self) -> None:
         """Initialize data transformation pipeline."""

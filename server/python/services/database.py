@@ -3,14 +3,97 @@ Database Manager Service
 Handles database connections, sessions, and operations
 """
 
-import logging
-import sys
 import asyncio
-from datetime import datetime
-from pathlib import Path
-from typing import Dict, List, Optional
+import logging
+import os
+import time
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple, Union
+from dotenv import load_dotenv
+from supabase import create_client, Client
+from fastapi import Depends, HTTPException, status
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.requests import Request
+from starlette.responses import Response
+import httpx
 
+# Load environment variables from .env file
+load_dotenv()
+
+# Initialize Supabase client with enhanced validation
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+# Enhanced validation with clear error messages
+if not SUPABASE_URL:
+    raise ValueError(
+        "SUPABASE_URL must be set in environment variables. "
+        "Please add it to your .env file or set it in your environment."
+    )
+
+if not SUPABASE_ANON_KEY and not SUPABASE_SERVICE_ROLE_KEY:
+    raise ValueError(
+        "Neither SUPABASE_ANON_KEY nor SUPABASE_SERVICE_ROLE_KEY is set. "
+        "Please add one of these to your .env file or set it in your environment."
+    )
+
+# Try service role key first (more permissions), then anon key
+SUPABASE_KEY = SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY
+
+# Log which key we're using (without exposing the actual key)
+key_type = "service_role" if SUPABASE_KEY == SUPABASE_SERVICE_ROLE_KEY else "anon"
 logger = logging.getLogger(__name__)
+
+# Circuit breaker state
+class CircuitBreaker:
+    """Circuit breaker pattern for database operations"""
+    
+    def __init__(self, failure_threshold=5, timeout=60):
+        self.failure_threshold = failure_threshold
+        self.timeout = timeout
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
+        
+    def __call__(self, operation):
+        """Execute operation with circuit breaker logic"""
+        if self.state == "OPEN":
+            # Circuit is open, check if we should close it
+            if time.time() - self.last_failure_time > self.timeout:
+                self.state = "HALF_OPEN"
+                return operation()
+            else:
+                raise Exception("Circuit breaker is OPEN")
+                
+        elif self.state == "HALF_OPEN":
+            # Allow one operation to test if service is recovered
+            try:
+                result = operation()
+                self.state = "CLOSED"  # Success, close circuit
+                self.failure_count = 0
+                return result
+            except Exception as e:
+                self.failure_count += 1
+                if self.failure_count >= self.failure_threshold:
+                    self.state = "OPEN"
+                self.last_failure_time = time.time()
+                raise e
+                
+        elif self.state == "CLOSED":
+            # Circuit is closed, allow operation
+            try:
+                result = operation()
+                self.failure_count = 0
+                return result
+            except Exception as e:
+                self.failure_count += 1
+                self.last_failure_time = time.time()
+                if self.failure_count >= self.failure_threshold:
+                    self.state = "OPEN"
+                raise e
+        else:
+            raise Exception(f"Invalid circuit breaker state: {self.state}")
 
 # Add database directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "database"))
@@ -33,12 +116,13 @@ class DatabaseManager:
         """Initialize database manager"""
         self.supabase = get_supabase()
         self._connection_tested = False
+        self.circuit_breaker = CircuitBreaker()
         
         # Check if supabase is available
         if self.supabase is None:
-            logger.warning("⚠️ Supabase not available - database features disabled")
+            logger.warning(" Supabase not available - database features disabled")
         else:
-            logger.info("✅ Supabase database manager initialized")
+            logger.info(" Supabase database manager initialized")
 
     async def test_connection(self) -> bool:
         """
@@ -115,24 +199,15 @@ class DatabaseManager:
 
     async def execute_with_retry(self, operation, max_retries=1, retry_delay=1.0):
         """
-        Execute database operation with minimal retry logic
+        Execute database operation with circuit breaker and retry logic
         
         Args:
             operation: Async operation to execute
             max_retries: Maximum number of retry attempts (default: 1)
             retry_delay: Delay between retries (default: 1.0s)
         """
-        for attempt in range(max_retries):
-            try:
-                return await operation()
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    logger.error(f"❌ Database operation failed after {max_retries} attempts: {e}")
-                    raise e
-                
-                logger.warning(f"⚠️ Database operation failed (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay}s: {e}")
-                await asyncio.sleep(retry_delay)
-                retry_delay *= 2  # Exponential backoff
+        # Use circuit breaker for the operation
+        return await self.circuit_breaker(operation)
 
     def create_tables(self):
         """Create all database tables"""

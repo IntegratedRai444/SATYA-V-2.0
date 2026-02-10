@@ -59,18 +59,21 @@ class DetectorSingleton:
         Initialize a single detector of the given type
         """
         try:
+            # Enable GPU by default if available
+            enable_gpu = config.get('enable_gpu', self._is_cuda_available())
+            
             if detector_type == 'image':
                 from detectors.image_detector import ImageDetector
                 return ImageDetector(
-                    enable_gpu=config.get('enable_gpu', False)
+                    enable_gpu=enable_gpu
                 )
             elif detector_type == 'video':
                 from detectors.video_detector import VideoDetector
-                device = 'cuda' if config.get('enable_gpu', False) and self._is_cuda_available() else 'cpu'
+                device = 'cuda' if enable_gpu and self._is_cuda_available() else 'cpu'
                 return VideoDetector(config={'device': device} if device == 'cuda' else {})
             elif detector_type == 'audio':
                 from detectors.audio_detector import AudioDetector
-                device = 'cuda' if config.get('enable_gpu', False) and self._is_cuda_available() else 'cpu'
+                device = 'cuda' if enable_gpu and self._is_cuda_available() else 'cpu'
                 return AudioDetector(device=device)
             elif detector_type == 'text':
                 from detectors.text_nlp_detector import TextNLPDetector
@@ -83,11 +86,33 @@ class DetectorSingleton:
             return None
     
     def _is_cuda_available(self):
-        """Check if CUDA is available"""
+        """Check if CUDA is available with robust error handling"""
         try:
             import torch
-            return torch.cuda.is_available()
+            # First check if CUDA is available
+            if not torch.cuda.is_available():
+                logger.warning("⚠️ CUDA not available - will use CPU")
+                return False
+            
+            # Test CUDA device access to catch DLL issues
+            try:
+                # Try to access CUDA device 0
+                device = torch.device('cuda:0')
+                # Test with a simple tensor operation
+                test_tensor = torch.randn(1, 3, 224, 224).to(device)
+                _ = test_tensor.sum()  # Simple operation
+                logger.info("✅ CUDA device test passed")
+                return True
+            except Exception as cuda_error:
+                logger.error(f"❌ CUDA device test failed: {cuda_error}")
+                logger.warning("⚠️ Falling back to CPU due to CUDA DLL/device issues")
+                return False
+                
         except ImportError:
+            logger.warning("⚠️ PyTorch not available")
+            return False
+        except Exception as e:
+            logger.error(f"❌ CUDA availability check failed: {e}")
             return False
     
     def get_all_detectors(self) -> Dict[str, Any]:
