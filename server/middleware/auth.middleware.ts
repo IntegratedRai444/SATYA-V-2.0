@@ -94,9 +94,6 @@ const storePromise = initializeRateLimitStore();
 // Auth state cache to prevent repeated Supabase calls
 const authCache = new Map<string, { user: User; expires: number }>();
 
-// Cache TTL in milliseconds
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-
 // Rate limiting configuration
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 const MAX_REQUESTS_PER_WINDOW = 100; // General API requests
@@ -222,20 +219,36 @@ export const speedLimiter = slowDown({
   validate: { delayMs: false } // Disable validation warning
 });
 
-// Token validation schema (kept for potential future use)
-// const tokenSchema = z.object({
-//   sub: z.string().uuid(),
-//   email: z.string().email(),
-//   role: z.enum(['user', 'admin', 'moderator']).default('user'),
-//   exp: z.number().int().positive(),
-//   iat: z.number().int().positive()
-// });
+// Helper function to safely validate user authentication
+export const validateAuth = (req: AuthenticatedRequest, res: Response): boolean => {
+  if (!req.user || !req.user.id) {
+    res.status(401).json({ 
+      success: false, 
+      error: "Unauthorized" 
+    });
+    return false;
+  }
+  return true;
+};
+
+// Helper function to get safe user ID
+export const getUserId = (req: AuthenticatedRequest): string | null => {
+  return req.user?.id || null;
+};
 
 /**
  * Supabase Authentication Middleware with enhanced security and email verification
  */
 export const authenticate = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
+    // Debug: Log the authentication attempt
+    logger.debug('Authentication attempt', {
+      path: req.path,
+      hasAuthHeader: !!req.headers.authorization,
+      hasCookie: !!req.cookies?.['sb-access-token'],
+      userAgent: req.headers['user-agent']
+    });
+
     // Check for token in Authorization header first
     let token: string | null = null;
     const authHeader = req.headers.authorization;
@@ -244,7 +257,7 @@ export const authenticate = async (req: AuthenticatedRequest, res: Response, nex
     if (!authHeader && req.cookies?.['sb-access-token']) {
       token = req.cookies['sb-access-token'];
     } else if (authHeader?.startsWith('Bearer ')) {
-      token = authHeader.split(' ')[1];
+      token = authHeader.substring(7); // Remove 'Bearer ' prefix
     }
     
     if (!token) {
@@ -281,7 +294,8 @@ export const authenticate = async (req: AuthenticatedRequest, res: Response, nex
       }
     }
 
-    // Verify token with Supabase only if not cached
+    // Verify token with Supabase first (for user info)
+    logger.debug('Verifying token with Supabase', { tokenLength: token?.length });
     const { data: { user }, error } = await supabase.auth.getUser(token);
     
     if (error) {
@@ -303,45 +317,21 @@ export const authenticate = async (req: AuthenticatedRequest, res: Response, nex
       
       return res.status(401).json({
         success: false,
-        error: 'INVALID_TOKEN',
-        message: 'Invalid or expired token',
-        code: 'INVALID_TOKEN'
+        error: 'AUTH_REQUIRED',
+        message: 'Invalid authentication token',
+        code: 'AUTH_REQUIRED'
       });
     }
 
-    // Cache successful authentication result
-    if (!error && user) {
-      authCache.set(token, {
-        user,
-        expires: Date.now() + CACHE_TTL
-      });
-      logger.debug('Authentication result cached', { userId: user.id });
-    }
-
-    // Check if user exists and email is verified
     if (!user) {
-      logger.warn('User not found during authentication');
-      return res.status(401).json({
-        success: false,
-        error: 'USER_NOT_FOUND',
-        message: 'User not found',
-        code: 'USER_NOT_FOUND'
-      });
-    }
-
-    // Check if email is verified
-    if (!user.email_confirmed_at) {
-      logger.warn('Email not verified', {
-        userId: user.id,
-        email: user.email,
+      logger.warn('Token verification failed: No user returned', {
         path: req.path
       });
-      
-      return res.status(403).json({
+      return res.status(401).json({
         success: false,
-        error: 'EMAIL_NOT_VERIFIED',
-        message: 'Please verify your email address to continue.',
-        code: 'EMAIL_NOT_VERIFIED'
+        error: 'AUTH_REQUIRED',
+        message: 'Invalid authentication token',
+        code: 'AUTH_REQUIRED'
       });
     }
 
@@ -499,13 +489,34 @@ export const errorHandler = (
     query: req.query
   });
 
-  const statusCode = res.statusCode === 200 ? 500 : res.statusCode;
+  // Determine appropriate status code based on error type
+  let responseStatusCode = 500;
+  let errorMessage = 'Internal Server Error';
+
+  if (err.name === 'ValidationError') {
+    responseStatusCode = 400;
+    errorMessage = 'Bad Request';
+  } else if (err.name === 'UnauthorizedError') {
+    responseStatusCode = 401;
+    errorMessage = 'Unauthorized';
+  } else if (err.name === 'ForbiddenError') {
+    responseStatusCode = 403;
+    errorMessage = 'Forbidden';
+  } else if (err.name === 'NotFoundError') {
+    responseStatusCode = 404;
+    errorMessage = 'Not Found';
+  } else if (err.name === 'ServiceUnavailableError') {
+    responseStatusCode = 503;
+    errorMessage = 'Service Temporarily Unavailable';
+  }
+
+  const finalStatusCode = res.statusCode === 200 ? responseStatusCode : res.statusCode;
   
-  res.status(statusCode).json({
+  res.status(finalStatusCode).json({
     success: false,
     code: err.name || 'INTERNAL_ERROR',
     message: process.env.NODE_ENV === 'development' 
       ? err.message 
-      : 'An unexpected error occurred'
+      : errorMessage
   });
 };

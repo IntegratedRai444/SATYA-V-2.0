@@ -7,7 +7,7 @@ import { analysisService } from '../lib/api/services/analysisService';
 // Types
 export interface AnalysisResult {
   id: string;
-  type: 'image' | 'video' | 'audio' | 'multimodal';
+  type: 'image' | 'video' | 'audio' | 'text';
   status: 'processing' | 'completed' | 'failed';
   proof?: AnalysisProof;
   result?: {
@@ -71,7 +71,7 @@ export interface UserAnalytics {
     image: number;
     audio: number;
     video: number;
-    multimodal: number;
+    text: number;
   };
   recentActivity: Array<{
     id: string;
@@ -151,18 +151,47 @@ export const useVideoAnalysis = () => {
   };
 };
 
-export const useMultimodalAnalysis = () => {
+// DISABLED: Multimodal analysis temporarily deactivated
+// export const useMultimodalAnalysis = () => {
+//   const queryClient = useQueryClient();
+//   
+//   const analyzeMultimodal = useMutation({
+//     mutationFn: async ({ files }: { files: File[] }) => {
+//       throw new Error('Multimodal analysis is temporarily disabled');
+//     },
+//     onSuccess: () => {
+//       queryClient.invalidateQueries({ queryKey: ['analysis-history'] });
+//       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+//     }
+//   });
+
+//   return {
+//     analyzeMultimodal: analyzeMultimodal.mutateAsync,
+//     isAnalyzing: false,
+//     error: new Error('Multimodal analysis is temporarily disabled'),
+//     data: null
+//   };
+// };
+
+// Text Analysis Hook
+export const useTextAnalysis = () => {
   const queryClient = useQueryClient();
   
-  const analyzeMultimodal = useMutation({
-    mutationFn: async ({ files }: { files: File[] }) => {
-      const formData = new FormData();
-      files.forEach((file) => {
-        formData.append(`files`, file);
+  const analyzeText = useMutation({
+    mutationFn: async ({ text }: { text: string }) => {
+      const response = await fetch('/api/v2/analysis/text', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text }),
       });
-      
-      const jobId = await analysisService.analyzeMultimodal(files[0], { metadata: { files } });
-      return { jobId }; // Return object with jobId
+
+      if (!response.ok) {
+        throw new Error('Failed to analyze text');
+      }
+
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['analysis-history'] });
@@ -171,10 +200,10 @@ export const useMultimodalAnalysis = () => {
   });
 
   return {
-    analyzeMultimodal: analyzeMultimodal.mutateAsync,
-    isAnalyzing: analyzeMultimodal.isPending,
-    error: analyzeMultimodal.error,
-    data: analyzeMultimodal.data
+    analyzeText: analyzeText.mutateAsync,
+    isAnalyzing: analyzeText.isPending,
+    error: analyzeText.error,
+    data: analyzeText.data
   };
 };
 

@@ -65,9 +65,16 @@ class EnhancedApiClient {
       console.log("Enhanced client auth token:", token ? "Bearer [REDACTED]" : "null");
       
       if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+        config.headers = {
+          ...config.headers,
+          'Authorization': `Bearer ${token}`
+        } as any;
       } else {
-        console.error("User session missing - enhanced client requests will be unauthenticated");
+        console.warn("No auth token available for protected request");
+        config.headers = {
+          ...config.headers,
+          'Authorization': null
+        } as any;
       }
     }
 

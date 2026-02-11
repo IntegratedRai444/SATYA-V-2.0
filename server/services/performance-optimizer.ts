@@ -1,9 +1,10 @@
 import { EventEmitter } from 'events';
-import fs from 'fs/promises';
-import path from 'path';
 import os from 'os';
+import { setInterval, setImmediate, clearInterval } from 'timers';
 import checkDiskSpace from 'check-disk-space';
 import { logger } from '../config';
+
+type NodeJS = any; // Type declaration for NodeJS.Timeout
 
 interface PerformanceMetrics {
   timestamp: Date;
@@ -293,7 +294,7 @@ class PerformanceOptimizer extends EventEmitter {
    */
   private async getDiskUsage(): Promise<{ used: number; available: number; percentage: number }> {
     try {
-      const diskSpace = await checkDiskSpace(process.cwd());
+      const diskSpace = await (checkDiskSpace as any)(process.cwd());
       const total = diskSpace.size;
       const free = diskSpace.free;
       const used = total - free;

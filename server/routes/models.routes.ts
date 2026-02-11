@@ -60,6 +60,14 @@ const availableModels = [
 // GET /api/v2/models - Get available analysis models
 router.get('/', async (req: Request, res: Response) => {
   try {
+    // Validate authentication
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized'
+      });
+    }
+
     const { type, activeOnly, limit = 20, offset = 0 } = req.query;
 
     let filteredModels = availableModels;

@@ -27,6 +27,11 @@ if True:  # For better code folding
     from typing import (Any, Awaitable, Callable, Dict, Generic, List,
                         Optional, Tuple, TypeVar, Union)
 
+    # Force CPU-only mode before torch import
+    import os
+    os.environ['CUDA_VISIBLE_DEVICES'] = ''
+    os.environ['TORCH_CUDA_ARCH_LIST'] = ''
+    
     import numpy as np
     import torch
     from PIL import Image

@@ -156,26 +156,27 @@ class WebSocketService {
       // Construct WebSocket URL with token
       const wsUrl = this.getWebSocketUrl(authToken);
       
-      logger.debug('Initiating WebSocket connection...', { 
-        url: this.sanitizeUrl(wsUrl) 
+      logger.info('Attempting WebSocket connection...', { 
+        url: this.sanitizeUrl(wsUrl),
+        attempt: this.reconnectAttempts + 1
       });
 
-      // Create new WebSocket connection
+      // Create new WebSocket connection with timeout
       this.socket = new WebSocket(wsUrl);
       this.setupEventHandlers();
 
-      // Set up connection timeout
+      // Set up connection timeout with longer duration
       return await new Promise<boolean>((resolve) => {
         const connectionTimeout = setTimeout(() => {
-          logger.error('WebSocket connection timeout');
+          logger.error('WebSocket connection timeout after 10 seconds');
           this.emit('error', new Error('Connection timeout'));
           this.scheduleReconnect();
           resolve(false);
-        }, this.config.connectionTimeout);
+        }, 10000); // 10 second timeout
 
         const onOpen = () => {
           clearTimeout(connectionTimeout);
-          logger.info('WebSocket connection established');
+          logger.info('WebSocket connection established successfully');
           this.setState('connected');
           this.reconnectAttempts = 0;
           this.setupHeartbeat();
@@ -187,7 +188,7 @@ class WebSocketService {
         const onError = (event: Event) => {
           clearTimeout(connectionTimeout);
           const error = this.createErrorFromEvent(event);
-          logger.error('WebSocket connection error:', error);
+          logger.error('WebSocket connection failed:', error);
           this.handleError(error);
           resolve(false);
         };
@@ -209,8 +210,13 @@ class WebSocketService {
       // Use centralized WebSocket URL configuration
       const baseUrl = API_CONFIG.WS_URL;
       
-      // Parse the base URL
+      // Parse base URL
       const url = new URL(baseUrl);
+      
+      // Handle localhost correctly
+      if (url.hostname === 'localhost') {
+        url.hostname = '127.0.0.1';
+      }
       
       // Add token as query parameter
       url.searchParams.set('token', token);

@@ -19,10 +19,11 @@ const dashboardRateLimit = rateLimit({
 router.get('/stats', dashboardRateLimit, async (req: any, res: Response) => {
   try {
     const userId = req.user?.id;
+    
     if (!userId) {
       return res.status(401).json({
         success: false,
-        error: 'User not authenticated'
+        error: 'Unauthorized'
       });
     }
 
@@ -36,25 +37,25 @@ router.get('/stats', dashboardRateLimit, async (req: any, res: Response) => {
       .limit(1000);
 
     if (tasksError) {
-      logger.error('Dashboard stats error:', tasksError);
+      console.error("[CONTROLLER ERROR] Dashboard stats DB error:", tasksError);
       return res.status(500).json({
         success: false,
         error: 'Failed to fetch dashboard statistics'
       });
     }
 
-    // Calculate statistics
+      // Calculate statistics with safe defaults
     const totalAnalyses = tasks?.length || 0;
     const deepfakeDetected = tasks?.filter(t => (t.result as Record<string, unknown>)?.is_deepfake === true).length || 0;
     const realDetected = tasks?.filter(t => (t.result as Record<string, unknown>)?.is_deepfake === false).length || 0;
     
-    // Calculate average confidence
+    // Calculate average confidence with safe defaults
     const completedTasks = tasks?.filter(t => t.status === 'completed' && (t.result as Record<string, unknown>)?.confidence) || [];
     const avgConfidence = completedTasks.length > 0 
       ? completedTasks.reduce((sum, task) => sum + ((task.result as Record<string, unknown>)?.confidence as number || 0), 0) / completedTasks.length 
       : 0;
 
-    // Get last 7 days activity
+    // Get last 7 days activity with safe defaults
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     
@@ -76,15 +77,18 @@ router.get('/stats', dashboardRateLimit, async (req: any, res: Response) => {
     }
 
     const stats = {
-      totalAnalyses: totalAnalyses,
-      authenticMedia: realDetected,
-      manipulatedMedia: deepfakeDetected,
+      totalAnalyses: totalAnalyses || 0,
+      authenticMedia: realDetected || 0,
+      manipulatedMedia: deepfakeDetected || 0,
       uncertainAnalyses: 0, // Calculate if needed
       avgConfidence: Math.round(avgConfidence * 100) / 100,
-      last_7_days: last7Days
+      last_7_days: last7Days || []
     };
 
-    res.json(stats);
+    res.json({
+      success: true,
+      data: stats
+    });
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Failed to fetch dashboard statistics';
     logger.error('Dashboard stats error:', error);
@@ -166,14 +170,14 @@ router.get('/analytics', dashboardRateLimit, async (req: any, res: Response) => 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 router.get('/recent-activity', dashboardRateLimit, async (req: any, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'User not authenticated'
-      });
+    // Use auth validation helper
+    const { validateAuth } = await import('../middleware/auth.middleware');
+    if (!validateAuth(req, res)) {
+      return;
     }
 
+    const userId = req.user?.id;
+    
     // Get recent analysis activities (last 10)
     const { data: activities, error: activitiesError } = await supabase
       .from('tasks')
@@ -184,10 +188,10 @@ router.get('/recent-activity', dashboardRateLimit, async (req: any, res: Respons
       .limit(10);
 
     if (activitiesError) {
-      logger.error('Recent activity error:', activitiesError);
+      logger.error('[DB] Recent activity query failed:', activitiesError);
       return res.status(500).json({
         success: false,
-        error: 'Failed to fetch recent activity'
+        error: 'Database query failed'
       });
     }
 
@@ -196,7 +200,7 @@ router.get('/recent-activity', dashboardRateLimit, async (req: any, res: Respons
       data: activities || []
     });
   } catch (error) {
-    logger.error('Recent activity endpoint error:', error);
+    logger.error('[ERROR] Recent activity endpoint error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error'

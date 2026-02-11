@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabaseSingleton';
+import { clearTokenCache } from '../lib/auth/getAccessToken';
 
 export interface UseSupabaseAuthReturn {
   user: User | null;
@@ -18,13 +19,23 @@ export const useSupabaseAuth = (): UseSupabaseAuthReturn => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Get initial session only once
+  // Listen for auth state changes and clear cache when needed
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const subscription = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
+        clearTokenCache();
+      }
       setUser(session?.user ?? null);
-      setSession(session ?? null);
+      setSession(session);
       setLoading(false);
     });
+
+    return () => {
+      const sub = subscription as any;
+      if (sub?.subscription) {
+        sub.subscription.unsubscribe();
+      }
+    };
   }, []); // Empty dependency array - run only once
 
   const signIn = async (email: string, password: string) => {

@@ -1,19 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { WebSocketMessage } from '@/types/websocket';
 
-/**
- * Generic WebSocket subscription hook
- * Eliminates duplication across useWebSocket, useDashboardWebSocket, useScanWebSocket, and RealtimeContext
- * 
- * @param baseWebSocket - The base WebSocket instance to use for communication
- * @param subscriptionId - Unique identifier for this subscription (e.g., jobId, scanId, channel)
- * @param subscribeType - Message type for subscribing (e.g., 'subscribe_job', 'subscribe_scan')
- * @param unsubscribeType - Message type for unsubscribing (e.g., 'unsubscribe_job', 'unsubscribe_scan')
- * @param messageFilter - Function to filter relevant messages
- * @param onUpdate - Callback function when relevant message is received
- * @param payload - Optional payload to include with subscription
- * @param autoSubscribe - Whether to automatically subscribe on mount
- */
+
 export function useSubscription<TData = unknown>(
     baseWebSocket: {
         sendMessage: (message: unknown) => boolean;
@@ -131,7 +119,7 @@ export function useJobSubscription(
         jobId,
         'subscribe_job',
         'unsubscribe_job',
-        (message) => (message as unknown as { type: string; data?: { jobId?: string } }).type === 'job_update' && (message as unknown as { data?: { jobId?: string } }).data?.jobId === jobId,
+        (message) => ['JOB_PROGRESS', 'JOB_COMPLETED', 'JOB_FAILED'].includes(message.type) && (message as unknown as { payload?: { jobId?: string; status?: string; progress?: number; message?: string; result?: unknown; error?: string } }).payload?.jobId === jobId,
         onUpdate
     );
 }

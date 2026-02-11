@@ -88,7 +88,10 @@ const envSchema = z.object({
     .url('DATABASE_URL must be a valid connection string')
     .refine(url => {
       if (process.env.NODE_ENV === 'production') {
-        return !url.includes('localhost') && !url.includes('127.0.0.1');
+        // Allow Supabase URLs in production
+        const isLocalhost = url.includes('localhost') || url.includes('127.0.0.1');
+        const isSupabase = url.includes('supabase.co');
+        return !isLocalhost || isSupabase;
       }
       return true;
     }, 'DATABASE_URL must point to a production database in production'),

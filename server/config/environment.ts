@@ -1,8 +1,16 @@
-// This must be the first import to ensure environment variables are loaded
+// Load environment variables first
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+
+// Configure dotenv to load from server directory (handle both dev and prod)
+const envPath = path.resolve(process.cwd(), '.env');
+console.log('Loading .env from:', envPath);
+dotenv.config({ path: envPath });
+
+// This must be first import to ensure environment variables are loaded
 import '../setup-env';
 
 import { z } from 'zod';
-import * as path from 'path';
 import * as fs from 'fs';
 
 // Helper function to get environment variable with fallback

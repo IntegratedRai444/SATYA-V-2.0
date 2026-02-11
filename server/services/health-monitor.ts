@@ -253,7 +253,7 @@ class HealthMonitor extends EventEmitter {
   private async checkFileSystem(): Promise<HealthMetrics['fileSystem']> {
     try {
       // Using checkDiskSpace for cross-platform disk space checking
-      const diskSpace = await checkDiskSpace(process.cwd());
+      const diskSpace = await (checkDiskSpace as any)(process.cwd());
       const total = diskSpace.size;
       const free = diskSpace.free;
       const used = total - free;
@@ -354,7 +354,7 @@ class HealthMonitor extends EventEmitter {
    */
   private async getDiskUsage(): Promise<{ percentage: number; available: number; total: number }> {
     try {
-      const diskSpace = await checkDiskSpace(process.cwd());
+      const diskSpace = await (checkDiskSpace as any)(process.cwd());
       const total = diskSpace.size;
       const available = diskSpace.free;
       const used = total - available;

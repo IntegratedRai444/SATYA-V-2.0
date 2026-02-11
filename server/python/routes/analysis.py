@@ -76,21 +76,24 @@ class UnifiedAnalysisResponse(BaseModel):
     proof: dict | None = None
     metadata: dict | None = None
     
-    @validator('fake_score')
-    def validate_fake_score(cls, v):
+    @field_validator('fake_score')
+    @classmethod
+    def validate_fake_score(cls, v: float) -> float:
         if not 0.0 <= v <= 1.0:
             raise ValueError("fake_score must be between 0.0 and 1.0")
         return v
     
-    @validator('label')
-    def validate_label(cls, v):
+    @field_validator('label')
+    @classmethod
+    def validate_label(cls, v: str) -> str:
         allowed_labels = ['Deepfake', 'Authentic', 'Unknown']
         if v not in allowed_labels:
             raise ValueError(f"label must be one of {allowed_labels}")
         return v
     
-    @validator('processing_time')
-    def validate_processing_time(cls, v):
+    @field_validator('processing_time')
+    @classmethod
+    def validate_processing_time(cls, v: float) -> float:
         if v < 0:
             raise ValueError("processing_time cannot be negative")
         return v

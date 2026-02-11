@@ -138,7 +138,7 @@ export const validateUserContent = (content: string): { isValid: boolean; saniti
 /**
  * Rate limiting helper
  */
-export const checkRateLimit = (identifier: string, maxRequests: number = 100, windowMs: number = 60000): boolean => {
+export const checkRateLimit = (identifier: string, _maxRequests: number = 100, windowMs: number = 60000): boolean => {
   const key = `rate_limit_${identifier}`;
   const now = Date.now();
   const lastRequest = localStorage.getItem(key);

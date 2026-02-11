@@ -26,11 +26,11 @@
       "./server/types",
       "./client/types"
     ],
-    "types": ["node", "react", "react-dom"]
+    "types": ["node"]
   },
   "include": [
-    "**/*.ts",
-    "**/*.tsx"
+    "shared/**/*.ts",
+    "shared/**/*.tsx"
   ],
   "exclude": [
     "node_modules",

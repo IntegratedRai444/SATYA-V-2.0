@@ -15,7 +15,7 @@ interface SystemHealth {
     image: { status: 'Available' | 'Standby' | 'Idle'; primary: string; notes: string };
     video: { status: 'Available' | 'Standby' | 'Idle'; primary: string; notes: string };
     audio: { status: 'Available' | 'Standby' | 'Idle'; primary: string; notes: string };
-    multimodal: { status: 'Available' | 'Standby' | 'Idle'; primary: string; notes: string };
+    text: { status: 'Available' | 'Standby' | 'Idle'; primary: string; notes: string };
   };
   runtime: {
     apiGateway: 'Ready' | 'Not Started';
@@ -46,10 +46,10 @@ const SystemStatus: React.FC<SystemStatusProps> = ({ isOpen, onClose }) => {
         primary: 'CNN + LSTM', 
         notes: 'Voice synthesis detection' 
       },
-      multimodal: { 
-        status: 'Idle', 
-        primary: 'Fusion Engine', 
-        notes: 'Requires ≥2 inputs' 
+      text: { 
+        status: 'Available', 
+        primary: 'NLP Transformer', 
+        notes: 'AI text generation detection' 
       },
     },
     runtime: {
@@ -242,18 +242,18 @@ const SystemStatus: React.FC<SystemStatusProps> = ({ isOpen, onClose }) => {
                   </span>
                 </div>
 
-                {/* Multimodal Model */}
+                {/* Text Model */}
                 <div className="grid grid-cols-4 gap-2 items-center text-xs">
-                  <span className="text-gray-300">Multimodal</span>
-                  <span className="text-gray-400 truncate" title={systemHealth.models.multimodal.primary}>
-                    {systemHealth.models.multimodal.primary}
+                  <span className="text-gray-300">Text</span>
+                  <span className="text-gray-400 truncate" title={systemHealth.models.text.primary}>
+                    {systemHealth.models.text.primary}
                   </span>
                   <div className="flex items-center gap-1">
-                    <span>{getModelStatusDot(systemHealth.models.multimodal.status)}</span>
-                    <span className="text-gray-400">{systemHealth.models.multimodal.status}</span>
+                    <span>{getModelStatusDot(systemHealth.models.text.status)}</span>
+                    <span className="text-gray-400">{systemHealth.models.text.status}</span>
                   </div>
-                  <span className="text-gray-500 truncate" title={systemHealth.models.multimodal.notes}>
-                    {systemHealth.models.multimodal.notes}
+                  <span className="text-gray-500 truncate" title={systemHealth.models.text.notes}>
+                    {systemHealth.models.text.notes}
                   </span>
                 </div>
               </div>

@@ -1,18 +1,19 @@
+import { setInterval } from 'timers';
 import client from 'prom-client';
 import { logger } from '../config/logger';
 
 // Create a Registry to register the metrics
-const register = new client.Registry();
+const register = new (client as any).Registry();
 
 // Enable collection of default metrics
-client.collectDefaultMetrics({ 
+(client as any).collectDefaultMetrics({ 
   register,
   prefix: 'node_',
   gcDurationBuckets: [0.1, 0.5, 1, 2, 5]
 });
 
 // HTTP Metrics
-export const httpRequestDuration = new client.Histogram({
+export const httpRequestDuration = new (client as any).Histogram({
   name: 'http_request_duration_seconds',
   help: 'Duration of HTTP requests in seconds',
   labelNames: ['method', 'route', 'status_code'],
@@ -20,14 +21,14 @@ export const httpRequestDuration = new client.Histogram({
   registers: [register]
 });
 
-export const httpRequestsTotal = new client.Counter({
+export const httpRequestsTotal = new (client as any).Counter({
   name: 'http_requests_total',
   help: 'Total number of HTTP requests',
   labelNames: ['method', 'route', 'status_code'],
   registers: [register]
 });
 
-export const httpRequestErrors = new client.Counter({
+export const httpRequestErrors = new (client as any).Counter({
   name: 'http_request_errors_total',
   help: 'Total number of HTTP request errors',
   labelNames: ['method', 'route', 'status_code', 'error_type'],
@@ -35,7 +36,7 @@ export const httpRequestErrors = new client.Counter({
 });
 
 // Database Metrics
-export const dbQueryDuration = new client.Histogram({
+export const dbQueryDuration = new (client as any).Histogram({
   name: 'db_query_duration_seconds',
   help: 'Duration of database queries in seconds',
   labelNames: ['operation', 'collection', 'success'],
@@ -43,7 +44,7 @@ export const dbQueryDuration = new client.Histogram({
   registers: [register]
 });
 
-export const dbConnections = new client.Gauge({
+export const dbConnections = new (client as any).Gauge({
   name: 'db_connections',
   help: 'Number of database connections',
   labelNames: ['state'],
@@ -51,21 +52,21 @@ export const dbConnections = new client.Gauge({
 });
 
 // WebSocket Metrics
-export const wsConnections = new client.Gauge({
+export const wsConnections = new (client as any).Gauge({
   name: 'websocket_connections',
   help: 'Number of active WebSocket connections',
   labelNames: ['status'],
   registers: [register]
 });
 
-export const wsMessages = new client.Counter({
+export const wsMessages = new (client as any).Counter({
   name: 'websocket_messages_total',
   help: 'Total number of WebSocket messages processed',
   labelNames: ['type', 'status'],
   registers: [register]
 });
 
-export const wsMessageProcessingTime = new client.Histogram({
+export const wsMessageProcessingTime = new (client as any).Histogram({
   name: 'websocket_message_processing_seconds',
   help: 'Time taken to process WebSocket messages',
   labelNames: ['type'],
@@ -74,7 +75,7 @@ export const wsMessageProcessingTime = new client.Histogram({
 });
 
 // Error Metrics
-export const errorCounter = new client.Counter({
+export const errorCounter = new (client as any).Counter({
   name: 'application_errors_total',
   help: 'Total number of application errors',
   labelNames: ['type', 'severity', 'component'],
@@ -82,7 +83,7 @@ export const errorCounter = new client.Counter({
 });
 
 // Memory Metrics
-const memoryUsage = new client.Gauge({
+const memoryUsage = new (client as any).Gauge({
   name: 'node_memory_usage_bytes',
   help: 'Memory usage in bytes',
   labelNames: ['type'],
@@ -120,7 +121,7 @@ export const metrics = {
 
 // Log metrics initialization
 logger.info('Metrics collection initialized', {
-  defaultMetrics: client.collectDefaultMetrics.length,
+  defaultMetrics: (client as any).collectDefaultMetrics.length || 0,
   customMetrics: Object.keys(metrics).length,
   timestamp: new Date().toISOString()
 });

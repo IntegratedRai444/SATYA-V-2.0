@@ -63,7 +63,24 @@ router.get('/',
       res.json({
         success: true,
         data: {
-          jobs: jobs?.map(job => ({
+          jobs: jobs?.map((job: {
+            id: string;
+            type: string;
+            status: string;
+            file_name: string;
+            file_type: string;
+            file_size: number;
+            result?: {
+              confidence?: number;
+              is_deepfake?: boolean;
+              model_name?: string;
+              model_version?: string;
+              summary?: Record<string, unknown>;
+            };
+            report_code: string;
+            created_at: string;
+            completed_at?: string;
+          }) => ({
             ...job,
             modality: job.type,
             filename: job.file_name,
@@ -262,7 +279,7 @@ router.delete('/:jobId',
 export const createAnalysisJob = async (
   userId: string,
   jobData: {
-    modality: 'image' | 'audio' | 'video' | 'multimodal' | 'webcam';
+    modality: 'image' | 'audio' | 'video' | 'text';
     filename: string;
     mime_type: string;
     size_bytes: number;
@@ -274,14 +291,14 @@ export const createAnalysisJob = async (
     .from('tasks')
     .insert({
       user_id: userId,
-      type: 'analysis', // Fixed: Always use 'analysis' for task type
+      type: 'analysis',
       status: jobData.status || 'processing',
       file_name: jobData.filename,
       file_type: jobData.mime_type,
       file_size: jobData.size_bytes,
-      metadata: { 
-        ...jobData.metadata, 
-        media_type: jobData.modality // Store modality in metadata for reference
+      metadata: {
+        ...jobData.metadata,
+        media_type: jobData.modality
       },
       progress: 0,
       started_at: new Date().toISOString(),
@@ -302,6 +319,49 @@ export const createAnalysisJob = async (
   }
 
   return data;
+};
+
+export const getAnalysisHistory = async (
+  userId: string,
+  { limit = 20, offset = 0 }: { limit?: number; offset?: number; type?: string } = {}
+): Promise<{ items: {
+            id: string;
+            type: string;
+            status: string;
+            file_name: string;
+            file_type: string;
+            file_size: number;
+            file_path: string;
+            progress: number;
+            metadata: Record<string, unknown>;
+            error: string | null;
+            report_code: string;
+            started_at: string;
+            completed_at?: string;
+            created_at: string;
+            updated_at: string;
+            deleted_at: string | null;
+          }[]; total: number }> => {
+  const { data, error } = await supabase
+    .from('tasks')
+    .select('id, type, status, file_name, file_type, file_size, file_path, progress, metadata, error, report_code, started_at, completed_at, created_at, updated_at, deleted_at')
+    .eq('user_id', userId)
+    .eq('type', 'analysis')
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (error) {
+    logger.error('Failed to fetch analysis history:', error);
+    throw new Error('Failed to fetch analysis history');
+  }
+
+  const total = await supabase
+    .from('tasks')
+    .select('id', { count: 'exact' })
+    .eq('user_id', userId)
+    .eq('type', 'analysis');
+
+  return { items: data || [], total: total.count || 0 };
 };
 
 // Helper function to update analysis job with results

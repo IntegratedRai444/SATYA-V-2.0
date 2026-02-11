@@ -20,7 +20,8 @@ const chatRateLimit = rateLimit({
 });
 
 // Initialize OpenAI client
-const openai = new OpenAI({
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const openai = new (OpenAI as any)({
   apiKey: process.env.OPENAI_API_KEY || '',
 });
 

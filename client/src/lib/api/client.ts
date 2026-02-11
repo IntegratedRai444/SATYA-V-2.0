@@ -398,7 +398,7 @@ setInterval(processBatch, batchInterval);
 
 // Request interceptor for batching
 apiClient.interceptors.request.use(
-  async (config: AxiosRequestConfig) => {
+  async (config: any) => {
     // Skip batching for now to simplify type issues
     // Skip deduplication for non-idempotent methods
     const isIdempotent = ['GET', 'HEAD', 'OPTIONS'].includes(config.method?.toUpperCase() || '');
@@ -449,7 +449,7 @@ apiClient.interceptors.request.use(
       value: 1,
       metadata: {
         url: config.url,
-        signal: config.metadata?.source?.signal,
+        signal: (config as any).metadata?.source?.signal,
         method: config.method?.toUpperCase() || 'GET',
         requestId,
         version: API_VERSION

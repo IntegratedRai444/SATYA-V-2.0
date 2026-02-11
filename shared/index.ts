@@ -4,7 +4,6 @@ export * from './types';
 // Re-export commonly used types for convenience
 export type { 
   User, 
-  Scan, 
   UserPreferences, 
   AnalysisJob,
   AnalysisResult,

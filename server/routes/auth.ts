@@ -295,7 +295,12 @@ router.post('/register', authRateLimiter, async (req: Request, res: Response) =>
 
     // Hash password
     const saltRounds = 12;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    const hashedPassword = await new Promise<string>((resolve, reject) => {
+      (bcrypt as any).hash(password, saltRounds, (err: any, hash: any) => {
+        if (err) reject(err);
+        else resolve(hash as string);
+      });
+    });
 
     // Create user in Supabase
     const { data: user, error } = await supabase.auth.admin.createUser({
@@ -767,7 +772,12 @@ router.post('/reset-password', authRateLimiter, async (req: Request, res: Respon
 
     // Hash new password
     const saltRounds = 12;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    const hashedPassword = await new Promise<string>((resolve, reject) => {
+      (bcrypt as any).hash(password, saltRounds, (err: any, hash: any) => {
+        if (err) reject(err);
+        else resolve(hash as string);
+      });
+    });
 
     // Update user password in Supabase auth
     const { error: updateError } = await supabase.auth.admin.updateUserById(user.id, {

@@ -178,116 +178,6 @@ export const useAnalysis = () => {
     }
   }, [analysisMutation]);
 
-  const startMultimodalAnalysis = useCallback(async (
-    files: { image?: File; video?: File; audio?: File },
-    options?: AnalysisOptions
-  ) => {
-    const fileId = `multimodal-${Date.now()}`;
-    const fileNames = [
-      files.image?.name,
-      files.video?.name,
-      files.audio?.name
-    ].filter(Boolean).join(', ');
-
-    const newProgress: AnalysisProgress = {
-      fileId,
-      filename: `Multimodal: ${fileNames}`,
-      progress: 0,
-      status: 'uploading'
-    };
-
-    setAnalysisProgress(prev => [...prev, newProgress]);
-
-    try {
-      setAnalysisProgress(prev => 
-        prev.map(p => 
-          p.fileId === fileId
-            ? { ...p, progress: 25, status: 'processing' as const }
-            : p
-        )
-      );
-
-      let jobId: string;
-      
-      if (files.image) {
-        jobId = await analysisService.analyzeImage(files.image, options);
-      } else if (files.video) {
-        jobId = await analysisService.analyzeVideo(files.video, options);
-      } else if (files.audio) {
-        jobId = await analysisService.analyzeAudio(files.audio, options);
-      } else {
-        throw new Error('No files provided for multimodal analysis');
-      }
-
-      const result: AnalysisResult = {
-        success: true,
-        async: true,
-        jobId,
-        estimatedTime: 45000 // 45 seconds for multimodal
-      };
-
-      if (result.success) {
-        if (result.async && result.jobId) {
-          setAnalysisProgress(prev => 
-            prev.map(p => 
-              p.fileId === fileId
-                ? { 
-                    ...p, 
-                    jobId: result.jobId, 
-                    status: 'queued' as const,
-                    message: 'Queued for analysis'
-                  }
-                : p
-            )
-          );
-          
-          if (isConnected) {
-            subscribeToJob(result.jobId);
-          }
-        } else {
-          setAnalysisProgress(prev => 
-            prev.map(p => 
-              p.fileId === fileId
-                ? { 
-                    ...p, 
-                    progress: 100, 
-                    status: 'completed' as const,
-                    result: result.result
-                  }
-                : p
-            )
-          );
-        }
-      } else {
-        setAnalysisProgress(prev => 
-          prev.map(p => 
-            p.fileId === fileId
-              ? { 
-                  ...p, 
-                  status: 'error' as const, 
-                  message: result.error || 'Analysis failed' 
-                }
-              : p
-          )
-        );
-      }
-
-      queryClient.invalidateQueries({ queryKey: ['analysis-results'] });
-    } catch (error) {
-      setAnalysisProgress(prev => 
-        prev.map(p => 
-          p.fileId === fileId
-            ? { 
-                ...p, 
-                status: 'error' as const, 
-                message: (error as Error).message || 'Analysis failed' 
-              }
-            : p
-        )
-      );
-    }
-  }, [subscribeToJob, queryClient, isConnected]);
-
   const clearProgress = useCallback(() => {
     analysisProgress.forEach(progress => {
       if (progress.jobId) {
@@ -326,7 +216,6 @@ export const useAnalysis = () => {
   return {
     analysisProgress,
     startAnalysis,
-    startMultimodalAnalysis,
     clearProgress,
     removeProgress,
     isAnalyzing: analysisMutation.isPending,

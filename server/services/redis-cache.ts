@@ -16,7 +16,7 @@ interface RedisCacheConfig {
 }
 
 class RedisCacheService {
-  private client: Redis | null = null;
+  private client: any;
   private config: RedisCacheConfig;
   private connected = false;
 
@@ -42,13 +42,13 @@ class RedisCacheService {
    */
   private connect(): void {
     try {
-      this.client = new Redis({
+      this.client = (Redis as any).constructor({
         host: this.config.host,
         port: this.config.port,
         password: this.config.password,
         db: this.config.db,
         keyPrefix: this.config.keyPrefix,
-        retryStrategy: (times) => {
+        retryStrategy: (times: number) => {
           const delay = Math.min(times * 50, 2000);
           return delay;
         },
@@ -63,7 +63,7 @@ class RedisCacheService {
         });
       });
 
-      this.client.on('error', (error) => {
+      this.client.on('error', (error: any) => {
         logger.error('Redis error', error);
         this.connected = false;
       });
@@ -180,7 +180,7 @@ class RedisCacheService {
 
     try {
       const values = await this.client!.mget(keys);
-      return values.map(v => v ? JSON.parse(v) as T : null);
+      return values.map((v: string | null) => v ? JSON.parse(v) as T : null);
     } catch (error) {
       logger.error('Redis mget error', error as Error, { keys });
       return keys.map(() => null);

@@ -15,7 +15,7 @@ from functools import lru_cache
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, FieldValidationInfo
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -80,11 +80,12 @@ class Conclusion(BaseModel):
             datetime: lambda v: v.isoformat(),
         }
 
-    @validator("confidence_level", pre=True, always=True)
-    def set_confidence_level(cls, v, values):
+    @field_validator("confidence_level", mode='before')
+    @classmethod
+    def set_confidence_level(cls, v: Any, info: FieldValidationInfo) -> str:
         """Set confidence level based on confidence score"""
-        if "confidence" in values:
-            score = values["confidence"]
+        if info.data and "confidence" in info.data:
+            score = info.data["confidence"]
             if score >= 0.9:
                 return ConfidenceLevel.VERY_HIGH
             elif score >= 0.75:

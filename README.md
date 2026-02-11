@@ -1,11 +1,13 @@
 # SATYA AI - Deepfake Detection Platform
 
 ## 🚀 Overview
+
 SATYA AI is an advanced deepfake detection platform that leverages cutting-edge AI/ML models to identify and analyze manipulated media across multiple modalities (image, audio, video, text). This full-stack application provides a seamless user experience for uploading, analyzing, and managing media content with robust security and performance features.
 
 ## 🌟 Features
 
 ### 🔒 Authentication & Security
+
 - JWT-based authentication with refresh tokens
 - Role-based access control (RBAC)
 - CSRF protection
@@ -14,15 +16,19 @@ SATYA AI is an advanced deepfake detection platform that leverages cutting-edge 
 - Supabase integration for secure auth
 
 ### 📱 Frontend (React + TypeScript)
+
 - Modern, responsive UI with Tailwind CSS
 - Real-time media analysis dashboard
 - Interactive data visualization with Chart.js
 - Progressive Web App (PWA) support
 - Radix UI components for accessibility
 - File upload with drag-and-drop
+- **Text Analysis**: AI-generated text detection with textarea input
 
 ### ⚙️ Backend Architecture (Dual Backend)
+
 #### Node.js + Express (API Gateway)
+
 - RESTful API with versioning
 - Real-time WebSocket support
 - Background job processing
@@ -31,23 +37,28 @@ SATYA AI is an advanced deepfake detection platform that leverages cutting-edge 
 - Drizzle ORM with PostgreSQL
 
 #### Python + FastAPI (ML Processing)
-- Advanced ML/DL model integration
-- Wav2Vec2 for audio deepfake detection
-- Computer vision models for image/video analysis
-- NLP models for text analysis
-- Multimodal fusion detection
-- Lazy loading for optimal performance
 
-### 🤖 AI/ML Integration
+- Advanced ML/DL model integration
 - **Image Detection**: Deepfake detection using EfficientNet/ResNet
 - **Audio Detection**: Wav2Vec2-based deepfake detection
 - **Video Detection**: Temporal 3D CNN + optical flow analysis
 - **Text Analysis**: RoBERTa-based AI text detection
-- **Multimodal Fusion**: Cross-modal analysis for enhanced accuracy
+- **Multimodal Fusion**: Cross-modal analysis for enhanced accuracy (DISABLED)
+- Batch processing support
+- Model versioning and A/B testing
+
+### 🤖 AI/ML Integration
+
+- **Image Detection**: Deepfake detection using EfficientNet/ResNet
+- **Audio Detection**: Wav2Vec2-based deepfake detection
+- **Video Detection**: Temporal 3D CNN + optical flow analysis
+- **Text Analysis**: RoBERTa-based AI text detection
+- **Multimodal Fusion**: Cross-modal analysis for enhanced accuracy (DISABLED)
 - Batch processing support
 - Model versioning and A/B testing
 
 ### 📊 Database (PostgreSQL + Supabase)
+
 - Relational data modeling
 - Row-level security
 - Full-text search
@@ -57,6 +68,7 @@ SATYA AI is an advanced deepfake detection platform that leverages cutting-edge 
 ## 🛠 Tech Stack
 
 ### Frontend
+
 - **Framework**: React 18
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS + CSS Modules
@@ -69,7 +81,9 @@ SATYA AI is an advanced deepfake detection platform that leverages cutting-edge 
 - **E2E**: Playwright
 
 ### Backend (Dual Architecture)
+
 #### Node.js + Express (API Gateway)
+
 - **Runtime**: Node.js 18+
 - **Framework**: Express.js
 - **Language**: TypeScript
@@ -80,6 +94,7 @@ SATYA AI is an advanced deepfake detection platform that leverages cutting-edge 
 - **Testing**: Jest + Supertest
 
 #### Python + FastAPI (ML Processing)
+
 - **Runtime**: Python 3.10+
 - **Framework**: FastAPI
 - **ML Libraries**: PyTorch, TensorFlow, Transformers
@@ -90,6 +105,7 @@ SATYA AI is an advanced deepfake detection platform that leverages cutting-edge 
 - **Testing**: Pytest
 
 ### DevOps
+
 - **CI/CD**: GitHub Actions
 - **Containerization**: Docker + Docker Compose
 - **Process Management**: PM2
@@ -100,6 +116,7 @@ SATYA AI is an advanced deepfake detection platform that leverages cutting-edge 
 ## 🚀 Getting Started
 
 ### Prerequisites
+
 - Node.js 18+ (LTS recommended)
 - Python 3.10+ (with pip)
 - PostgreSQL 14+ (with PostGIS extension)
@@ -110,30 +127,33 @@ SATYA AI is an advanced deepfake detection platform that leverages cutting-edge 
 ### Installation
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/IntegratedRai444/SATYA-V-2.0.git
    cd SATYA-V-2.0
    ```
 
 2. **Install dependencies**
+
    ```bash
    # Install root dependencies
    npm install
-   
+
    # Install client dependencies
    cd client
    npm install
-   
+
    # Install Node.js server dependencies
    cd ../server
    npm install
-   
+
    # Install Python dependencies
    cd python
    pip install -r requirements.txt
    ```
 
 3. **Set up environment variables**
+
    ```bash
    # Copy and configure environment files
    cp .env.example .env
@@ -151,17 +171,18 @@ SATYA AI is an advanced deepfake detection platform that leverages cutting-edge 
    ```
 
 4. **Start the development servers**
+
    ```bash
    # From root directory - starts both Node.js and Python servers
    npm run dev
-   
+
    # Or start individually:
    # Node.js server only
    npm run dev:server
-   
-   # Python ML server only  
+
+   # Python ML server only
    npm run dev:python
-   
+
    # Frontend only
    npm run dev:client
    ```
@@ -169,6 +190,7 @@ SATYA AI is an advanced deepfake detection platform that leverages cutting-edge 
 ## 🧪 Testing
 
 ### Frontend Tests
+
 ```bash
 # Run React frontend tests
 cd client
@@ -182,6 +204,7 @@ npm run test:e2e
 ```
 
 ### Backend Tests
+
 ```bash
 # Run Node.js server tests
 cd server
@@ -196,6 +219,7 @@ npm run test:integration
 ```
 
 ### Load Testing
+
 ```bash
 # Run baseline load test
 npm run test:load:baseline
@@ -211,6 +235,7 @@ npm run test:load:all
 ```
 
 ### Health Checks
+
 ```bash
 # Test all services health
 npm run test:health
@@ -224,18 +249,22 @@ curl -f http://localhost:8000/health      # Python ML API
 ## 🚀 Deployment
 
 ### Environment Variables
+
 Before deployment, ensure all required environment variables are set:
 
 #### Root .env
+
 - `NODE_ENV=production`
 - `API_BASE_URL` - Your production API URL
 
 #### Client/.env
+
 - `VITE_API_URL` - Your production API URL
 - `VITE_SUPABASE_URL` - Your Supabase project URL
 - `VITE_SUPABASE_ANON_KEY` - Your Supabase anon key
 
 #### Server/.env
+
 - `SUPABASE_URL` - Your Supabase project URL
 - `SUPABASE_ANON_KEY` - Your Supabase anon/public key
 - `SUPABASE_SERVICE_ROLE_KEY` - Your Supabase service role key
@@ -243,6 +272,7 @@ Before deployment, ensure all required environment variables are set:
 - `DATABASE_URL` - Full PostgreSQL connection string
 
 #### Server/python/.env
+
 - `ENABLE_ML_MODELS=true` - Enable ML model processing
 - `SUPABASE_URL` - Your Supabase project URL
 - `SUPABASE_ANON_KEY` - Your Supabase anon key
@@ -250,6 +280,7 @@ Before deployment, ensure all required environment variables are set:
 - `USE_GPU=True` - Enable GPU acceleration (if available)
 
 ### Production Build
+
 ```bash
 # Install dependencies with production flag
 npm ci --only=production
@@ -259,6 +290,7 @@ npm run build
 ```
 
 ### Start Production Servers
+
 ```bash
 # Start with PM2 (recommended for production)
 npm run start:prod
@@ -269,6 +301,7 @@ cd server/python && python main_api.py  # Python ML server
 ```
 
 ### Docker Deployment
+
 1. Create production `.env` files in appropriate directories
 2. Build and start all containers:
 
@@ -284,6 +317,7 @@ docker-compose up -d --scale api=4 --scale worker=2
 ```
 
 ### Docker Compose Services
+
 - **Frontend**: React app on port 3000
 - **API Gateway**: Node.js server on port 5001
 - **ML Processing**: Python FastAPI on port 8000
@@ -292,32 +326,38 @@ docker-compose up -d --scale api=4 --scale worker=2
 - **Monitoring**: Prometheus + Grafana
 
 ### Kubernetes Deployment (Optional)
+
 For production deployments, we recommend using Kubernetes. See the `k8s/` directory for example manifests.
 
 ## 📚 Documentation
 
 ### API Documentation
+
 - **Node.js API**: Available at `/api-docs` path on port 5001
 - **Python ML API**: Available at `/api/docs` path on port 8000
-- **OpenAPI Specs**: 
+- **OpenAPI Specs**:
   - Node.js: `/api/v1/openapi.json`
   - Python: `/openapi.json`
-- **Production URLs**: 
+- **Production URLs**:
   - `https://your-api-domain.com/api-docs`
   - `https://your-ml-domain.com/api/docs`
 
 ### Database Schema
+
 See [SATYAAI_DATABASE_SCHEMA.sql](./SATYAAI_DATABASE_SCHEMA.sql) for detailed schema documentation.
 
 ### Architecture
+
 This project uses a **dual-backend architecture**:
+
 - **Node.js API Gateway** (Port 5001): Handles authentication, file uploads, routing
 - **Python ML Processing** (Port 8000): Handles AI/ML model inference
 - **React Frontend** (Port 3000): User interface and dashboard
 
 ### ML Model Documentation
+
 - **Audio Detection**: Wav2Vec2-based models for voice deepfake detection
-- **Image Detection**: EfficientNet/ResNet for image manipulation detection  
+- **Image Detection**: EfficientNet/ResNet for image manipulation detection
 - **Video Detection**: Temporal analysis with 3D CNNs
 - **Text Analysis**: RoBERTa for AI-generated text detection
 - **Multimodal Fusion**: Cross-modal analysis for enhanced accuracy
@@ -331,13 +371,16 @@ This project uses a **dual-backend architecture**:
 5. Open a Pull Request
 
 ## 📄 License
+
 This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
 
 ## 👥 Team
+
 - **[IntegratedRai444](https://github.com/IntegratedRai444)** - Project Lead & Core Developer
 - **Contributors** - Open source community contributors
 
 ## 🙏 Acknowledgments
+
 - **HuggingFace** - For pre-trained models and datasets
 - **PyTorch & TensorFlow** - For deep learning frameworks
 - **FastAPI & Express.js** - For robust web frameworks

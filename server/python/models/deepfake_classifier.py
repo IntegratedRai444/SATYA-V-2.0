@@ -165,38 +165,40 @@ class DeepfakeClassifier(nn.Module):
                     self._load_resnet50()
                 elif model_type == "vit":
                     self._load_vit()
-                elif model_type == "swin":
-                    self._load_swin()
-                else:
-                    raise ValueError(f"Unsupported model type: {model_type}")
-
+                
+                # Move model to device
                 self.model = self.model.to(self.device)
                 
                 # Apply optimizations
                 self._optimize_model()
                 
+                # Set to evaluation mode
                 self.model.eval()
-
-                # Set up transforms
-                self.transform = transforms.Compose(
-                    [
-                        transforms.Resize((224, 224)),
-                        transforms.ToTensor(),
-                        transforms.Normalize(
-                            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                        ),
-                    ]
-                )
                 
                 # Validate model
                 self._validate_model()
                 
                 self.load_time = time.time() - start_time
                 logger.info(f"Model {model_type} loaded successfully in {self.load_time:.2f}s")
-
+                
         except Exception as e:
             logger.error(f"Failed to load model {model_type}: {str(e)}")
             raise ModelLoadError(f"Failed to load model: {str(e)}")
+
+    def _load_model_impl(self, model_type: str) -> None:
+        """Load the specified model type"""
+        if model_type == "efficientnet":
+            self._load_efficientnet()
+        elif model_type == "xception":
+            self._load_xception()
+        elif model_type == "resnet50":
+            self._load_resnet50()
+        elif model_type == "vit":
+            self._load_vit()
+        elif model_type == "swin":
+            self._load_swin()
+        else:
+            raise ValueError(f"Unsupported model type: {model_type}")
 
     def _load_efficientnet(self) -> None:
         """Load EfficientNet-B7 model with HuggingFace fallback and optimization"""

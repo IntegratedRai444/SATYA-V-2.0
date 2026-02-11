@@ -40,7 +40,9 @@ const Login = lazyWithRetry(() => import('@/pages/Login'));
 const Register = lazyWithRetry(() => import('@/pages/auth/Register'));
 const VerifyEmail = lazyWithRetry(() => import('@/pages/auth/VerifyEmail'));
 const Analytics = lazyWithRetry(() => import('@/pages/Analytics'));
-const MultimodalAnalysis = lazyWithRetry(() => import('../pages/MultimodalAnalysis'));
+// DISABLED: Multimodal Analysis
+// const MultimodalAnalysis = lazyWithRetry(() => import('../pages/MultimodalAnalysis'));
+const TextAnalysis = lazyWithRetry(() => import('@/pages/TextAnalysis'));
 const History = lazyWithRetry(() => import('@/pages/History'));
 const Settings = lazyWithRetry(() => import('@/pages/Settings'));
 const Help = lazyWithRetry(() => import('@/pages/Help'));
@@ -158,22 +160,22 @@ export const router = createBrowserRouter([
         ),
       },
       {
-        path: 'smart-analysis',
+        path: 'text-analysis',
         element: (
           <ErrorBoundary level="page">
-            <Suspense fallback={<LoadingState message="Loading Multimodal Analysis..." />}>
-              <MultimodalAnalysis />
+            <Suspense fallback={<LoadingState message="Loading Text Analysis..." />}>
+              <TextAnalysis />
             </Suspense>
           </ErrorBoundary>
         ),
       },
       {
         path: 'scan',
-        element: <Navigate to="/smart-analysis" replace />,
+        element: <Navigate to="/text-analysis" replace />,
       },
       {
         path: 'scan/:id',
-        element: <Navigate to="/smart-analysis" replace />,
+        element: <Navigate to="/text-analysis" replace />,
       },
       {
         path: 'history',
@@ -261,7 +263,7 @@ export const router = createBrowserRouter([
       },
       {
         path: 'multimodal-analysis',
-        element: <Navigate to="/smart-analysis" replace />,
+        element: <Navigate to="/text-analysis" replace />,
       },
       {
         path: 'detection-guide',

@@ -46,7 +46,7 @@ function sanitizeObject(obj: any): any {
   const sanitized: any = {};
   for (const [key, value] of Object.entries(obj)) {
     if (typeof value === 'string') {
-      sanitized[key] = DOMPurify.sanitize(value, {
+      sanitized[key] = (DOMPurify as any).sanitize(value, {
         ALLOWED_TAGS: [],
         ALLOWED_ATTR: []
       });
@@ -80,7 +80,7 @@ export const sanitizePhone = (phone: string): string => {
   if (!phone) return '';
   
   // Remove all non-numeric characters except + and -
-  return phone.replace(/[^\d\+\-]/g, '');
+  return phone.replace(/[^\d+-]/g, '');
 };
 
 /**
@@ -113,7 +113,7 @@ export const sanitizeFileName = (fileName: string): string => {
   
   // Remove path traversal attempts and dangerous characters
   return fileName
-    .replace(/[\\\/]/g, '_')
+    .replace(/[\\/]/g, '_')
     .replace(/\.\./g, '')
     .replace(/[<>:"|?*]/g, '_')
     .toLowerCase();

@@ -190,7 +190,7 @@ class AudioDetector:
             'enabled': True,
             'model_options': [
                 "facebook/wav2vec2-base-960h",
-                "facebook/wav2vec2-large-960h",
+                "microsoft/wavlm-base-plus",
             ]
         })
         
@@ -230,7 +230,14 @@ class AudioDetector:
                     "enabled": True,
                     "model_options": [
                         "facebook/wav2vec2-base-960h",
-                        "facebook/wav2vec2-large-960h",
+                        "microsoft/wavlm-base-plus",
+                    ],
+                },
+                "wav2vec2_second": {
+                    "enabled": True,
+                    "model_options": [
+                        "microsoft/wavlm-base-plus",
+                        "microsoft/wavlm-large-plus",
                     ],
                 }
             },

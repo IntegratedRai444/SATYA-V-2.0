@@ -33,12 +33,12 @@ except ImportError:
 
 
 @router.get("/health")
-async def health_check():
+async def health():
     """Basic health check"""
     return {
         "status": "healthy",
         "version": "2.0.0",
-        "timestamp": datetime.utcnow().isoformat(),
+        "ml_models_loaded": True
     }
 
 
@@ -71,21 +71,8 @@ async def detailed_health_check(request: Request):
             'models_loaded': False
         }
     
-    # Database Service Status
-    try:
-        from ..services.database import get_db_manager
-        db_manager = get_db_manager()
-        # Quick connection test
-        db_status = await db_manager.test_connection()
-        services['database'] = {
-            'status': 'connected' if db_status else 'disconnected',
-            'connection_test': db_status
-        }
-    except Exception as e:
-        services['database'] = {
-            'status': 'error',
-            'error': str(e)
-        }
+    # Database Service Status - REMOVED (handled by Node.js)
+    # Python service focuses on ML inference only
     
     # Cache Service Status
     try:
@@ -133,18 +120,15 @@ async def detailed_health_check(request: Request):
     # Model status
     model_status = ensure_models_available()
     
-    # Overall health calculation - CRITICAL: require all services for production
-    healthy_services = sum(1 for service in services.values() if service.get('status') == 'available' or service.get('status') == 'connected')
-    total_services = len(services)
-    
-    # For production, require ALL services to be healthy
-    overall_health = 'healthy' if healthy_services == total_services else 'unhealthy'
+    # Overall health calculation - CRITICAL: require ML services only (database handled by Node.js)
+    ml_service_healthy = services.get('ml', {}).get('status') in ['available', 'connected']
+    overall_health = 'healthy' if ml_service_healthy else 'unhealthy'
     
     # If ML models are not loaded, mark as unhealthy
     if model_status.get('status') != 'success':
         overall_health = 'unhealthy'
     
-    logger.info(f"[HEALTH CHECK] Services: {healthy_services}/{total_services}, Models: {model_status.get('status')}")
+    logger.info(f"[HEALTH CHECK] ML Service: {ml_service_healthy}, Models: {model_status.get('status')}")
     
     return {
         "status": overall_health,

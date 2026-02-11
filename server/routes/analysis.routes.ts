@@ -1,5 +1,18 @@
 import { Router, Request, Response } from 'express';
-import multer from 'multer';
+import multer, { FileFilterCallback } from 'multer';
+
+// Interface for multer file in fileFilter
+interface MulterFile {
+  fieldname: string;
+  originalname: string;
+  encoding: string;
+  mimetype: string;
+  size: number;
+  destination: string;
+  filename: string;
+  path: string;
+  buffer: Buffer;
+}
 import path from 'path';
 import { validateRequest } from '../middleware/validate-request';
 import { logger } from '../config/logger';
@@ -10,6 +23,8 @@ import { randomUUID } from 'crypto';
 import { AuthenticatedRequest } from '../types/auth';
 import webSocketManager from '../services/websocket-manager';
 import { setImmediate } from 'timers';
+
+type AnalysisModality = 'image' | 'video' | 'audio' | 'text';
 
 // Helper function to send job progress updates
 const sendJobProgress = (userId: string, jobId: string, stage: string, progress: number) => {
@@ -49,7 +64,7 @@ const ALLOWED_FILE_TYPES = {
   },
   'image/webp': { 
     ext: '.webp', 
-    magic: [0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50],
+    magic: [0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0x57, 0x45, 0x42, 0x50],
     maxSize: 10 * 1024 * 1024 // 10MB for WebP
   },
   'video/mp4': { 
@@ -121,7 +136,7 @@ const upload = multer({
     fields: 5, // Limit number of form fields
     headerPairs: 20, // Limit number of header key-value pairs
   },
-  fileFilter: (req, file, cb) => {
+  fileFilter: (req: Request, file: MulterFile, cb: FileFilterCallback) => {
     try {
       // Validate MIME type
       const mimeType = file.mimetype as AllowedMimeType;
@@ -184,7 +199,7 @@ const upload = multer({
       }
 
       cb(null, true);
-    } catch (error) {
+    } catch (error: unknown) {
       const err = error instanceof Error ? error : new Error('Unknown error during file validation');
       logger.error('File validation error', { 
         error: err.message, 
@@ -313,7 +328,7 @@ router.post(
     const file = req.file;
     const userId = req.user?.id;
 
-    logger.info(`[ANALYSIS REQUEST] ${type} analysis started`, {
+    logger.info(`[ROUTE] Incoming ${type} analysis request`, {
       correlationId,
       type,
       userId,
@@ -322,20 +337,37 @@ router.post(
     });
 
     try {
+      // Validate authentication
+      if (!userId) {
+        logger.warn(`[AUTH] User not authenticated for ${type} analysis`, { correlationId });
+        return res.status(401).json({
+          success: false,
+          error: 'Authentication required'
+        });
+      }
+
       // Validate file
       if (!file) {
+        logger.warn(`[IMAGE] No file uploaded`, { correlationId });
         return res.status(400).json({
           success: false,
           error: 'No file uploaded',
         });
       }
 
+      logger.info(`[IMAGE] File parsed successfully`, {
+        correlationId,
+        filename: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size
+      });
+
       // Create job with standardized ID
       const jobId = `job_${randomUUID()}`;
       
       // Create job in database
       const job = await createAnalysisJob(userId || '', {
-        modality: type as 'image' | 'video' | 'audio',
+        modality: type as AnalysisModality,
         filename: file.originalname,
         mime_type: file.mimetype,
         size_bytes: file.size,
@@ -381,11 +413,6 @@ router.post(
           }
 
           const pythonResponse = await pythonBridge.post(`/api/v2/analysis/unified/${type}`, formData, {
-            headers: {
-              ...formData.getHeaders(),
-              'X-User-ID': userId,
-              'X-Job-ID': jobId,
-            },
             timeout: 300000, // 5 minutes
           }) as {
             data: {
@@ -522,7 +549,7 @@ router.post(
       
       // Create job in database
       const job = await createAnalysisJob(userId || '', {
-        modality: type as 'image' | 'video' | 'audio',
+        modality: type as AnalysisModality,
         filename: file.originalname,
         mime_type: file.mimetype,
         size_bytes: file.size,
@@ -568,11 +595,6 @@ router.post(
           }
 
           const pythonResponse = await pythonBridge.post(`/api/v2/analysis/unified/${type}`, formData, {
-            headers: {
-              ...formData.getHeaders(),
-              'X-User-ID': userId,
-              'X-Job-ID': jobId,
-            },
             timeout: 300000, // 5 minutes
           }) as {
             data: {
@@ -709,7 +731,7 @@ router.post(
       
       // Create job in database
       const job = await createAnalysisJob(userId || '', {
-        modality: type as 'image' | 'video' | 'audio',
+        modality: type as AnalysisModality,
         filename: file.originalname,
         mime_type: file.mimetype,
         size_bytes: file.size,
@@ -755,11 +777,6 @@ router.post(
           }
 
           const pythonResponse = await pythonBridge.post(`/api/v2/analysis/unified/${type}`, formData, {
-            headers: {
-              ...formData.getHeaders(),
-              'X-User-ID': userId,
-              'X-Job-ID': jobId,
-            },
             timeout: 300000, // 5 minutes
           }) as {
             data: {
@@ -860,6 +877,209 @@ router.post(
         error: 'Internal server error',
       });
     }
+  }
+);
+
+// Text analysis endpoint
+router.post(
+  '/api/v2/analysis/text',
+  validateRequest,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const type = 'text';
+    const correlationId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const userId = req.user?.id;
+    const { text } = req.body;
+
+    logger.info(`[ANALYSIS REQUEST] ${type} analysis started`, {
+      correlationId,
+      type,
+      userId,
+      textLength: text?.length || 0,
+    });
+
+    try {
+      // Validate text input
+      if (!text || typeof text !== 'string') {
+        return res.status(400).json({
+          success: false,
+          error: 'Text content is required',
+        });
+      }
+
+      if (text.trim().length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Text content cannot be empty',
+        });
+      }
+
+      if (text.length > 10000) {
+        return res.status(400).json({
+          success: false,
+          error: 'Text content too long (maximum 10,000 characters)',
+        });
+      }
+
+      // Create job with standardized ID
+      const jobId = `job_${randomUUID()}`;
+      
+      // Create job in database
+      const job = await createAnalysisJob(userId || '', {
+        modality: type as 'image' | 'video' | 'audio' | 'text',
+        filename: 'text-input',
+        mime_type: 'text/plain',
+        size_bytes: text.length,
+        metadata: {
+          textLength: text.length,
+          wordCount: text.split(/\s+/).filter(word => word.length > 0).length,
+        },
+      });
+
+      logger.info(`[ANALYSIS JOB] Created job ${jobId}`, {
+        correlationId,
+        jobId,
+        type,
+      });
+
+      // Send immediate response with job_id
+      res.status(202).json({
+        success: true,
+        job_id: jobId,
+        status: 'processing',
+      });
+
+      // Process in background
+      setImmediate(async () => {
+        try {
+          // Send progress update
+          if (userId) {
+            sendJobProgress(userId, jobId, 'analyzing', 30);
+          }
+
+          // Forward to Python service for text analysis
+          const pythonResponse = await pythonBridge.post(`/api/v2/analysis/${type}`, {
+            text,
+            job_id: jobId,
+            user_id: userId || '',
+          }, {
+            timeout: 60000, // 1 minute for text analysis
+          }) as {
+            data: {
+              success: boolean;
+              is_ai_generated: boolean;
+              confidence: number;
+              explanation: string;
+              model_name: string;
+            };
+          };
+
+          if (userId) {
+            sendJobProgress(userId, jobId, 'processing', 70);
+          }
+
+          // Python returns text analysis result
+          const textResult = pythonResponse.data;
+          
+          // Node owns the job lifecycle - update with results
+          await updateAnalysisJobWithResults(job.id, {
+            status: 'completed',
+            confidence: textResult.confidence,
+            is_deepfake: textResult.is_ai_generated,
+            model_name: textResult.model_name,
+            model_version: '1.0.0',
+            analysis_data: {
+              explanation: textResult.explanation,
+              text_length: text.length,
+            },
+            proof_json: {
+              analysis_type: 'text',
+              timestamp: new Date().toISOString(),
+            },
+          });
+
+          if (userId) {
+            sendJobProgress(userId, jobId, 'completed', 100);
+
+            // Send WebSocket event
+            webSocketManager.sendEventToUser(userId, {
+              type: 'JOB_COMPLETED',
+              jobId,
+              timestamp: Date.now(),
+              data: {
+                status: 'completed',
+                confidence: textResult.confidence,
+                is_ai_generated: textResult.is_ai_generated,
+                model_name: textResult.model_name,
+                explanation: textResult.explanation,
+              },
+            });
+          }
+
+          logger.info(`[ANALYSIS COMPLETED] Job ${jobId} finished successfully`, {
+            correlationId,
+            jobId,
+            type,
+            confidence: textResult.confidence,
+            is_ai_generated: textResult.is_ai_generated,
+          });
+
+        } catch (error) {
+          // Handle analysis error
+          const errorMessage = error && typeof error === 'object' && 'response' in error 
+            ? ((error as unknown) as { response: { data?: { detail?: string } } }).response?.data?.detail || ((error as unknown) as Error).message || 'Analysis failed'
+            : ((error as unknown) as Error).message || 'Analysis failed';
+          
+          await updateAnalysisJobWithResults(job.id, {
+            status: 'failed',
+            error_message: errorMessage,
+          });
+
+          if (userId) {
+            // Send WebSocket error event
+            webSocketManager.sendEventToUser(userId, {
+              type: 'JOB_FAILED',
+              jobId,
+              timestamp: Date.now(),
+              data: {
+                error: errorMessage,
+              },
+            });
+          }
+
+          logger.error(`[ANALYSIS FAILED] Job ${jobId} failed`, {
+            correlationId,
+            jobId,
+            type,
+            error: errorMessage,
+          });
+        }
+      });
+
+    } catch (error) {
+      logger.error(`[ANALYSIS ERROR] ${type} analysis failed`, {
+        correlationId,
+        type,
+        error: (error as Error).message,
+      });
+      
+      return res.status(500).json({
+        success: false,
+        error: 'Internal server error',
+      });
+    }
+  }
+);
+
+// DISABLED: Multimodal analysis endpoint - temporarily deactivated
+router.post(
+  '/api/v2/analysis/multimodal',
+  upload.single('file'),
+  validateRequest,
+  async (req: AuthenticatedRequest, res: Response) => {
+    return res.status(410).json({
+      success: false,
+      error: "Multimodal analysis is temporarily disabled"
+    });
   }
 );
 

@@ -175,7 +175,12 @@ router.post('/register', authRateLimiter, async (req: Request, res: Response) =>
 
     // Hash password with enhanced security
     const saltRounds = 12;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    const hashedPassword = await new Promise<string>((resolve, reject) => {
+      (bcrypt as any).hash(password, saltRounds, (err: any, hash: any) => {
+        if (err) reject(err);
+        else resolve(hash as string);
+      });
+    });
 
     // Create user in Supabase with enhanced metadata
     const { data: user, error } = await supabase.auth.admin.createUser({

@@ -6,7 +6,7 @@ export interface ModelInfo {
   version: string;
   description?: string;
   isActive: boolean;
-  supportedTypes: Array<'image' | 'video' | 'audio' | 'text' | 'multimodal'>;
+  supportedTypes: Array<'image' | 'video' | 'audio' | 'text'>;
   createdAt: string;
   updatedAt: string;
 }
@@ -34,7 +34,7 @@ export interface AnalysisOptions {
 
 export interface AnalysisResult {
   id: string;
-  type: 'image' | 'video' | 'audio' | 'multimodal';
+  type: 'image' | 'video' | 'audio' | 'text';
   status: 'processing' | 'completed' | 'failed';
   proof?: AnalysisProof;
   result?: {
@@ -89,7 +89,7 @@ export class AnalysisService extends BaseService {
     }
 
     try {
-      const response = await this.post<JobStartResponse>('/api/v2/analysis/image', formData, {
+      const response = await this.post<JobStartResponse>('analysis/image', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -137,7 +137,7 @@ export class AnalysisService extends BaseService {
     formData.append('file', file);
 
     try {
-      const response = await this.post<JobStartResponse>('/api/v2/analysis/video', formData, {
+      const response = await this.post<JobStartResponse>('analysis/video', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -164,7 +164,7 @@ export class AnalysisService extends BaseService {
     formData.append('file', file);
 
     try {
-      const response = await this.post<JobStartResponse>('/api/v2/analysis/audio', formData, {
+      const response = await this.post<JobStartResponse>('analysis/audio', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -183,38 +183,12 @@ export class AnalysisService extends BaseService {
     }
   }
 
+  // DISABLED: Multimodal analysis temporarily deactivated
   async analyzeMultimodal(
-    file: File,
-    options: AnalysisOptions = {}
+    _file: File,
+    _options: AnalysisOptions = {}
   ): Promise<string> {
-    const formData = new FormData();
-    formData.append('files', file);
-
-    // Add additional files if provided in metadata
-    if (options.metadata?.files) {
-      (options.metadata.files as File[]).forEach((f: File) => {
-        formData.append('files', f);
-      });
-    }
-
-    try {
-      const response = await this.post<JobStartResponse>('/api/v2/analysis/multimodal', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-        signal: options.signal,
-        timeout: 360000, // 6 minutes timeout
-      });
-
-      if (!response.success || !response.job_id) {
-        throw new Error('Failed to start analysis job');
-      }
-
-      return response.job_id;
-    } catch (error) {
-      console.error('Multimodal analysis error:', error);
-      throw new Error('Failed to start multimodal analysis');
-    }
+    throw new Error('Multimodal analysis is temporarily disabled');
   }
 
   async getAnalysisHistory(params: {
@@ -235,7 +209,7 @@ export class AnalysisService extends BaseService {
    * @returns List of available models with pagination info
    */
   async getModels(options: {
-    type?: 'image' | 'video' | 'audio' | 'text' | 'multimodal';
+    type?: 'image' | 'video' | 'audio' | 'text';
     activeOnly?: boolean;
     limit?: number;
     offset?: number;
@@ -252,7 +226,7 @@ export class AnalysisService extends BaseService {
           version: '1.0.0',
           description: 'Default analysis model',
           isActive: true,
-          supportedTypes: ['image', 'video', 'audio', 'text', 'multimodal'],
+          supportedTypes: ['image', 'video', 'audio', 'text'],
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         }],

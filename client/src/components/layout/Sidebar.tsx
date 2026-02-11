@@ -3,7 +3,7 @@ import {
   Image, 
   Video, 
   Mic, 
-  Layers, 
+  FileText, 
   Settings, 
   HelpCircle, 
   ChevronLeft,
@@ -142,20 +142,20 @@ const Sidebar = ({ isExpanded, onToggle }: SidebarProps) => {
                 <span className="text-[15px] font-medium">Audio Analysis</span>
               </Link>
               
-              {/* Multimodal Analysis */}
+              {/* Text Analysis */}
               <Link
-                to="/multimodal-analysis"
+                to="/text-analysis"
                 className={clsx(
                   "w-full flex items-center gap-4 px-4 py-3.5 rounded-lg transition-all duration-150",
                   "focus:outline-none focus:ring-2 focus:ring-[#00a8ff] focus:ring-offset-2 focus:ring-offset-[#0f1419]",
-                  isActive('/multimodal-analysis')
+                  isActive('/text-analysis')
                     ? "bg-[#00a8ff]/10 text-[#00a8ff] border-l-3 border-[#00a8ff]"
                     : "text-gray-400 hover:bg-[#1a2a3a] hover:text-white"
                 )}
-                aria-current={isActive('/multimodal-analysis') ? 'page' : undefined}
+                aria-current={isActive('/text-analysis') ? 'page' : undefined}
               >
-                <Layers className="w-5 h-5" />
-                <span className="text-[15px] font-medium">Multimodal</span>
+                <FileText className="w-5 h-5" />
+                <span className="text-[15px] font-medium">Text Analysis</span>
               </Link>
 
               {/* Batch Analysis - DISABLED */}

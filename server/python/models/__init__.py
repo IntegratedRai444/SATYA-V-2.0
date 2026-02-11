@@ -3,6 +3,23 @@ SatyaAI Models Package
 Enhanced with comprehensive HuggingFace Transformers integration
 """
 
+# Legacy models for backward compatibility
+try:
+    from ..models import XceptionDeepfakeDetector
+    XCEPTION_DETECTOR_AVAILABLE = True
+except ImportError as e:
+    try:
+        # Fallback to direct import with correct path
+        import sys
+        import os
+        parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        sys.path.insert(0, parent_dir)
+        from models import XceptionDeepfakeDetector
+        XCEPTION_DETECTOR_AVAILABLE = True
+    except ImportError as e2:
+        print(f"Warning: XceptionDeepfakeDetector not available: {e2}")
+        XCEPTION_DETECTOR_AVAILABLE = False
+
 # Core models
 try:
     from .deepfake_classifier import DeepfakeClassifier
@@ -121,6 +138,7 @@ def get_detector_by_type(model_type: str, **kwargs):
 
 # Export main classes
 __all__ = [
+    'XceptionDeepfakeDetector',
     'DeepfakeClassifier',
     'ImageModel', 
     'AudioModel',

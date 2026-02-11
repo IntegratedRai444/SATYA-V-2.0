@@ -3,7 +3,6 @@ import { Server, IncomingMessage } from 'http';
 import { URLSearchParams } from 'url';
 import { logger } from '../config/logger';
 import { z } from 'zod';
-import { supabase } from '../config/supabase';
 
 // Timer imports
 import { setInterval, clearInterval } from 'timers';
@@ -72,25 +71,6 @@ type WebSocketMessage = {
   data?: unknown;
 };
 
-// Supabase Auth Service
-const supabaseAuthService = {
-  verifyToken: async (token: string) => {
-    try {
-      const { data: { user }, error } = await supabase.auth.getUser(token);
-      if (error || !user) {
-        return null;
-      }
-      return {
-        userId: user.id,
-        username: user.email || '',
-        email: user.email,
-        sessionId: user.id // Use user ID as session identifier
-      };
-    } catch (e) {
-      return null;
-    }
-  }
-};
 
 // Define WebSocket message schema
 const messageSchema = z.object({
@@ -321,80 +301,87 @@ export class WebSocketManager {
       return;
     }
 
-    // Get user info from token (this should work since verifyClient already validated it)
-    const authResult = await supabaseAuthService.verifyToken(token);
-    if (!authResult) {
-      logger.warn('WebSocket connection rejected: Could not verify token in handleConnection');
-      ws.terminate();
-      return;
-    }
+    // Get user info from Supabase directly (since verifyClient already validated the token)
+    try {
+      const { supabase } = await import('../config/supabase');
+      const { data: { user }, error } = await supabase.auth.getUser(token);
+      
+      if (error || !user) {
+        logger.warn('WebSocket connection rejected: Could not get user info', { error: error?.message });
+        ws.terminate();
+        return;
+      }
 
-    logger.info('WebSocket connection authenticated successfully', { 
-      userId: authResult.userId, 
-      email: authResult.email 
-    });
-    
-    // Initialize client properties
-    ws.clientId = this.generateClientId();
-    ws.userId = authResult.userId;
-    ws.username = authResult.username;
-    ws.sessionId = authResult.sessionId;
-    ws.ipAddress = req.socket.remoteAddress || 'unknown';
-    ws.connectedAt = Date.now();
-    ws.connectionTime = Date.now();
-    ws.isAlive = true;
-    ws.lastActivity = Date.now();
-    ws.messageQueue = [];
-    ws.maxQueueSize = MESSAGE_LIMITS.MAX_QUEUE_SIZE;
-    ws.subscribedChannels = new Set();
-    ws.messageCount = 0;
-    ws.lastMessageTime = 0;
-    ws.reconnectAttempts = 0;
-    ws.maxReconnectAttempts = 5;
-    ws.reconnectTimeout = null;
-
-    // Add to clients map
-    if (!this.clients.has(ws.userId)) {
-      this.clients.set(ws.userId, new Set());
-    }
-    this.clients.get(ws.userId)!.add(ws);
-
-    logger.info('[WS CONNECT] New WebSocket connection', {
-      clientId: ws.clientId,
-      userId: ws.userId,
-      username: ws.username,
-      ipAddress: ws.ipAddress
-    });
-
-    // Setup event handlers
-    ws.on('pong', () => {
-      ws.isAlive = true;
+      logger.info('WebSocket connection authenticated successfully', { 
+        userId: user.id, 
+        email: user.email 
+      });
+      
+      // Initialize client properties
+      ws.clientId = this.generateClientId();
+      ws.userId = user.id;
+      ws.username = user.email || '';
+      ws.email = user.email || '';
+      ws.sessionId = '';
+      ws.ipAddress = req.socket.remoteAddress || 'unknown';
+      ws.connectedAt = Date.now();
+      ws.connectionTime = Date.now();
       ws.lastActivity = Date.now();
-    });
+      ws.messageQueue = [];
+      ws.maxQueueSize = MESSAGE_LIMITS.MAX_QUEUE_SIZE;
+      ws.subscribedChannels = new Set();
+      ws.messageCount = 0;
+      ws.lastMessageTime = 0;
+      ws.reconnectAttempts = 0;
+      ws.maxReconnectAttempts = 5;
+      ws.reconnectTimeout = null;
 
-    ws.on('message', (data: RawData) => {
-      this.handleMessage(ws, data);
-    });
+      // Add to clients map
+      if (!this.clients.has(ws.userId)) {
+        this.clients.set(ws.userId, new Set());
+      }
+      this.clients.get(ws.userId)!.add(ws);
 
-    ws.on('close', () => {
-      this.handleDisconnect(ws);
-    });
-
-    ws.on('error', (error) => {
-      logger.error('WebSocket error:', error);
-      this.handleDisconnect(ws);
-    });
-
-    // Send welcome message
-    this.sendToClient(ws, {
-      type: WebSocketMessageType.CONNECTED,
-      timestamp: Date.now(),
-      payload: {
+      logger.info('[WS CONNECT] New WebSocket connection', {
         clientId: ws.clientId,
         userId: ws.userId,
-        message: 'Connection established successfully'
-      }
-    });
+        username: ws.username,
+        ipAddress: ws.ipAddress
+      });
+
+      // Setup event handlers
+      ws.on('pong', () => {
+        ws.isAlive = true;
+        ws.lastActivity = Date.now();
+      });
+
+      ws.on('message', (data: RawData) => {
+        this.handleMessage(ws, data);
+      });
+
+      ws.on('close', () => {
+        this.handleDisconnect(ws);
+      });
+
+      ws.on('error', (error) => {
+        logger.error('WebSocket error:', error);
+        this.handleDisconnect(ws);
+      });
+
+      // Send welcome message
+      this.sendToClient(ws, {
+        type: WebSocketMessageType.CONNECTED,
+        timestamp: Date.now(),
+        payload: {
+          clientId: ws.clientId,
+          userId: ws.userId,
+          message: 'Connection established successfully'
+        }
+      });
+    } catch (error) {
+      logger.error('Error setting up WebSocket connection:', error);
+      ws.terminate();
+    }
   }
 
   private handleMessage(ws: WebSocketClient, data: RawData): void {

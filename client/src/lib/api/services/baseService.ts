@@ -1,5 +1,4 @@
 import { v4 as uuidv4 } from 'uuid';
-import axios from 'axios';
 import { getCsrfToken } from './csrfService';
 
 // Request cache for deduplication
@@ -170,17 +169,7 @@ class RetryManager {
   }
 }
 
-import { API_CONFIG } from '../../config/urls';
-
-// Create axios instance
-const apiClient = axios.create({
-  baseURL: API_CONFIG.BASE_URL,
-  withCredentials: true,
-  headers: {
-    'Content-Type': 'application/json',
-    'X-Requested-With': 'XMLHttpRequest',
-  },
-});
+import { apiClient } from '../client';
 
 export type RequestHeaders = {
   'X-Request-Id'?: string;
