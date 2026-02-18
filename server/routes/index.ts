@@ -125,4 +125,4 @@ router.use((req: any, res: Response) => {
   `);
 });
 
-export { router };
+export { router as routes };

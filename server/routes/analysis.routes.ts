@@ -319,7 +319,7 @@ const handleAnalysisError = async (error: unknown, res: Response, jobId?: string
 
 // Image analysis endpoint
 router.post(
-  '/api/v2/analysis/image',
+  '/image',
   upload.single('file'),
   validateRequest,
   async (req: AuthenticatedRequest, res: Response) => {
@@ -342,7 +342,7 @@ router.post(
         logger.warn(`[AUTH] User not authenticated for ${type} analysis`, { correlationId });
         return res.status(401).json({
           success: false,
-          error: 'Authentication required'
+          message: 'Authentication required'
         });
       }
 
@@ -351,7 +351,7 @@ router.post(
         logger.warn(`[IMAGE] No file uploaded`, { correlationId });
         return res.status(400).json({
           success: false,
-          error: 'No file uploaded',
+          message: 'No file uploaded',
         });
       }
 
@@ -510,7 +510,7 @@ router.post(
       
       return res.status(500).json({
         success: false,
-        error: 'Internal server error',
+        message: 'Internal server error',
       });
     }
   }
@@ -518,7 +518,7 @@ router.post(
 
 // Video analysis endpoint
 router.post(
-  '/api/v2/analysis/video',
+  '/video',
   upload.single('file'),
   validateRequest,
   async (req: AuthenticatedRequest, res: Response) => {
@@ -540,7 +540,7 @@ router.post(
       if (!file) {
         return res.status(400).json({
           success: false,
-          error: 'No file uploaded',
+          message: 'No file uploaded',
         });
       }
 
@@ -692,7 +692,7 @@ router.post(
       
       return res.status(500).json({
         success: false,
-        error: 'Internal server error',
+        message: 'Internal server error',
       });
     }
   }
@@ -700,7 +700,7 @@ router.post(
 
 // Audio analysis endpoint
 router.post(
-  '/api/v2/analysis/audio',
+  '/audio',
   upload.single('file'),
   validateRequest,
   async (req: AuthenticatedRequest, res: Response) => {
@@ -722,7 +722,7 @@ router.post(
       if (!file) {
         return res.status(400).json({
           success: false,
-          error: 'No file uploaded',
+          message: 'No file uploaded',
         });
       }
 
@@ -874,7 +874,7 @@ router.post(
       
       return res.status(500).json({
         success: false,
-        error: 'Internal server error',
+        message: 'Internal server error',
       });
     }
   }
@@ -882,7 +882,7 @@ router.post(
 
 // Text analysis endpoint
 router.post(
-  '/api/v2/analysis/text',
+  '/text',
   validateRequest,
   async (req: AuthenticatedRequest, res: Response) => {
     const type = 'text';
@@ -902,21 +902,21 @@ router.post(
       if (!text || typeof text !== 'string') {
         return res.status(400).json({
           success: false,
-          error: 'Text content is required',
+          message: 'Text content is required',
         });
       }
 
       if (text.trim().length === 0) {
         return res.status(400).json({
           success: false,
-          error: 'Text content cannot be empty',
+          message: 'Text content cannot be empty',
         });
       }
 
       if (text.length > 10000) {
         return res.status(400).json({
           success: false,
-          error: 'Text content too long (maximum 10,000 characters)',
+          message: 'Text content too long (maximum 10,000 characters)',
         });
       }
 
@@ -1064,7 +1064,7 @@ router.post(
       
       return res.status(500).json({
         success: false,
-        error: 'Internal server error',
+        message: 'Internal server error',
       });
     }
   }
@@ -1072,13 +1072,13 @@ router.post(
 
 // DISABLED: Multimodal analysis endpoint - temporarily deactivated
 router.post(
-  '/api/v2/analysis/multimodal',
+  '/multimodal',
   upload.single('file'),
   validateRequest,
   async (req: AuthenticatedRequest, res: Response) => {
     return res.status(410).json({
       success: false,
-      error: "Multimodal analysis is temporarily disabled"
+      message: "Multimodal analysis is temporarily disabled"
     });
   }
 );

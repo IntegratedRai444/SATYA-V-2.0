@@ -179,19 +179,14 @@ export const useTextAnalysis = () => {
   
   const analyzeText = useMutation({
     mutationFn: async ({ text }: { text: string }) => {
-      const response = await fetch('/api/v2/analysis/text', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ text }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to analyze text');
+      const response = await apiClient.post('/analysis/text', { text });
+      
+      // Extract jobId from response like other analysis methods
+      if (!response?.data?.success || !response?.data?.job_id) {
+        throw new Error('Failed to start text analysis');
       }
-
-      return response.json();
+      
+      return { jobId: response.data.job_id };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['analysis-history'] });
@@ -268,42 +263,31 @@ export const useUserAnalytics = () => {
   return useQuery({
     queryKey: ['user-analytics'],
     queryFn: async () => {
-      const response = await apiClient.get('/user/analytics');
+      const response = await apiClient.get('/dashboard/analytics');
       return response.data as UserAnalytics;
     },
     staleTime: 10 * 60 * 1000, // 10 minutes
   });
 };
 
-// Utility hook for batch operations
-export const useBatchAnalysis = () => {
-  const queryClient = useQueryClient();
-  
-  const analyzeBatch = useMutation({
-    mutationFn: async ({ files }: { files: File[] }) => {
-      const formData = new FormData();
-      files.forEach((file) => {
-        formData.append(`files`, file);
-      });
-      
-      const response = await apiClient.post('/analysis/batch', {
-        data: formData,
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      });
-      return response;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['analysis-history'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
-    }
-  });
+// DISABLED: Batch analysis - not implemented in backend
+// export const useBatchAnalysis = () => {
+//   const queryClient = useQueryClient();
+//   
+//   const analyzeBatch = useMutation({
+//     mutationFn: async ({ files }: { files: File[] }) => {
+//       throw new Error('Batch analysis is not implemented yet');
+//     },
+//     onSuccess: () => {
+//       queryClient.invalidateQueries({ queryKey: ['analysis-history'] });
+//       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+//     }
+//   });
 
-  return {
-    analyzeBatch: analyzeBatch.mutateAsync,
-    isAnalyzing: analyzeBatch.isPending,
-    error: analyzeBatch.error,
-    data: analyzeBatch.data
-  };
-};
+//   return {
+//     analyzeBatch: analyzeBatch.mutateAsync,
+//     isAnalyzing: analyzeBatch.isPending,
+//     error: analyzeBatch.error,
+//     data: analyzeBatch.data
+//   };
+// };

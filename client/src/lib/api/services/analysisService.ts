@@ -54,6 +54,7 @@ export interface AnalysisResult {
 export interface JobStartResponse {
   success: boolean;
   job_id: string; // Updated to match unified endpoint
+  status: string; // Add missing status field
 }
 
 export interface AnalysisProof {
@@ -97,10 +98,29 @@ export class AnalysisService extends BaseService {
         timeout: 360000, // 6 minutes timeout
       });
 
-      if (!response.success || !response.job_id) {
+      // Contract validation logging
+      console.log('[API RESPONSE] Raw backend response:', response);
+      console.log('[CONTRACT CHECK] Response structure:', {
+        success: response?.success,
+        job_id: response?.job_id,
+        status: response?.status,
+        hasJobId: !!response?.job_id,
+        hasStatus: !!response?.status
+      });
+
+      if (!response.success || !response.job_id || !response.status) {
+        console.log('[CONTRACT CHECK] FAILED - Missing required fields:', {
+          hasSuccess: !!response?.success,
+          hasJobId: !!response?.job_id,
+          hasStatus: !!response?.status,
+          successValue: response?.success,
+          jobIdValue: response?.job_id,
+          statusValue: response?.status
+        });
         throw new Error('Failed to start analysis job');
       }
 
+      console.log('[FRONTEND VALIDATION] Parsed response successfully, jobId:', response.job_id, 'status:', response.status);
       return response.job_id;
     } catch (error) {
       console.error('Image analysis failed:', error);
@@ -145,10 +165,29 @@ export class AnalysisService extends BaseService {
         timeout: 360000, // 6 minutes timeout
       });
 
-      if (!response.success || !response.job_id) {
+      // Contract validation logging
+      console.log('[API RESPONSE] Raw backend response (video):', response);
+      console.log('[CONTRACT CHECK] Response structure (video):', {
+        success: response?.success,
+        job_id: response?.job_id,
+        status: response?.status,
+        hasJobId: !!response?.job_id,
+        hasStatus: !!response?.status
+      });
+
+      if (!response.success || !response.job_id || !response.status) {
+        console.log('[CONTRACT CHECK] FAILED - Missing required fields (video):', {
+          hasSuccess: !!response?.success,
+          hasJobId: !!response?.job_id,
+          hasStatus: !!response?.status,
+          successValue: response?.success,
+          jobIdValue: response?.job_id,
+          statusValue: response?.status
+        });
         throw new Error('Failed to start analysis job');
       }
 
+      console.log('[FRONTEND VALIDATION] Parsed response successfully, jobId (video):', response.job_id, 'status:', response.status);
       return response.job_id;
     } catch (error) {
       console.error('Video analysis error:', error);
@@ -172,10 +211,29 @@ export class AnalysisService extends BaseService {
         timeout: 360000, // 6 minutes timeout
       });
 
-      if (!response.success || !response.job_id) {
+      // Contract validation logging
+      console.log('[API RESPONSE] Raw backend response (audio):', response);
+      console.log('[CONTRACT CHECK] Response structure (audio):', {
+        success: response?.success,
+        job_id: response?.job_id,
+        status: response?.status,
+        hasJobId: !!response?.job_id,
+        hasStatus: !!response?.status
+      });
+
+      if (!response.success || !response.job_id || !response.status) {
+        console.log('[CONTRACT CHECK] FAILED - Missing required fields (audio):', {
+          hasSuccess: !!response?.success,
+          hasJobId: !!response?.job_id,
+          hasStatus: !!response?.status,
+          successValue: response?.success,
+          jobIdValue: response?.job_id,
+          statusValue: response?.status
+        });
         throw new Error('Failed to start analysis job');
       }
 
+      console.log('[FRONTEND VALIDATION] Parsed response successfully, jobId (audio):', response.job_id, 'status:', response.status);
       return response.job_id;
     } catch (error) {
       console.error('Audio analysis error:', error);
