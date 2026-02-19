@@ -251,7 +251,7 @@ export class BaseService {
           const headers = {
             ...options.headers,
             'X-Request-Id': options.id || uuidv4(),
-            'Content-Type': 'application/json',
+            'Content-Type': options.headers?.['Content-Type'] || 'application/json',
           };
 
           // Add CSRF token for non-GET requests or when explicitly requested

@@ -18,23 +18,9 @@ const ENV_CONFIG: Record<keyof EnvConfig, {
   required: boolean;
   type: 'string' | 'number' | 'boolean' | 'url';
   pattern?: RegExp;
-  minLength?: number;
-  description: string;
+  description?: string;
   validate?: (value: string) => { valid: boolean; message?: string };
 }> = {
-  VITE_API_URL: {
-    required: true,
-    type: 'url',
-    description: 'Main API base URL',
-    validate: (value: string) => {
-      try {
-        new URL(value);
-        return { valid: true };
-      } catch {
-        return { valid: false, message: 'Must be a valid URL' };
-      }
-    }
-  },
   VITE_AUTH_API_URL: {
     required: true,
     type: 'url',
@@ -52,6 +38,19 @@ const ENV_CONFIG: Record<keyof EnvConfig, {
     required: true,
     type: 'url',
     description: 'Analysis API base URL',
+    validate: (value: string) => {
+      try {
+        new URL(value);
+        return { valid: true };
+      } catch {
+        return { valid: false, message: 'Must be a valid URL' };
+      }
+    }
+  },
+  VITE_API_URL: {
+    required: true,
+    type: 'url',
+    description: 'Main API base URL',
     validate: (value: string) => {
       try {
         new URL(value);

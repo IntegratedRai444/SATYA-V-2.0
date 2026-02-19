@@ -406,26 +406,121 @@ class FusionEngine:
     def _check_emotion_consistency(self, results: Dict[str, Dict[str, Any]]) -> float:
         """Check emotional consistency between face and voice."""
         try:
-            # This is a placeholder for emotion consistency checking
-            # In practice, you'd extract emotional features from both
-            # facial expressions and voice characteristics
-
-            # For now, use confidence patterns as a proxy
+            # Extract emotional features from different modalities
+            emotion_features = {}
+            
+            # Extract video emotion features
+            if "video" in results:
+                video_result = results["video"]
+                video_features = video_result.get("features", {})
+                
+                # Look for emotion-related features
+                emotion_features["video"] = {
+                    "facial_expressions": video_features.get("facial_expressions", {}),
+                    "micro_expressions": video_features.get("micro_expressions", {}),
+                    "confidence": video_result.get("confidence", 0.5),
+                    "arousal": video_features.get("arousal", 0.5),
+                    "valence": video_features.get("valence", 0.5)
+                }
+            
+            # Extract audio emotion features
+            if "audio" in results:
+                audio_result = results["audio"]
+                audio_features = audio_result.get("features", {})
+                
+                # Look for emotion-related features
+                emotion_features["audio"] = {
+                    "prosody": audio_features.get("prosody", {}),
+                    "pitch_variation": audio_features.get("pitch_variation", 0.5),
+                    "speaking_rate": audio_features.get("speaking_rate", 0.5),
+                    "voice_quality": audio_features.get("voice_quality", {}),
+                    "confidence": audio_result.get("confidence", 0.5),
+                    "arousal": audio_features.get("arousal", 0.5),
+                    "valence": audio_features.get("valence", 0.5)
+                }
+            
+            # Extract image emotion features (if available)
+            if "image" in results:
+                image_result = results["image"]
+                image_features = image_result.get("features", {})
+                
+                emotion_features["image"] = {
+                    "facial_expressions": image_features.get("facial_expressions", {}),
+                    "confidence": image_result.get("confidence", 0.5),
+                    "arousal": image_features.get("arousal", 0.5),
+                    "valence": image_features.get("valence", 0.5)
+                }
+            
+            # Calculate emotion consistency scores
+            consistency_scores = []
+            
+            # Compare arousal levels between modalities
+            arousal_values = []
+            for modality, features in emotion_features.items():
+                if "arousal" in features:
+                    arousal_values.append(features["arousal"])
+            
+            if len(arousal_values) >= 2:
+                arousal_std = np.std(arousal_values)
+                arousal_consistency = max(0, 1 - arousal_std)  # Lower std = more consistent
+                consistency_scores.append(arousal_consistency)
+            
+            # Compare valence levels between modalities
+            valence_values = []
+            for modality, features in emotion_features.items():
+                if "valence" in features:
+                    valence_values.append(features["valence"])
+            
+            if len(valence_values) >= 2:
+                valence_std = np.std(valence_values)
+                valence_consistency = max(0, 1 - valence_std)  # Lower std = more consistent
+                consistency_scores.append(valence_consistency)
+            
+            # Compare confidence patterns
             confidences = []
-            for modality, result in results.items():
-                if modality in [
-                    "video",
-                    "audio",
-                ]:  # Modalities that can express emotion
-                    conf = result.get("confidence", 50.0)
-                    confidences.append(conf)
-
+            for modality, features in emotion_features.items():
+                if "confidence" in features:
+                    confidences.append(features["confidence"])
+            
             if len(confidences) >= 2:
-                # Similar confidence levels might indicate consistent emotion
                 conf_std = np.std(confidences)
-                emotion_consistency = max(0, 1 - (conf_std / 25))
-                return emotion_consistency
-
+                confidence_consistency = max(0, 1 - (conf_std / 0.5))  # Normalize by expected std
+                consistency_scores.append(confidence_consistency)
+            
+            # Analyze facial expression vs voice prosody consistency
+            if "video" in emotion_features and "audio" in emotion_features:
+                video_emotions = emotion_features["video"].get("facial_expressions", {})
+                audio_prosody = emotion_features["audio"].get("prosody", {})
+                
+                # Check if high facial expression intensity matches prosodic intensity
+                video_intensity = np.mean(list(video_emotions.values())) if video_emotions else 0.5
+                audio_intensity = np.mean(list(audio_prosody.values())) if audio_prosody else 0.5
+                
+                intensity_diff = abs(video_intensity - audio_intensity)
+                intensity_consistency = max(0, 1 - intensity_diff)
+                consistency_scores.append(intensity_consistency)
+            
+            # Calculate overall emotion consistency
+            if consistency_scores:
+                overall_consistency = np.mean(consistency_scores)
+                
+                # Apply weighting based on number of modalities
+                modality_count = len(emotion_features)
+                if modality_count >= 3:
+                    # More modalities = higher confidence in consistency score
+                    weighted_consistency = overall_consistency * 1.1
+                elif modality_count == 2:
+                    weighted_consistency = overall_consistency
+                else:
+                    weighted_consistency = overall_consistency * 0.9
+                
+                return min(1.0, weighted_consistency)
+            
+            # Fallback to confidence-based consistency if no emotion features
+            if len(confidences) >= 2:
+                conf_std = np.std(confidences)
+                return max(0, 1 - (conf_std / 25))
+            
             return 0.8  # Default if insufficient data
 
         except Exception as e:

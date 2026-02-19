@@ -9,8 +9,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
-
 import numpy as np
+
+# Force CPU-only mode before any torch imports to fix CUDA compatibility
+os.environ['CUDA_VISIBLE_DEVICES'] = ''
+os.environ['TORCH_CUDA_ARCH_LIST'] = ''
+
 import torch
 import torch.nn as nn
 import torch.quantization
@@ -56,7 +60,7 @@ def ensure_models_available() -> Dict[str, Any]:
     }
     
     model_status = {}
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    device = 'cpu'  # Force CPU mode to fix CUDA compatibility
     
     for modality, config in required_models.items():
         local_available = any(path.exists() for path in config['paths'])
@@ -144,56 +148,9 @@ class BaseModelLoader:
         }
         
     def _get_device(self, device_str: str) -> torch.device:
-        """Get the appropriate device for model execution with robust error handling."""
-        if device_str == 'auto':
-            # Test CUDA availability with DLL error handling
-            try:
-                import torch
-                if torch.cuda.is_available():
-                    # Test actual CUDA device access
-                    try:
-                        device = torch.device('cuda:0')
-                        test_tensor = torch.randn(1, 3, 224, 224).to(device)
-                        _ = test_tensor.sum()
-                        logger.info("✅ CUDA device auto-detected and tested")
-                        return device
-                    except Exception as cuda_error:
-                        logger.error(f"❌ CUDA device test failed: {cuda_error}")
-                        logger.warning("⚠️ Falling back to CPU due to CUDA DLL issues")
-                        return torch.device('cpu')
-                else:
-                    logger.warning("⚠️ CUDA not available - using CPU")
-                    return torch.device('cpu')
-            except ImportError:
-                logger.warning("⚠️ PyTorch not available - using CPU")
-                return torch.device('cpu')
-            except Exception as e:
-                logger.error(f"❌ Device auto-detection failed: {e}")
-                return torch.device('cpu')
-        
-        # Manual device selection with testing
-        try:
-            import torch
-            if device_str.startswith('cuda'):
-                if torch.cuda.is_available():
-                    try:
-                        device = torch.device(device_str)
-                        test_tensor = torch.randn(1, 3, 224, 224).to(device)
-                        _ = test_tensor.sum()
-                        logger.info(f"✅ CUDA device {device_str} tested successfully")
-                        return device
-                    except Exception as cuda_error:
-                        logger.error(f"❌ CUDA device {device_str} test failed: {cuda_error}")
-                        logger.warning("⚠️ Falling back to CPU due to CUDA DLL issues")
-                        return torch.device('cpu')
-                else:
-                    logger.warning(f"⚠️ CUDA requested but not available - using CPU")
-                    return torch.device('cpu')
-            else:
-                return torch.device(device_str)
-        except Exception as e:
-            logger.error(f"❌ Device selection failed: {e}")
-            return torch.device('cpu')
+        """Get appropriate device for model execution with robust error handling."""
+        # Force CPU mode to fix CUDA compatibility issues
+        return torch.device('cpu')
         
     def _init_transforms(self) -> None:
         """Initialize data transformation pipeline."""
@@ -997,7 +954,7 @@ class ModelManager:
         """
         self.models_dir = Path(models_dir)
         self.models = {}
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cpu')  # Force CPU mode to fix CUDA compatibility
         
     def load_models(self):
         """Load all available models."""

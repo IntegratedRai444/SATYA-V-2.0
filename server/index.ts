@@ -1,12 +1,10 @@
 import * as dotenv from 'dotenv';
 import express, { type Request, type Response } from 'express';
 import { createServer } from 'http';
-import { IncomingMessage } from 'http';
-import { URL } from 'url';
-import { WebSocketServer, WebSocket } from 'ws';
-import { Duplex } from 'stream';
 import path from 'path';
+import webSocketManager from './services/websocket-manager';
 import { routes } from './routes';
+import { createRequestLogger } from './config/logger';
 
 // Load environment variables
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
@@ -19,6 +17,13 @@ if (process.env.NODE_ENV !== 'production') {
   process.env.NODE_ENV = 'development';
   console.log('🛠️ Development mode enabled - Optimizing Supabase authentication');
 }
+
+// Body parsing middleware
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Request logging middleware
+app.use(createRequestLogger());
 
 // Basic CORS middleware
 app.use((req, res, next) => {
@@ -81,82 +86,27 @@ app.get('/api/v2/dashboard/recent-activity', (req: Request, res: Response) => {
   });
 });
 
-// WebSocket endpoint implementation
-const wss = new WebSocketServer({ 
-  noServer: true,
-  path: '/api/v2/dashboard/ws' // Explicit path for WebSocket
-});
-
-// Track connected clients
-const clients = new Map<string, WebSocket>();
-
-// Handle WebSocket upgrade
-const httpServer = createServer(app);
-
-httpServer.on('upgrade', (request: IncomingMessage, socket: Duplex, head: Buffer) => {
-  const url = new URL(request.url || '', `http://localhost`);
-  
-  // Only handle WebSocket upgrades for the dashboard WebSocket path
-  if (url.pathname === '/api/v2/dashboard/ws') {
-    wss.handleUpgrade(request, socket as unknown as Duplex, head, (ws: WebSocket) => {
-      wss.emit('connection', ws, request);
-    });
-  } else {
-    // Close connection for other paths
-    socket.destroy();
-  }
-});
-
-wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
-  const url = new URL(req.url || '', `http://localhost`);
-  const token = url.searchParams.get('token');
-  
-  if (!token) {
-    console.log('WebSocket connection rejected: No token provided');
-    ws.close(1008, 'No token provided');
-    return;
-  }
-
-  console.log('WebSocket client connected');
-  
-  const clientId = `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  clients.set(clientId, ws);
-  
-  ws.on('message', (message: string) => {
-    try {
-      const data = JSON.parse(message);
-      console.log('WebSocket message received:', data);
-      
-      // Echo back the message for now
-      ws.send(JSON.stringify({
-        type: 'echo',
-        data: data,
-        timestamp: new Date().toISOString()
-      }));
-    } catch (error) {
-      console.error('Error handling WebSocket message:', error);
-    }
-  });
-  
-  ws.on('close', () => {
-    console.log('WebSocket client disconnected');
-    clients.delete(clientId);
-  });
-  
-  ws.on('error', (error: Error) => {
-    console.error('WebSocket error:', error);
-  });
-});
-
 // API routes are handled by the router
 app.use('/api/v2', routes);
+
+// Error handling middleware (must be last)
+app.use((err: Error, req: Request, res: Response) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({
+    success: false,
+    error: 'INTERNAL_SERVER_ERROR',
+    message: 'An unexpected error occurred'
+  });
+});
+
+// WebSocket endpoint implementation - handled by webSocketManager
+const httpServer = createServer(app);
 
 httpServer.listen(Number(port), '0.0.0.0', () => {
   console.log(`Server running on port ${port}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   
-  // Setup WebSocket server
-  wss.on('listening', () => {
-    console.log('WebSocket server listening on port', port);
-  });
+  // Initialize WebSocket manager
+  webSocketManager.initialize(httpServer);
+  console.log('WebSocket server initialized');
 });

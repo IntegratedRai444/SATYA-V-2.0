@@ -51,7 +51,20 @@ const developmentFormat = winston.format.combine(
     const { requestId, traceId, spanId, ...restMeta } = meta;
     const traceInfo = requestId ? `[${requestId}|${traceId}|${spanId}]` : '';
     const metaStr = Object.keys(restMeta).length ? JSON.stringify(restMeta, null, 2) : '';
-    const redactedMessage = redactSecrets(message);
+    
+    // Filter out noisy Supabase auth logs
+    const messageStr = typeof message === 'string' ? message : JSON.stringify(message);
+    if (messageStr.includes('GoTrueClient@') && 
+        (messageStr.includes('#_acquireLock') || 
+         messageStr.includes('#_useSession') || 
+         messageStr.includes('#_recoverAndRefresh') ||
+         messageStr.includes('#_notifyAllSubscribers') ||
+         messageStr.includes('#_autoRefreshTokenTick') ||
+         messageStr.includes('#_onVisibilityChanged'))) {
+      return ''; // Suppress noisy auth logs
+    }
+    
+    const redactedMessage = redactSecrets(messageStr);
     const redactedMeta = redactSecrets(metaStr);
     return `${timestamp} ${traceInfo} [${level}]: ${redactedMessage} ${redactedMeta}`.trim();
   })

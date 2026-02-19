@@ -581,6 +581,35 @@ class DatabaseManager:
         finally:
             db.close()
 
+    def get_average_processing_time(self) -> float:
+        """Get average processing time for all analyses."""
+        try:
+            avg_time = (
+                self.db.query(func.avg(AnalysisResult.processing_time))
+                .filter(AnalysisResult.processing_time > 0)
+                .scalar() or 2.0
+            )
+            return float(avg_time)
+        except Exception as e:
+            logger.error(f"Error getting average processing time: {e}")
+            return 2.0  # Default fallback
+
+    def get_error_rate(self) -> float:
+        """Get error rate based on failed analyses."""
+        try:
+            total = self.db.query(AnalysisResult).count()
+            failed = self.db.query(AnalysisResult).filter(
+                AnalysisResult.label == "error"
+            ).count()
+            
+            if total == 0:
+                return 0.05  # 5% default error rate
+            
+            return failed / total
+        except Exception as e:
+            logger.error(f"Error getting error rate: {e}")
+            return 0.05  # Default fallback
+
     def get_accuracy_rate(self) -> float:
         """Calculate system accuracy rate based on high confidence predictions"""
         db = self.get_session()

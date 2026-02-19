@@ -146,7 +146,7 @@ export class AnalysisService extends BaseService {
   }
 
   async getAnalysisResult(jobId: string): Promise<AnalysisResult> {
-    return this.get(`/results/${jobId}`);
+    return this.get('/results/' + jobId);
   }
 
   async analyzeVideo(

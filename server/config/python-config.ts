@@ -4,7 +4,7 @@ dotenv.config();
 
 export const pythonConfig = {
   // Base URL of Python service (standardized naming)
-  apiUrl: process.env.PYTHON_SERVICE_URL || process.env.PYTHON_URL || process.env.PYTHON_SERVER_URL || 'http://localhost:8000',
+  apiUrl: process.env.PYTHON_SERVICE_URL || process.env.PYTHON_URL || process.env.PYTHON_SERVER_URL || 'http://127.0.0.1:8000',
   
   // API Key for authenticating with the Python service
   apiKey: process.env.PYTHON_SERVICE_API_KEY || 'python-service-api-key-set-in-env',

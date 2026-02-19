@@ -382,17 +382,155 @@ class ModelManager:
         Returns:
             Dictionary containing fallback prediction results
         """
-        # Implement simple heuristics based on input data analysis
-        # This is a placeholder - replace with actual heuristic logic
-        return {
-            'prediction': 0.5,  # Default to uncertain
-            'confidence': 0.5,
-            'is_fallback': True,
-            'metadata': {
-                'warning': 'Using fallback heuristic prediction',
-                'reason': 'All model predictions failed'
+        try:
+            import numpy as np
+            
+            # Analyze input data characteristics
+            prediction = 0.5  # Default to uncertain
+            confidence = 0.3   # Low confidence for fallback
+            reasoning = []
+            
+            # Handle different input types
+            if isinstance(input_data, np.ndarray):
+                if input_data.ndim == 4:  # Image batch
+                    # Analyze image characteristics
+                    batch_size, channels, height, width = input_data.shape
+                    
+                    # Calculate various image quality metrics
+                    avg_brightness = np.mean(input_data)
+                    contrast = np.std(input_data)
+                    
+                    # High contrast might indicate manipulation
+                    if contrast > 0.3:
+                        prediction += 0.2
+                        reasoning.append("High contrast detected")
+                    
+                    # Unusual brightness patterns
+                    if avg_brightness < 0.2 or avg_brightness > 0.8:
+                        prediction += 0.15
+                        reasoning.append("Unusual brightness patterns")
+                    
+                    # Check for compression artifacts (simplified)
+                    if channels == 3:
+                        # Calculate color channel correlations
+                        corr_rg = np.corrcoef(input_data[:, 0].flatten(), input_data[:, 1].flatten())[0, 1]
+                        corr_rb = np.corrcoef(input_data[:, 0].flatten(), input_data[:, 2].flatten())[0, 1]
+                        corr_gb = np.corrcoef(input_data[:, 1].flatten(), input_data[:, 2].flatten())[0, 1]
+                        
+                        avg_correlation = np.mean([corr_rg, corr_rb, corr_gb])
+                        if avg_correlation > 0.95:  # Very high correlation might indicate synthetic content
+                            prediction += 0.1
+                            reasoning.append("High color channel correlation")
+                    
+                    confidence = min(0.6, confidence + len(reasoning) * 0.05)
+                    
+                elif input_data.ndim == 2:  # Text embeddings or features
+                    # Analyze feature characteristics
+                    feature_magnitude = np.linalg.norm(input_data, axis=1) if input_data.ndim > 1 else [np.linalg.norm(input_data)]
+                    
+                    # Unusually high feature magnitudes might indicate synthetic content
+                    avg_magnitude = np.mean(feature_magnitude)
+                    if avg_magnitude > 10.0:
+                        prediction += 0.2
+                        reasoning.append("High feature magnitude")
+                    
+                    # Check for patterns in feature distribution
+                    if len(feature_magnitude) > 1:
+                        magnitude_std = np.std(feature_magnitude)
+                        if magnitude_std < 0.1:  # Very uniform features
+                            prediction += 0.1
+                            reasoning.append("Uniform feature distribution")
+                    
+                    confidence = min(0.5, confidence + len(reasoning) * 0.05)
+                    
+                elif input_data.ndim == 1:  # Single feature vector
+                    # Analyze single feature vector
+                    vector_norm = np.linalg.norm(input_data)
+                    vector_std = np.std(input_data)
+                    
+                    # High norm or low std might indicate synthetic content
+                    if vector_norm > 15.0:
+                        prediction += 0.15
+                        reasoning.append("High vector norm")
+                    
+                    if vector_std < 0.05:
+                        prediction += 0.1
+                        reasoning.append("Low feature variance")
+                    
+                    confidence = min(0.4, confidence + len(reasoning) * 0.03)
+            
+            elif isinstance(input_data, dict):
+                # Handle dictionary input (common in multimodal scenarios)
+                reasoning.append("Dictionary input analyzed")
+                
+                # Look for specific keys that might indicate manipulation
+                suspicious_keys = ['synthetic', 'generated', 'artificial', 'fake']
+                for key in input_data.keys():
+                    if any(sus in key.lower() for sus in suspicious_keys):
+                        prediction += 0.2
+                        reasoning.append(f"Suspicious key: {key}")
+                
+                # Check value ranges
+                for key, value in input_data.items():
+                    if isinstance(value, (int, float)):
+                        if value > 1.0 or value < 0.0:  # Out of normalized range
+                            prediction += 0.05
+                            reasoning.append(f"Out-of-range value in {key}")
+                
+                confidence = min(0.5, confidence + len(reasoning) * 0.02)
+            
+            elif isinstance(input_data, (list, tuple)):
+                # Handle list/tuple input
+                if len(input_data) > 0:
+                    # Check for unusual patterns
+                    if all(isinstance(x, (int, float)) for x in input_data):
+                        # Numeric list
+                        avg_val = np.mean(input_data)
+                        std_val = np.std(input_data)
+                        
+                        if std_val < 0.01:  # Very uniform values
+                            prediction += 0.1
+                            reasoning.append("Uniform numeric values")
+                        
+                        if abs(avg_val) > 5.0:  # Large average value
+                            prediction += 0.1
+                            reasoning.append("Large average values")
+                    
+                    confidence = min(0.4, confidence + len(reasoning) * 0.03)
+            
+            # Clamp prediction to valid range
+            prediction = max(0.0, min(1.0, prediction))
+            
+            # Adjust confidence based on prediction extremity
+            if prediction > 0.7 or prediction < 0.3:
+                confidence = min(confidence + 0.1, 0.7)
+            
+            return {
+                'prediction': prediction,
+                'confidence': confidence,
+                'is_fallback': True,
+                'metadata': {
+                    'warning': 'Using heuristic fallback prediction',
+                    'reason': 'All model predictions failed',
+                    'reasoning': reasoning,
+                    'input_type': type(input_data).__name__,
+                    'heuristic_version': '1.0'
+                }
             }
-        }
+            
+        except Exception as e:
+            logger.error(f"Heuristic fallback failed: {e}")
+            # Ultimate fallback
+            return {
+                'prediction': 0.5,
+                'confidence': 0.2,
+                'is_fallback': True,
+                'metadata': {
+                    'warning': 'Heuristic fallback failed',
+                    'reason': f'Error: {str(e)}',
+                    'ultimate_fallback': True
+                }
+            }
     
     async def close(self) -> None:
         """Clean up resources."""

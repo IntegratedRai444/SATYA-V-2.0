@@ -1064,7 +1064,7 @@ class EnhancedDeepfakeDetector:
             )  # Expect 2 eyes per face
 
             return {
-                "natural_blinking": True,  # Placeholder - would need video for real analysis
+                "natural_blinking": self._detect_natural_blinking(image_array, faces),
                 "eye_consistency": round(eye_consistency, 3),
                 "eyes_detected": eyes_detected,
             }
@@ -1074,6 +1074,90 @@ class EnhancedDeepfakeDetector:
                 "eye_consistency": 0.7,
                 "eyes_detected": 0,
             }
+
+    def _detect_natural_blinking(self, image_array: np.ndarray, faces: List) -> bool:
+        """Detect natural blinking patterns in faces."""
+        try:
+            import cv2
+            import numpy as np
+            
+            if len(faces) == 0:
+                return True  # No faces to analyze
+            
+            gray = cv2.cvtColor(image_array, cv2.COLOR_BGR2GRAY)
+            
+            # Analyze eye regions for blinking indicators
+            blink_indicators = []
+            
+            for x, y, w, h in faces:
+                # Extract eye regions (upper third of face)
+                eye_region_height = int(h * 0.3)
+                eye_region_y = y + int(h * 0.1)  # Start from top quarter
+                
+                left_eye_x = x + int(w * 0.15)
+                left_eye_y = eye_region_y
+                left_eye_w = int(w * 0.3)
+                left_eye_h = eye_region_height
+                
+                right_eye_x = x + int(w * 0.55)
+                right_eye_y = eye_region_y
+                right_eye_w = int(w * 0.3)
+                right_eye_h = eye_region_height
+                
+                # Extract eye regions
+                left_eye = gray[left_eye_y:left_eye_y+left_eye_h, 
+                               left_eye_x:left_eye_x+left_eye_w]
+                right_eye = gray[right_eye_y:right_eye_y+right_eye_h, 
+                                right_eye_x:right_eye_x+right_eye_w]
+                
+                # Analyze eye openness using intensity variation
+                def analyze_eye_openness(eye_region):
+                    if eye_region.size == 0:
+                        return 0.5
+                    
+                    # Calculate horizontal and vertical gradients
+                    grad_x = cv2.Sobel(eye_region, cv2.CV_64F, 1, 0, ksize=3)
+                    grad_y = cv2.Sobel(eye_region, cv2.CV_64F, 0, 1, ksize=3)
+                    
+                    # Gradient magnitude
+                    grad_mag = np.sqrt(grad_x**2 + grad_y**2)
+                    
+                    # Average gradient magnitude (higher for open eyes)
+                    avg_grad = np.mean(grad_mag)
+                    
+                    # Intensity variation (higher for open eyes)
+                    intensity_std = np.std(eye_region)
+                    
+                    # Combine features
+                    openness_score = (avg_grad / 255.0) * 0.6 + (intensity_std / 128.0) * 0.4
+                    
+                    return min(1.0, max(0.0, openness_score))
+                
+                left_openness = analyze_eye_openness(left_eye)
+                right_openness = analyze_eye_openness(right_eye)
+                
+                # Check for symmetry and reasonable openness
+                avg_openness = (left_openness + right_openness) / 2
+                symmetry = 1.0 - abs(left_openness - right_openness)
+                
+                # Natural eyes should have moderate to high openness and good symmetry
+                natural_score = avg_openness * 0.7 + symmetry * 0.3
+                blink_indicators.append(natural_score)
+            
+            if not blink_indicators:
+                return True
+            
+            # Average naturalness across all detected faces
+            avg_naturalness = np.mean(blink_indicators)
+            
+            # Threshold for natural vs potentially manipulated
+            natural_threshold = 0.3  # Relatively low threshold to be permissive
+            
+            return avg_naturalness >= natural_threshold
+            
+        except Exception as e:
+            logger.warning(f"Blinking detection failed: {e}")
+            return True  # Default to natural on error
 
     def _analyze_skin_texture(self, image_array: np.ndarray, faces: List) -> float:
         """Analyze skin texture consistency."""

@@ -31,7 +31,7 @@ export const createSuccessResponse = <T>(data: T, message?: string): ApiResponse
 /**
  * Creates an error API response
  */
-export const createErrorResponse = (error: string, _statusCode: number = 500, message?: string): ApiResponse<never> => ({
+export const createErrorResponse = (error: string, message?: string): ApiResponse<never> => ({
   success: false,
   error,
   message

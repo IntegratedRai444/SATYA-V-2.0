@@ -1,4 +1,5 @@
 import logger from './logger';
+import { apiClient } from '../lib/api/client';
 
 declare const process: {
   env: {
@@ -75,7 +76,7 @@ export const classifyError = (error: ClassifiedError | Error): { type: keyof typ
 /**
  * Handle errors with user feedback
  */
-export const handleError = (
+export const handleError = async (
   error: Error | ClassifiedError | unknown,
   options: {
     showToast?: boolean;
@@ -84,7 +85,7 @@ export const handleError = (
     fallbackMessage?: string;
     context?: ErrorContext;
   } = {}
-): void => {
+): Promise<void> => {
   const safeError = error instanceof Error ? error : new Error(String(error));
   let message = safeError.message || options.fallbackMessage || 'An unexpected error occurred';
 
@@ -136,14 +137,11 @@ export const handleError = (
       };
 
       // Send to your error tracking API
-      fetch('/api/error-log', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(errorData),
-      });
+      await apiClient.post('/error-log', errorData);
 
-          } catch {
+    } catch (trackingError) {
       // Failed to send error to tracking service
+      logger.error('Failed to send error to tracking service', trackingError as Error);
     }
   }
 
@@ -160,7 +158,7 @@ export const handleError = (
 /**
  * Log error with context
  */
-export const logError = (
+export const logError = async (
   error: Error | string,
   context: ErrorContext = {}
 ) => {
@@ -184,11 +182,7 @@ export const logError = (
       };
 
       // Send to your error tracking API
-      fetch('/api/error-log', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(errorData),
-      });
+      await apiClient.post('/error-log', errorData);
 
           } catch {
       // Failed to send error to tracking service

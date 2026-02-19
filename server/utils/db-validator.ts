@@ -121,7 +121,7 @@ export const validateDatabaseSchema = async (): Promise<{ valid: boolean; errors
  * Safe query wrapper with null handling
  */
 export const safeQuery = async <T>(
-  queryFn: () => Promise<{ data?: T; error?: any }>,
+  queryFn: () => Promise<{ data?: T; error?: unknown }>,
   defaultValue: T
 ): Promise<T> => {
   try {

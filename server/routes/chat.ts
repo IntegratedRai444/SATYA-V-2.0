@@ -1,11 +1,15 @@
 import { Router, type Response } from 'express';
-import OpenAI from 'openai';
-import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { supabase } from '../config/supabase';
 import { auditLogger } from '../middleware/audit-logger';
 import { AuthenticatedRequest } from '../types/auth';
 import { logger } from '../config';
 import rateLimit from 'express-rate-limit';
+import * as path from 'path';
+import { config } from 'dotenv';
+
+// Load .env from parent directory
+config({ path: path.join(__dirname, '../.env') });
 
 const router = Router();
 
@@ -19,14 +23,11 @@ const chatRateLimit = rateLimit({
   skipSuccessfulRequests: false,
 });
 
-// Initialize OpenAI client
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const openai = new (OpenAI as any)({
-  apiKey: process.env.OPENAI_API_KEY || '',
-});
+// Initialize Gemini client
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
-// Check if OpenAI is properly configured
-const isChatEnabled = process.env.ENABLE_CHAT === 'true' && process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'sk-placeholder-key-replace-with-real-key' && process.env.OPENAI_API_KEY.startsWith('sk-');
+// Check if Gemini is properly configured
+const isChatEnabled = process.env.ENABLE_CHAT === 'true' && process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== '' && process.env.GEMINI_API_KEY.startsWith('AIza');
 
 // Database conversation storage
 interface DatabaseConversation {
@@ -52,7 +53,7 @@ const createConversation = async (userId: string, title: string): Promise<string
   return data.id;
 };
 
-const getConversationMessages = async (conversationId: string): Promise<ChatCompletionMessageParam[]> => {
+const getConversationMessages = async (conversationId: string): Promise<Array<{role: string, content: string}>> => {
   const { data, error } = await supabase
     .from('chat_messages')
     .select('role, content, created_at')
@@ -62,7 +63,7 @@ const getConversationMessages = async (conversationId: string): Promise<ChatComp
   if (error) throw error;
   
   return data.map(msg => ({
-    role: msg.role as 'user' | 'assistant' | 'system',
+    role: msg.role,
     content: msg.content
   }));
 };
@@ -103,7 +104,7 @@ router.post('/message', chatRateLimit, auditLogger('chat_message_send', 'chat_me
     if (!isChatEnabled) {
       return res.status(503).json({
         success: false,
-        error: 'Chat service is currently unavailable. Please configure OPENAI_API_KEY to enable chat functionality.',
+        error: 'Chat service is currently unavailable. Please configure GEMINI_API_KEY to enable chat functionality.',
         code: 'CHAT_DISABLED'
       });
     }
@@ -135,7 +136,7 @@ router.post('/message', chatRateLimit, auditLogger('chat_message_send', 'chat_me
 
     // Get or create conversation
     let convId = conversationId;
-    let history: ChatCompletionMessageParam[] = [];
+    let history: Array<{role: string, content: string}> = [];
     
     if (convId) {
       // Load existing conversation
@@ -157,19 +158,12 @@ router.post('/message', chatRateLimit, auditLogger('chat_message_send', 'chat_me
     // Save user message to database
     await saveMessage(convId, 'user', message);
     
-    // Add user message to history for API call
-    history.push({
-      role: 'user',
-      content: message
+    // Call Gemini API
+    const model = genAI.getGenerativeModel({ 
+      model: options?.model || process.env.GEMINI_MODEL || 'gemini-flash-latest' 
     });
-
-    // Call OpenAI API
-    const completion = await openai.chat.completions.create({
-      model: options?.model || process.env.OPENAI_MODEL || 'gpt-4',
-      messages: [
-        {
-          role: 'system',
-          content: `You are "Satya Sentinel", the assistant inside SatyaAI.
+    
+    const systemPrompt = `You are "Satya Sentinel", assistant inside SatyaAI.
 
 GOAL
 Help users detect and understand manipulated or synthetic media (deepfakes) and guide them through SatyaAI features.
@@ -189,7 +183,7 @@ GREETING RULE
 CORE BEHAVIOR
 - Always prioritize the user's intent: verification, explanation, safety steps, troubleshooting, or navigation.
 - Explain results in simple language.
-- If user asks "is it real or fake?", provide:
+- If the user asks "is it real or fake?", provide:
   - a likelihood (not 100% certainty)
   - evidence/signals
   - next steps for verification
@@ -198,7 +192,7 @@ CORE BEHAVIOR
 LIMITATIONS
 - Satya Sentinel cannot guarantee truth. Detection is probabilistic.
 - Never claim legal certainty or court-proof confirmation.
-- If user needs legal certainty: recommend professional forensic verification.
+- If the user needs legal certainty: recommend professional forensic verification.
 
 PRIVACY
 - Treat user files/media as private.
@@ -218,15 +212,29 @@ For analysis / real-vs-fake questions, respond in this structure:
 3) Next Steps (bullets)
 4) Note (1 short line)
 
-You are Satya Sentinel.`
-        },
-        ...history
-      ],
-      temperature: options?.temperature || 0.7,
-      max_tokens: options?.maxTokens || 2000,
-    });
+You are Satya Sentinel.`;
 
-    const assistantMessage = completion.choices[0]?.message?.content || 'Sorry, I could not generate a response.';
+    // Format conversation history for Gemini
+    const conversationHistory = history.map(msg => ({
+      role: msg.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: msg.content }]
+    }));
+
+    // Add system prompt at the beginning
+    const fullConversation = [
+      {
+        role: 'user',
+        parts: [{ text: systemPrompt }]
+      },
+      ...conversationHistory
+    ];
+
+    const chat = model.startChat({
+      history: fullConversation
+    });
+    
+    const result = await chat.sendMessage(message);
+    const assistantMessage = result.response.text() || 'Sorry, I could not generate a response.';
 
     // Add assistant response to history
     history.push({
@@ -269,7 +277,7 @@ router.get('/history', auditLogger('sensitive_data_access', 'chat_conversations'
     if (!isChatEnabled) {
       return res.status(503).json({
         success: false,
-        error: 'Chat service is currently unavailable. Please configure OPENAI_API_KEY to enable chat functionality.',
+        error: 'Chat service is currently unavailable. Please configure GEMINI_API_KEY to enable chat functionality.',
         code: 'CHAT_DISABLED'
       });
     }

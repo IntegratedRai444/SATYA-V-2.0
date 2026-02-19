@@ -163,31 +163,6 @@ const upload = multer({
         return cb(new Error('Invalid file path'));
       }
 
-      // For small files, we can check magic numbers immediately
-      const chunks: Buffer[] = [];
-      
-      req.on('data', (chunk: Buffer) => {
-        chunks.push(chunk);
-        const buffer = Buffer.concat(chunks);
-        
-        if (buffer.length >= fileConfig.magic.length) {
-          const magic = buffer.slice(0, fileConfig.magic.length);
-          if (!checkMagicNumbers(magic, fileConfig.magic)) {
-            return cb(new Error('Invalid file signature'));
-          }
-          // Remove the data listener once we've checked the magic numbers
-          req.removeAllListeners('data');
-        }
-      });
-      
-      req.on('end', () => {
-        // Handle any remaining data
-        const buffer = Buffer.concat(chunks);
-        if (buffer.length > 0 && buffer.length < fileConfig.magic.length) {
-          return cb(new Error('File too small to determine type'));
-        }
-      });
-
       // Check file size against type-specific limit
       if (file.size > fileConfig.maxSize) {
         return cb(new Error(`File too large. Maximum size: ${formatBytes(fileConfig.maxSize)}`));
@@ -196,6 +171,19 @@ const upload = multer({
       // Additional security checks
       if (file.originalname !== sanitizedFilename) {
         return cb(new Error('Invalid filename'));
+      }
+
+      // For small files, we can check magic numbers immediately
+      if (file.size > 0 && file.size < fileConfig.magic.length) {
+        return cb(new Error('File too small to determine type'));
+      }
+
+      // Check magic numbers for files that have enough data
+      if (file.size >= fileConfig.magic.length) {
+        const magic = file.buffer.slice(0, fileConfig.magic.length);
+        if (!checkMagicNumbers(magic, fileConfig.magic)) {
+          return cb(new Error('Invalid file signature'));
+        }
       }
 
       cb(null, true);

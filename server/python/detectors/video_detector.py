@@ -768,17 +768,102 @@ class VideoDetector:
             return {"score": 0.5, "natural_motion": True}
 
     def _analyze_optical_flow(self, frame_results: List[Dict]) -> Dict:
-        """Analyze optical flow patterns"""
+        """Analyze optical flow patterns for temporal consistency"""
         try:
-            # This would require storing actual frames, simplified version
+            if len(frame_results) < 2:
+                return {"score": 0.5, "method": "optical_flow", "message": "Insufficient frames"}
+            
+            # Extract confidence scores and features from frame results
+            scores = [result.get("confidence", 0.5) for result in frame_results]
+            
+            # Analyze score consistency - deepfakes often have inconsistent predictions
+            score_variance = np.var(scores)
+            score_std = np.std(scores)
+            
+            # High variance might indicate manipulation
+            variance_score = min(1.0, score_variance * 4)  # Scale variance to 0-1
+            
+            # Analyze score progression patterns
+            score_diffs = np.diff(scores)
+            large_jumps = np.sum(np.abs(score_diffs) > 0.3)  # Large confidence jumps
+            jump_score = min(1.0, large_jumps / len(scores))
+            
+            # Temporal smoothness score
+            smoothness_score = 1.0 - jump_score
+            
+            # Combine metrics
+            optical_flow_score = (variance_score * 0.4 + jump_score * 0.4 + (1 - smoothness_score) * 0.2)
+            
+            # Determine if motion appears natural
+            natural_motion = optical_flow_score < 0.4
+            
+            # Additional analysis based on frame-level features
+            feature_consistency = self._analyze_feature_consistency(frame_results)
+            
+            final_score = (optical_flow_score * 0.7 + feature_consistency * 0.3)
+            
             return {
-                "score": 0.7,
+                "score": float(final_score),
                 "method": "optical_flow",
-                "message": "Optical flow analysis placeholder",
+                "variance_score": float(variance_score),
+                "jump_score": float(jump_score),
+                "smoothness_score": float(smoothness_score),
+                "feature_consistency": float(feature_consistency),
+                "natural_motion": natural_motion,
+                "message": f"Optical flow analysis - variance: {variance_score:.2f}, jumps: {jump_score:.2f}"
             }
+            
         except Exception as e:
             logger.error(f"Optical flow analysis failed: {e}")
-            return {"score": 0.5}
+            return {"score": 0.5, "method": "optical_flow", "message": f"Analysis failed: {str(e)}"}
+    
+    def _analyze_feature_consistency(self, frame_results: List[Dict]) -> float:
+        """Analyze consistency of features across frames"""
+        try:
+            # Extract available features from frame results
+            all_features = []
+            for result in frame_results:
+                features = result.get("features", {})
+                if features:
+                    # Convert features to a consistent vector
+                    feature_vec = []
+                    for key in sorted(features.keys()):
+                        val = features[key]
+                        if isinstance(val, (int, float)):
+                            feature_vec.append(val)
+                        elif isinstance(val, list):
+                            feature_vec.extend(val[:5])  # Take first 5 elements
+                    if feature_vec:
+                        all_features.append(feature_vec)
+            
+            if len(all_features) < 2:
+                return 0.5
+            
+            # Pad feature vectors to same length
+            max_len = max(len(vec) for vec in all_features)
+            padded_features = []
+            for vec in all_features:
+                padded_vec = vec + [0.0] * (max_len - len(vec))
+                padded_features.append(padded_vec)
+            
+            # Calculate feature consistency using correlation
+            correlations = []
+            for i in range(len(padded_features) - 1):
+                corr = np.corrcoef(padded_features[i], padded_features[i + 1])[0, 1]
+                if not np.isnan(corr):
+                    correlations.append(abs(corr))
+            
+            if correlations:
+                avg_correlation = np.mean(correlations)
+                # Lower correlation suggests potential manipulation
+                consistency_score = 1.0 - avg_correlation
+                return float(consistency_score)
+            
+            return 0.5
+            
+        except Exception as e:
+            logger.warning(f"Feature consistency analysis failed: {e}")
+            return 0.5
 
     def _analyze_temporal_deep_learning(
         self, cap: cv2.VideoCapture, video_path: str

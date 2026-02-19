@@ -1,4 +1,4 @@
-import { buildApiUrl } from './config/urls';
+import { apiClient } from './api/client';
 
 export interface UploadProgress {
   fileId: string;
@@ -57,28 +57,17 @@ export class FileUploadManager {
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch(buildApiUrl('/upload/' + type), {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-        body: formData,
+      const response = await apiClient.post('/upload/' + type, formData, {
         signal: controller.signal,
-      });
+      }) as { success: boolean; error?: string; data: unknown };
 
-      if (!response.ok) {
-        let errorData: { message?: string } = {};
-        try {
-          errorData = await response.json();
-        } catch (parseError) {
-          console.error("Failed to parse error response:", parseError);
-        }
-        throw new Error(errorData.message || 'Upload failed');
+      // apiClient returns data directly, so response is the actual server response
+      if (!response.success) {
+        throw new Error(response.error || 'Upload failed');
       }
 
-      const data = await response.json();
-      updateProgress(100, 'completed', undefined, data);
-      return { success: true, data };
+      updateProgress(100, 'completed', undefined, response);
+      return { success: true, data: response };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to upload file';
       updateProgress(0, 'error', errorMessage);

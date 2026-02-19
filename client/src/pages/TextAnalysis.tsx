@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTextAnalysis } from '@/hooks/useApi';
+import { pollAnalysisResult, AnalysisJobStatus } from '@/lib/analysis/pollResult';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -19,6 +20,8 @@ const TextAnalysis: React.FC = () => {
   const [text, setText] = useState('');
   const [result, setResult] = useState<TextAnalysisResult | null>(null);
   const [error, setError] = useState('');
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [analysisStatus, setAnalysisStatus] = useState<'idle' | 'processing' | 'completed' | 'failed'>('idle');
   
   const { analyzeText, isAnalyzing } = useTextAnalysis();
 
@@ -30,17 +33,59 @@ const TextAnalysis: React.FC = () => {
 
     try {
       setError('');
-      const analysisResult = await analyzeText({ text });
-      setResult(analysisResult);
+      setResult(null);
+      setAnalysisStatus('processing');
+      
+      const jobResult = await analyzeText({ text });
+      setJobId(jobResult.jobId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Analysis failed');
+      setAnalysisStatus('failed');
     }
   };
+
+  // Poll for results when jobId is available
+  useEffect(() => {
+    if (jobId && analysisStatus === 'processing') {
+      const polling = pollAnalysisResult(jobId, {
+        onProgress: () => {
+          // Update progress if needed
+        }
+      });
+      
+      // Handle polling promise
+      polling.promise
+        .then((job: AnalysisJobStatus) => {
+          if (job.status === 'completed' && job.result) {
+            const analysisResult: TextAnalysisResult = {
+              success: true,
+              is_ai_generated: !job.result.isAuthentic, // For text, AI-generated = not authentic
+              confidence: job.result.confidence,
+              explanation: `Analysis completed using ${job.result.details.modelInfo?.modelName || 'Text Analysis Model'}. ${job.result.details.features ? `Key indicators: ${Object.keys(job.result.details.features).join(', ')}` : ''}`,
+              model_name: job.result.metrics.modelVersion || 'Text Analysis Model'
+            };
+            setResult(analysisResult);
+            setAnalysisStatus('completed');
+          } else if (job.status === 'failed') {
+            setError(job.error || 'Analysis failed');
+            setAnalysisStatus('failed');
+          }
+        })
+        .catch((err) => {
+          setError(err instanceof Error ? err.message : 'Analysis failed');
+          setAnalysisStatus('failed');
+        });
+      
+      return () => polling.cancel();
+    }
+  }, [jobId, analysisStatus]);
 
   const handleClear = () => {
     setText('');
     setResult(null);
     setError('');
+    setJobId(null);
+    setAnalysisStatus('idle');
   };
 
   return (

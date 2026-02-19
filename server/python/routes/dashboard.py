@@ -194,10 +194,18 @@ async def get_user_analytics():
         monthly_stats = db.get_monthly_analysis_stats(months=6)
 
         # Get performance metrics
+        # Calculate real speed metric from database
+        avg_processing_time = db.get_average_processing_time()
+        speed_score = max(50, min(100, 100 - (avg_processing_time - 2) * 10))  # 2s baseline
+        
+        # Calculate reliability based on error rate
+        error_rate = db.get_error_rate()
+        reliability_score = max(50, min(100, 100 - error_rate * 100))
+        
         metrics = [
-            {"name": "Accuracy", "value": db.get_accuracy_rate()},
-            {"name": "Speed", "value": 95},  # Placeholder for now
-            {"name": "Reliability", "value": 98},
+            {"name": "Accuracy", "value": round(db.get_accuracy_rate() * 100, 1)},
+            {"name": "Speed", "value": round(speed_score, 1)},
+            {"name": "Reliability", "value": round(reliability_score, 1)},
         ]
 
         return {"success": True, "monthly": monthly_stats, "metrics": metrics}

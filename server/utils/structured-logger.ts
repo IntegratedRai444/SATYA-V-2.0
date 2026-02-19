@@ -5,6 +5,14 @@
 
 import { logger } from '../config/logger';
 import { randomUUID } from 'crypto';
+import { Request } from 'express';
+
+// Extend Express Request type to include custom properties
+declare module 'express' {
+  interface Request {
+    correlationId?: string;
+  }
+}
 
 export interface LogContext {
   requestId?: string;
@@ -112,12 +120,17 @@ export const logDetailedError = (error: Error, context?: LogContext, metadata?: 
 /**
  * Creates request context for logging
  */
-export const createRequestContext = (req: any): LogContext => {
+export const createRequestContext = (req: Request): LogContext => {
+  const getHeader = (header: string): string | undefined => {
+    const value = req.headers[header];
+    return Array.isArray(value) ? value[0] : value;
+  };
+
   return {
-    requestId: req.headers['x-request-id'] || randomUUID().substring(0, 8),
+    requestId: getHeader('x-request-id') || randomUUID().substring(0, 8),
     correlationId: req.correlationId || createCorrelationId(),
     userId: req.user?.id,
-    traceId: req.headers['x-trace-id'],
-    spanId: req.headers['x-span-id']
+    traceId: getHeader('x-trace-id'),
+    spanId: getHeader('x-span-id')
   };
 };

@@ -6,7 +6,7 @@ import { logger } from '../../config/logger';
 dotenv.config();
 
 // Type definitions for environment variables
-type EnvConfig = {
+export type EnvConfig = {
   // Core Configuration
   NODE_ENV: 'development' | 'production' | 'test';
   PORT: string;

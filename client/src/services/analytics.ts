@@ -1,5 +1,6 @@
 import { webSocketService } from './websocket';
 import logger from '../lib/logger';
+import { apiClient } from '../lib/api/client';
 
 interface ScanStats {
   totalScans: number;
@@ -103,10 +104,9 @@ class AnalyticsService {
 
   public async fetchInitialData() {
     try {
-      // In a real app, you would fetch this from your API
-      const response = await fetch('/api/analytics');
-      const data = await response.json();
-      this.stats = { ...this.stats, ...data };
+      // Use apiClient for consistency
+      const response = await apiClient.get('/analytics');
+      this.stats = { ...this.stats, ...response.data };
     } catch (error) {
       logger.error('Failed to fetch initial analytics data', error as Error);
     }

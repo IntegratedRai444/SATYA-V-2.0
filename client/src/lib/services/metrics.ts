@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import api from '@/lib/api';
+import { apiClient } from '../api/client';
 
 // Types
 export type MetricType = 'analysis' | 'error' | 'performance' | 'auth' | 'api' | 'health';
@@ -96,7 +96,7 @@ class MetricsService {
     const batch = this.queue.splice(0, this.BATCH_SIZE);
     
     try {
-      await api.post('/api/metrics', { metrics: batch });
+      await apiClient.post('/api/metrics', { metrics: batch });
     } catch (error: unknown) {
       console.error('Failed to send metrics:', error);
       // Requeue failed metrics (except in case of client errors)
@@ -106,11 +106,6 @@ class MetricsService {
       }
     } finally {
       this.isProcessing = false;
-      
-      // If there are more metrics in the queue, schedule next flush
-      if (this.queue.length > 0) {
-        setTimeout(() => this.flush(), 0);
-      }
     }
   }
 
@@ -128,14 +123,9 @@ class MetricsService {
       navigator.sendBeacon('/api/metrics', blob);
       this.queue = [];
     } else {
-      // Fallback to regular fetch
-      fetch('/api/metrics', {
-        method: 'POST',
-        body: blob,
-        keepalive: true,
-        headers: {
-          'Content-Type': 'application/json',
-        },
+      // Use apiClient for consistency
+      apiClient.post('/api/metrics', { metrics: this.queue }).then(() => {
+        this.queue = [];
       });
     }
   }
