@@ -43,19 +43,19 @@ class TextDeepfakeDetector(nn.Module):
         self.device = device
         self.use_ensemble = use_ensemble
         
-        # Default models for text deepfake detection
+        # Default models for text deepfake detection (excluding memory-heavy models)
         if model_names is None:
             model_names = [
                 "roberta-base-openai-detector",  # OpenAI content detector
                 "bert-base-uncased",  # General purpose
                 "distilbert-base-uncased",  # Lightweight
                 "microsoft/DialoGPT-medium",  # Conversation analysis
-                "facebook/bart-large-mnli"  # Natural language inference
+                # "facebook/bart-large-mnli"  # Temporarily disabled - memory issue
             ]
         
         self.models = {}
         self.tokenizers = {}
-        self.model_weights = [0.4, 0.3, 0.2, 0.05, 0.05]  # Ensemble weights
+        self.model_weights = [0.45, 0.35, 0.15, 0.05]  # Ensemble weights for 4 models
         
         # Load models
         if TRANSFORMERS_AVAILABLE:

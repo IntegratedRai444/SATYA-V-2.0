@@ -261,7 +261,10 @@ class SatyaAICore:
                     "use_audio_model": True
                 }
                 device = 'cuda' if self.enable_gpu else 'cpu'
-                self.audio_detector = AudioDetector(device=device, config=audio_config)
+                # Use singleton to prevent multiple instances
+                from services.detector_singleton import DetectorSingleton
+                detector_singleton = DetectorSingleton()
+                self.audio_detector = detector_singleton.get_detector('audio', {'enable_gpu': self.enable_gpu})
                 initialized_components.append("audio_detector")
                 logger.info("Audio detector initialized successfully")
             except Exception as e:

@@ -21,7 +21,7 @@ from .deepfake_classifier import DeepfakeClassifier
 try:
     import sys
     sys.path.append('../../')
-    from models import (
+    from legacy_models import (
         XceptionDeepfakeDetector,
         EfficientNetDeepfakeDetector,
         ResNet50DeepfakeDetector,

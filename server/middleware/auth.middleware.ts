@@ -296,7 +296,27 @@ export const authenticate = async (req: AuthenticatedRequest, res: Response, nex
 
     // Verify token with Supabase first (for user info)
     logger.debug('Verifying token with Supabase', { tokenLength: token?.length });
-    const { data: { user }, error } = await supabase.auth.getUser(token);
+    
+    let user: User | null = null;
+    let error: { message: string } | null = null;
+    
+    try {
+      const result = await supabase.auth.getUser(token);
+      user = result.data.user;
+      error = result.error;
+    } catch (err) {
+      logger.error('Supabase auth getUser threw error', {
+        error: err instanceof Error ? err.message : 'Unknown error',
+        path: req.path
+      });
+      
+      return res.status(401).json({
+        success: false,
+        error: 'AUTH_REQUIRED',
+        message: 'Invalid authentication token',
+        code: 'AUTH_REQUIRED'
+      });
+    }
     
     if (error) {
       logger.warn('Token verification failed', {

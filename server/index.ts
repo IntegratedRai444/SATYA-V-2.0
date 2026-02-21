@@ -63,39 +63,29 @@ app.get('/health', (req: Request, res: Response) => {
   });
 });
 
-// Dashboard stats endpoint
-app.get('/api/v2/dashboard/stats', (req: Request, res: Response) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.json({
-    totalAnalyses: 0,
-    completedAnalyses: 0,
-    pendingAnalyses: 0,
-    failedAnalyses: 0,
-    averageProcessingTime: 0,
-    serverUptime: process.uptime(),
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Recent activity endpoint
-app.get('/api/v2/dashboard/recent-activity', (req: Request, res: Response) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.json({
-    activities: [],
-    timestamp: new Date().toISOString()
-  });
-});
-
 // API routes are handled by the router
 app.use('/api/v2', routes);
 
 // Error handling middleware (must be last)
 app.use((err: Error, req: Request, res: Response) => {
   console.error('Unhandled error:', err);
+  console.error('Error details:', {
+    message: err.message,
+    stack: err.stack,
+    path: req.path,
+    method: req.method,
+    body: req.body,
+    headers: req.headers
+  });
+  
   res.status(500).json({
     success: false,
     error: 'INTERNAL_SERVER_ERROR',
-    message: 'An unexpected error occurred'
+    message: 'An unexpected error occurred',
+    ...(process.env.NODE_ENV === 'development' && {
+      details: err.message,
+      stack: err.stack
+    })
   });
 });
 

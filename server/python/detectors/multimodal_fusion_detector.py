@@ -66,12 +66,15 @@ class MultimodalFusionDetector:
 
         logger.info("🔮 Initializing Multimodal Fusion Detector")
 
-        # Initialize all detectors
-        self.image_detector = ImageDetector() if IMAGE_DETECTOR_AVAILABLE else None
-        self.video_detector = VideoDetector() if VIDEO_DETECTOR_AVAILABLE else None
-        self.audio_detector = AudioDetector() if AUDIO_DETECTOR_AVAILABLE else None
+        # Initialize all detectors using singleton pattern
+        from services.detector_singleton import DetectorSingleton
+        detector_singleton = DetectorSingleton()
+        
+        self.image_detector = detector_singleton.get_detector('image') if IMAGE_DETECTOR_AVAILABLE else None
+        self.video_detector = detector_singleton.get_detector('video') if VIDEO_DETECTOR_AVAILABLE else None
+        self.audio_detector = detector_singleton.get_detector('audio') if AUDIO_DETECTOR_AVAILABLE else None
         self.text_nlp_detector = (
-            TextNLPDetector() if TEXT_NLP_DETECTOR_AVAILABLE else None
+            detector_singleton.get_detector('text') if TEXT_NLP_DETECTOR_AVAILABLE else None
         )
 
         # Fusion weights (can be learned)

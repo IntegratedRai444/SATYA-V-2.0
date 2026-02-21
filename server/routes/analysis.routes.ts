@@ -152,8 +152,8 @@ const upload = multer({
         return cb(new Error(`Invalid file extension. Expected ${fileConfig.ext} for ${file.mimetype}`));
       }
 
-      // Validate filename
-      const sanitizedFilename = path.basename(file.originalname).replace(/[^a-zA-Z0-9\-_.]/g, '');
+      // Validate filename (allow common valid characters)
+      const sanitizedFilename = path.basename(file.originalname).replace(/[<>:"/\\|?*\x00-\x1F]/g, '');
       if (sanitizedFilename !== file.originalname) {
         return cb(new Error('Invalid characters in filename'));
       }
@@ -169,9 +169,7 @@ const upload = multer({
       }
 
       // Additional security checks
-      if (file.originalname !== sanitizedFilename) {
-        return cb(new Error('Invalid filename'));
-      }
+      cb(null, true);
 
       // For small files, we can check magic numbers immediately
       if (file.size > 0 && file.size < fileConfig.magic.length) {
@@ -309,7 +307,7 @@ const handleAnalysisError = async (error: unknown, res: Response, jobId?: string
 router.post(
   '/image',
   upload.single('file'),
-  validateRequest,
+  validateRequest([]),
   async (req: AuthenticatedRequest, res: Response) => {
     const type = 'image';
     const correlationId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -508,7 +506,7 @@ router.post(
 router.post(
   '/video',
   upload.single('file'),
-  validateRequest,
+  validateRequest([]),
   async (req: AuthenticatedRequest, res: Response) => {
     const type = 'video';
     const correlationId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -690,7 +688,7 @@ router.post(
 router.post(
   '/audio',
   upload.single('file'),
-  validateRequest,
+  validateRequest([]),
   async (req: AuthenticatedRequest, res: Response) => {
     const type = 'audio';
     const correlationId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -871,7 +869,7 @@ router.post(
 // Text analysis endpoint
 router.post(
   '/text',
-  validateRequest,
+  validateRequest([]),
   async (req: AuthenticatedRequest, res: Response) => {
     const type = 'text';
     const correlationId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -1062,7 +1060,7 @@ router.post(
 router.post(
   '/multimodal',
   upload.single('file'),
-  validateRequest,
+  validateRequest([]),
   async (req: AuthenticatedRequest, res: Response) => {
     return res.status(410).json({
       success: false,
@@ -1147,5 +1145,4 @@ router.get('/results/:jobId', async (req: Request, res: Response) => {
 });
 
 export { router as analysisRouter };
-export default router;
 

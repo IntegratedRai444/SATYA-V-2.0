@@ -5,7 +5,7 @@ Enhanced with comprehensive HuggingFace Transformers integration
 
 # Legacy models for backward compatibility
 try:
-    from ..models import XceptionDeepfakeDetector
+    from ..legacy_models import XceptionDeepfakeDetector
     XCEPTION_DETECTOR_AVAILABLE = True
 except ImportError as e:
     try:
@@ -14,7 +14,7 @@ except ImportError as e:
         import os
         parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         sys.path.insert(0, parent_dir)
-        from models import XceptionDeepfakeDetector
+        from legacy_models import XceptionDeepfakeDetector
         XCEPTION_DETECTOR_AVAILABLE = True
     except ImportError as e2:
         print(f"Warning: XceptionDeepfakeDetector not available: {e2}")

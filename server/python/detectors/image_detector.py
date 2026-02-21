@@ -30,7 +30,7 @@ except ImportError as e:
     # Continue without ML
 
 try:
-    from models.image_model import SwinTransformer as AdvancedImageDetector
+    from models.image_model import AdvancedImageDetector
     # Just check if we can import it, don't try to use it yet
     ADVANCED_IMAGE_MODEL_AVAILABLE = True
     logger.info("Advanced image model (Swin Transformer) available")
@@ -241,8 +241,9 @@ class ImageDetector:
         if use_advanced_model and ADVANCED_IMAGE_MODEL_AVAILABLE:
             try:
                 self.advanced_model = AdvancedImageDetector(
-                    model_path=model_path,
-                    device='cuda' if enable_gpu else 'cpu'
+                    model_path=None,
+                    device='cuda' if enable_gpu else 'cpu',
+                    model_type='swin'
                 )
                 logger.info("Advanced Swin Transformer model initialized")
                 self.models_available = True

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { supabase } from '../config/supabase';
+import { supabase, supabaseAdmin } from '../config/supabase';
 import { logger } from '../config/logger';
 
 const router = Router();
@@ -287,7 +287,10 @@ export const createAnalysisJob = async (
     status?: 'pending' | 'processing' | 'completed' | 'failed';
   }
 ) => {
-  const { data, error } = await supabase
+  // Generate report code
+  const reportCode = `RPT-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+  
+  const { data, error } = await supabaseAdmin
     .from('tasks')
     .insert({
       user_id: userId,
@@ -296,6 +299,7 @@ export const createAnalysisJob = async (
       file_name: jobData.filename,
       file_type: jobData.mime_type,
       file_size: jobData.size_bytes,
+      report_code: reportCode,
       metadata: {
         ...jobData.metadata,
         media_type: jobData.modality
@@ -315,7 +319,7 @@ export const createAnalysisJob = async (
 
   if (error) {
     logger.error('Failed to create analysis job:', error);
-    throw new Error('Failed to create analysis job');
+    throw new Error(`Failed to create analysis job: ${error.message}`);
   }
 
   return data;
@@ -380,7 +384,7 @@ export const updateAnalysisJobWithResults = async (
   }
 ) => {
   // Update the job
-  const { data: jobUpdate, error: jobUpdateError } = await supabase
+  const { data: jobUpdate, error: jobUpdateError } = await supabaseAdmin
     .from('tasks')
     .update({
       status: results.status,
@@ -410,4 +414,4 @@ export const updateAnalysisJobWithResults = async (
   return jobUpdate;
 };
 
-export default router;
+export { router as historyRouter };

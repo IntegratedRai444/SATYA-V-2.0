@@ -28,6 +28,10 @@ from torchvision.ops import FeaturePyramidNetwork, SqueezeExcitation
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Model configuration constants
+EMBED_DIM = 96
+WINDOW_SIZE = 7
+
 # HuggingFace Transformers
 try:
     from transformers import (

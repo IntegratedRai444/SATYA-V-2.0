@@ -14,8 +14,21 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 load_dotenv()
 load_dotenv('../../.env')
 
+# Force CPU-only mode to fix CUDA compatibility issues
 os.environ['ENABLE_ML_MODELS'] = 'true'
 os.environ['FORCE_ML_LOADING'] = 'true'
+os.environ['CUDA_VISIBLE_DEVICES'] = ''  # Disable CUDA
+os.environ['TORCH_CUDA_ARCH_LIST'] = ''  # Disable CUDA arch list
+import torch
+# Force CPU mode before any torch imports
+try:
+    torch.cuda.is_available = lambda: False
+    torch.backends.cudnn.enabled = False
+    if hasattr(torch.backends, 'cuda'):
+        torch.backends.cuda.enabled = False
+except AttributeError:
+    # CUDA module not available, continue with CPU-only mode
+    pass
 
 from fastapi import FastAPI, HTTPException, Request, status, UploadFile, File, Depends
 from fastapi.exceptions import RequestValidationError
@@ -773,20 +786,7 @@ if PROMETHEUS_AVAILABLE:
 
 def register_router(router, prefix: str, tags: list[str], router_name: str) -> None:
 
-    """Safely register a router with comprehensive error handling.
 
-
-    Args:
-
-        router: The FastAPI router to register
-
-        prefix: URL prefix for the routes
-
-        tags: List of tags for OpenAPI docs
-
-        router_name: Human-readable name for logging
-
-    """
 
     try:
 

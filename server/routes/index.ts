@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { healthRouter } from './health.routes';
 import { analysisRouter } from './analysis.routes';
 import { dashboardRouter } from './dashboard.routes';
-import historyRouter from './history';
+import { historyRouter } from './history';
 import { chatRouter } from './chat';
 import { notificationsRouter } from './notifications';
 import { userRouter } from './user';

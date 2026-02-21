@@ -116,46 +116,40 @@ class UnifiedDetector:
         self._initialize_detectors()
         
     def _initialize_detectors(self) -> None:
-        """Initialize all detector components"""
+        """Initialize all detector components using singleton pattern"""
         try:
+            # Use singleton pattern for all detectors
+            from services.detector_singleton import DetectorSingleton
+            detector_singleton = DetectorSingleton()
+            
             # Initialize image detector
             try:
-                from detectors.image_detector import ImageDetector
-                self.image_detector = ImageDetector(
-                    model_path=self.model_path,
-                    enable_gpu=self.enable_gpu,
-                    use_advanced_model=True
-                )
+                self.image_detector = detector_singleton.get_detector('image', {'enable_gpu': self.enable_gpu})
                 logger.info("✅ Image detector initialized")
             except Exception as e:
                 logger.error(f"❌ Failed to initialize image detector: {e}")
                 
             # Initialize video detector
             try:
-                from detectors.video_detector import VideoDetector
                 video_config = {
-                    "model_path": self.model_path,
+                    "enable_gpu": self.enable_gpu,
                     "use_optimization": True,
                     "use_enhanced_model": True,
                     "temporal_window": 30,
                     "frame_sample_rate": 2,
                     "max_frames": 100
                 }
-                self.video_detector = VideoDetector(config=video_config)
+                self.video_detector = detector_singleton.get_detector('video', video_config)
                 logger.info("✅ Video detector initialized")
             except Exception as e:
                 logger.error(f"❌ Failed to initialize video detector: {e}")
                 
             # Initialize audio detector
             try:
-                from detectors.audio_detector import AudioDetector
                 audio_config = {
-                    "model_path": self.model_path,
-                    "use_enhanced_audio": True,
-                    "use_audio_model": True
+                    "enable_gpu": self.enable_gpu
                 }
-                device = 'cuda' if self.enable_gpu else 'cpu'
-                self.audio_detector = AudioDetector(device=device, config=audio_config)
+                self.audio_detector = detector_singleton.get_detector('audio', audio_config)
                 logger.info("✅ Audio detector initialized")
             except Exception as e:
                 logger.error(f"❌ Failed to initialize audio detector: {e}")

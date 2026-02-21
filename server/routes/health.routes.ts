@@ -118,5 +118,3 @@ healthRouter.get('/database', async (_req, res) => {
     });
   }
 });
-
-export default healthRouter;

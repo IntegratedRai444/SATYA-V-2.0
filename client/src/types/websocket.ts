@@ -59,7 +59,7 @@ export interface WebSocketConfig {
 export interface BaseMessage<T = unknown> {
   type: MessageType;
   payload: T;
-  timestamp: string;
+  timestamp: number;
   id: string;
 }
 
@@ -89,7 +89,7 @@ export interface SystemAlertPayload {
   title: string;
   message: string;
   severity: 'info' | 'warning' | 'error' | 'critical';
-  timestamp: string;
+  timestamp: number;
   action?: {
     label: string;
     url?: string;
@@ -100,8 +100,8 @@ export interface SystemAlertPayload {
 }
 
 export interface HeartbeatPayload {
-  serverTime: string;
-  clientTime?: string;
+  serverTime: number;
+  clientTime?: number;
   latency?: number;
 }
 
@@ -110,13 +110,13 @@ export interface AuthResponsePayload {
   userId?: string;
   username?: string;
   error?: string;
-  expiresAt?: string;
+  expiresAt?: number;
 }
 
 export interface DashboardUpdatePayload {
   updateType: 'stats' | 'analytics' | 'activity' | 'metrics' | 'all';
   data: Partial<DashboardStats>;
-  timestamp: string;
+  timestamp: number;
 }
 
 export interface ErrorPayload {
@@ -226,8 +226,8 @@ export interface WebSocketEventHandlers {
 
 export interface ConnectionInfo {
   state: ConnectionState;
-  connectedAt?: string;
-  disconnectedAt?: string;
+  connectedAt?: number;
+  disconnectedAt?: number;
   reconnectAttempts: number;
   lastError?: string;
   latency?: number;
@@ -239,7 +239,7 @@ export interface ConnectionInfo {
 
 export interface QueuedMessage {
   message: WebSocketMessage;
-  timestamp: string;
+  timestamp: number;
   retries: number;
   priority: 'low' | 'normal' | 'high';
 }
@@ -252,7 +252,7 @@ export interface ReconnectionInfo {
   attempt: number;
   maxAttempts: number;
   nextAttemptIn: number;
-  lastAttemptAt?: string;
+  lastAttemptAt?: number;
 }
 
 // ============================================================================
@@ -302,7 +302,7 @@ export function createMessage<T>(
   return {
     type,
     payload,
-    timestamp: new Date().toISOString(),
+    timestamp: Date.now(),
     id: id || crypto.randomUUID(),
   };
 }
@@ -320,7 +320,7 @@ export function isValidMessage(data: unknown): data is WebSocketMessage {
   return (
     typeof message.type === 'string' &&
     message.payload !== undefined &&
-    typeof message.timestamp === 'string' &&
+    typeof message.timestamp === 'number' &&
     typeof message.id === 'string'
   );
 }
