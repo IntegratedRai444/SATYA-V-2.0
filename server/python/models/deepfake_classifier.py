@@ -29,7 +29,7 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 # Constants
-MODEL_DIR = Path(__file__).resolve().parent.parent.parent.parent / "models"  # Go up from models/python/models/deepfake_classifier.py to project root
+MODEL_DIR = Path(__file__).resolve().parent.parent / "models"  # Fixed: correct path to models directory
 DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # HuggingFace fallback models

@@ -20,15 +20,7 @@ os.environ['FORCE_ML_LOADING'] = 'true'
 os.environ['CUDA_VISIBLE_DEVICES'] = ''  # Disable CUDA
 os.environ['TORCH_CUDA_ARCH_LIST'] = ''  # Disable CUDA arch list
 import torch
-# Force CPU mode before any torch imports
-try:
-    torch.cuda.is_available = lambda: False
-    torch.backends.cudnn.enabled = False
-    if hasattr(torch.backends, 'cuda'):
-        torch.backends.cuda.enabled = False
-except AttributeError:
-    # CUDA module not available, continue with CPU-only mode
-    pass
+# Let PyTorch handle CUDA naturally - don't force it
 
 from fastapi import FastAPI, HTTPException, Request, status, UploadFile, File, Depends
 from fastapi.exceptions import RequestValidationError
@@ -122,9 +114,8 @@ if CUDA_FIX_AVAILABLE:
     except Exception as e:
         logger.error(f"❌ Failed to apply CUDA fixes: {e}")
 
-# Set DB_AVAILABLE based on individual service availability
-
-DB_AVAILABLE = DATABASE_AVAILABLE and CACHE_AVAILABLE
+# Set DB_AVAILABLE based on database service only (remove cache dependency)
+DB_AVAILABLE = DATABASE_AVAILABLE
 
 
 # Import middleware
@@ -559,7 +550,7 @@ async def preflight_handler(request: Request, full_path: str):
 
 # Add Supabase auth middleware if available - TEMPORARILY DISABLED FOR TESTING - RESTART TRIGGER
 
-if MIDDLEWARE_AVAILABLE and settings.SUPABASE_URL and settings.SUPABASE_ANON_KEY and False:  # Added False to disable
+if MIDDLEWARE_AVAILABLE and settings.SUPABASE_URL and settings.SUPABASE_ANON_KEY:
 
     try:
 
@@ -1210,15 +1201,64 @@ async def analyze_image_unified(
 
     """
 
+    # Check unified detector availability, fallback to SentinelAgent if not available
     if not UNIFIED_DETECTOR_AVAILABLE or not hasattr(app.state, 'unified_detector') or app.state.unified_detector is None:
-
-        raise HTTPException(
-
-            status_code=503,
-
-            detail="Unified detector not available"
-
-        )
+        logger.warning("⚠️ Unified detector not available, using SentinelAgent fallback")
+        
+        # Fallback to SentinelAgent if unified detector not available
+        if ML_AVAILABLE and hasattr(app.state, 'sentinel_agent') and app.state.sentinel_agent:
+            try:
+                # Read and validate file
+                contents = await file.read()
+                if not contents or len(contents) < 100:
+                    raise ValueError("Invalid file")
+                
+                # Use SentinelAgent for analysis
+                sentinel = app.state.sentinel_agent
+                
+                if hasattr(sentinel, 'image_detector') and sentinel.image_detector:
+                    import numpy as np
+                    from PIL import Image
+                    import io
+                    
+                    # Convert to PIL Image
+                    image = Image.open(io.BytesIO(contents))
+                    if image.mode != 'RGB':
+                        image = image.convert('RGB')
+                    image_array = np.array(image)
+                    
+                    # Use image detector
+                    result_data = sentinel.image_detector.analyze_image(image_array)
+                    
+                    # Convert to unified format
+                    result_dict = {
+                        "filename": file.filename,
+                        "file_size": len(contents),
+                        "user_id": current_user.get("id") if current_user else "anonymous",
+                        "authenticity": "deepfake" if result_data.get('is_deepfake', False) else "authentic",
+                        "confidence": float(result_data.get('confidence', 0.0)),
+                        "is_deepfake": result_data.get('is_deepfake', False),
+                        "model_name": result_data.get('model_name', 'sentinel_agent'),
+                        "success": True
+                    }
+                    
+                    logger.info(f"SentinelAgent fallback image analysis: {result_dict['authenticity']} ({result_dict['confidence']:.2f})")
+                    
+                    return {
+                        "success": True,
+                        "result": result_dict
+                    }
+                else:
+                    raise HTTPException(status_code=503, detail="Image detector not available in SentinelAgent")
+                    
+            except Exception as e:
+                logger.error(f"SentinelAgent fallback analysis failed: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+        else:
+            raise HTTPException(
+                status_code=503,
+                detail="ML models not available - please try again later"
+            )
 
     
     try:
@@ -1304,15 +1344,54 @@ async def analyze_video_unified(
 
     """
 
+    # Check unified detector availability, fallback to SentinelAgent if not available
     if not UNIFIED_DETECTOR_AVAILABLE or not hasattr(app.state, 'unified_detector') or app.state.unified_detector is None:
-
-        raise HTTPException(
-
-            status_code=503,
-
-            detail="Unified detector not available"
-
-        )
+        logger.warning("⚠️ Unified detector not available, using SentinelAgent fallback")
+        
+        # Fallback to SentinelAgent if unified detector not available
+        if ML_AVAILABLE and hasattr(app.state, 'sentinel_agent') and app.state.sentinel_agent:
+            try:
+                # Read and validate file
+                contents = await file.read()
+                if not contents or len(contents) < 100:
+                    raise ValueError("Invalid file")
+                
+                # Use SentinelAgent for analysis
+                sentinel = app.state.sentinel_agent
+                
+                if hasattr(sentinel, 'video_detector') and sentinel.video_detector:
+                    # Use video detector
+                    result_data = sentinel.video_detector.analyze_video(contents)
+                    
+                    # Convert to unified format
+                    result_dict = {
+                        "filename": file.filename,
+                        "file_size": len(contents),
+                        "user_id": current_user.get("id") if current_user else "anonymous",
+                        "authenticity": "deepfake" if result_data.get('is_deepfake', False) else "authentic",
+                        "confidence": float(result_data.get('confidence', 0.0)),
+                        "is_deepfake": result_data.get('is_deepfake', False),
+                        "model_name": result_data.get('model_name', 'sentinel_agent'),
+                        "success": True
+                    }
+                    
+                    logger.info(f"SentinelAgent fallback video analysis: {result_dict['authenticity']} ({result_dict['confidence']:.2f})")
+                    
+                    return {
+                        "success": True,
+                        "result": result_dict
+                    }
+                else:
+                    raise HTTPException(status_code=503, detail="Video detector not available in SentinelAgent")
+                    
+            except Exception as e:
+                logger.error(f"SentinelAgent fallback analysis failed: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+        else:
+            raise HTTPException(
+                status_code=503,
+                detail="ML models not available - please try again later"
+            )
 
     
     try:
@@ -1382,78 +1461,115 @@ async def analyze_audio_unified(
 
     
     Args:
-
         file: Audio file to analyze
-
         current_user: Authenticated user (if auth enabled)
-
         
     Returns:
-
         Standardized analysis result
-
     """
 
+    # Check unified detector availability, fallback to SentinelAgent if not available
     if not UNIFIED_DETECTOR_AVAILABLE or not hasattr(app.state, 'unified_detector') or app.state.unified_detector is None:
-
-        raise HTTPException(
-
-            status_code=503,
-
-            detail="Unified detector not available"
-
-        )
-
+        logger.warning("⚠️ Unified detector not available, using SentinelAgent fallback")
+        
+        # Fallback to SentinelAgent if unified detector not available
+        if ML_AVAILABLE and hasattr(app.state, 'sentinel_agent') and app.state.sentinel_agent:
+            try:
+                # Read and validate file
+                contents = await file.read()
+                if not contents or len(contents) < 100:
+                    raise ValueError("Invalid file")
+                
+                # Use SentinelAgent for analysis
+                sentinel = app.state.sentinel_agent
+                
+                if hasattr(sentinel, 'audio_detector') and sentinel.audio_detector:
+                    # Use audio detector
+                    result_data = sentinel.audio_detector.analyze_audio(contents)
+                    
+                    # Convert to unified format
+                    result_dict = {
+                        "filename": file.filename,
+                        "file_size": len(contents),
+                        "user_id": current_user.get("id") if current_user else "anonymous",
+                        "authenticity": "deepfake" if result_data.get('is_deepfake', False) else "authentic",
+                        "confidence": float(result_data.get('confidence', 0.0)),
+                        "is_deepfake": result_data.get('is_deepfake', False),
+                        "model_name": result_data.get('model_name', 'sentinel_agent'),
+                        "success": True
+                    }
+                    
+                    logger.info(f"SentinelAgent fallback audio analysis: {result_dict['authenticity']} ({result_dict['confidence']:.2f})")
+                    
+                    return {
+                        "success": True,
+                        "result": result_dict
+                    }
+                else:
+                    raise HTTPException(status_code=503, detail="Audio detector not available in SentinelAgent")
+                    
+            except Exception as e:
+                logger.error(f"SentinelAgent fallback analysis failed: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+        else:
+            raise HTTPException(
+                status_code=503,
+                detail="ML models not available - please try again later"
+            )
     
     try:
-
         # Read and validate file
-
         contents = await file.read()
-
         if not contents or len(contents) < 100:
-
             raise ValueError("Invalid file")
-
         
         # Perform unified analysis
-
         detector = app.state.unified_detector
-
         result = detector.detect_audio(contents)
-
         
         # Add metadata
-
         result_dict = result.to_dict()
-
         result_dict.update({
-
             "filename": file.filename,
-
             "file_size": len(contents),
-
             "user_id": current_user.get("id") if current_user else "anonymous"
-
         })
-
         
         logger.info(f"Unified audio analysis: {result.authenticity} ({result.confidence:.2f})")
-
+        
         return {
-
             "success": result.success,
-
             "result": result_dict
-
         }
-
         
     except Exception as e:
-
         logger.error(f"Unified audio analysis failed: {e}")
-
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/debug/analysis-status")
+async def debug_analysis_status():
+    """Debug endpoint to check analysis system status"""
+    status = {
+        "ml_available": ML_AVAILABLE,
+        "db_available": DB_AVAILABLE,
+        "middleware_available": MIDDLEWARE_AVAILABLE,
+        "unified_detector_available": UNIFIED_DETECTOR_AVAILABLE,
+        "sentinel_agent_available": hasattr(app.state, 'sentinel_agent') and app.state.sentinel_agent is not None,
+        "models": {}
+    }
+    
+    # Check individual model status
+    if hasattr(app.state, 'sentinel_agent') and app.state.sentinel_agent:
+        sentinel = app.state.sentinel_agent
+        status["models"] = {
+            "image_detector": hasattr(sentinel, 'image_detector') and sentinel.image_detector is not None,
+            "video_detector": hasattr(sentinel, 'video_detector') and sentinel.video_detector is not None,
+            "audio_detector": hasattr(sentinel, 'audio_detector') and sentinel.audio_detector is not None,
+            "text_nlp_detector": hasattr(sentinel, 'text_nlp_detector') and sentinel.text_nlp_detector is not None,
+        }
+    
+    return status
 
 
 @app.get("/api/v2/analysis/unified/status")

@@ -3,8 +3,8 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 export const pythonConfig = {
-  // Base URL of Python service (standardized naming)
-  apiUrl: process.env.PYTHON_SERVICE_URL || process.env.PYTHON_URL || 'http://host.docker.internal:8000',
+  // Base URL of Python service (fixed for local development)
+  apiUrl: process.env.PYTHON_SERVICE_URL || process.env.PYTHON_URL || 'http://localhost:8000',
   
   // API Key for authenticating with the Python service
   apiKey: process.env.PYTHON_SERVICE_API_KEY || 'python-service-api-key-set-in-env',
@@ -28,8 +28,8 @@ export const pythonConfig = {
   
   // File upload settings
   upload: {
-    // Maximum file size in bytes (default: 50MB)
-    maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '52428800', 10),
+    // Maximum file size in bytes (standardized with analysis.routes.ts)
+    maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '52428800', 10), // 50MB
     
     // Allowed file types
     allowedTypes: [

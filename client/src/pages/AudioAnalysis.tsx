@@ -4,6 +4,7 @@ import { useAudioAnalysis } from '@/hooks/useApi';
 import { pollAnalysisResult } from '@/lib/analysis/pollResult';
 import { AnalysisResult } from '@/lib/api/services/analysisService';
 import type { AnalysisJobStatus } from '@/lib/analysis/pollResult';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 
 export default function AudioAnalysis() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -187,7 +188,8 @@ export default function AudioAnalysis() {
   }, [jobId, analysisStatus]);
 
   return (
-    <div className="min-h-screen bg-[#1a1d24] text-white">
+    <ErrorBoundary level="page">
+      <div className="min-h-screen bg-[#1a1d24] text-white">
       <div className="max-w-6xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8">
@@ -473,5 +475,6 @@ export default function AudioAnalysis() {
         </div>
       </div>
     </div>
+    </ErrorBoundary>
   );
 }

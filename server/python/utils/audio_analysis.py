@@ -11,6 +11,14 @@ import soundfile as sf
 
 logger = logging.getLogger(__name__)
 
+# Check for ffmpeg availability
+FFMPEG_AVAILABLE = False
+try:
+    subprocess.run(["ffmpeg", "-version"], check=True, capture_output=True)
+    FFMPEG_AVAILABLE = True
+except (subprocess.CalledProcessError, FileNotFoundError):
+    logger.warning("FFmpeg not available - audio extraction from videos will be limited")
+
 
 def extract_audio_features(video_path: str) -> Dict[str, Any]:
     """
@@ -22,6 +30,9 @@ def extract_audio_features(video_path: str) -> Dict[str, Any]:
     Returns:
         Dictionary containing audio features
     """
+    if not FFMPEG_AVAILABLE:
+        return {"error": "FFmpeg not available for audio extraction"}
+    
     try:
         # Extract audio from video using ffmpeg
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio:

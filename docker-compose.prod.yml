@@ -53,7 +53,7 @@ services:
     environment:
       - PYTHON_ENV=production
       - HOST=0.0.0.0
-      - PORT=9999
+      - PORT=8000
       - DEBUG=false
       - DATABASE_URL=${DATABASE_URL}
       - SUPABASE_URL=${SUPABASE_URL}
@@ -67,7 +67,7 @@ services:
       - satyaai-network
     restart: unless-stopped
     expose:
-      - "9999"
+      - "8000"
 
   # Prometheus monitoring
   prometheus:

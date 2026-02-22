@@ -148,26 +148,82 @@ async def analyze_unified_media(
                 "user_id": user_id,
             },
         )
+
+        # Execute analysis with timeout guard
+        logger.info("[MODEL INFERENCE START] Starting analysis")
         
-        # Process with ML model - inference only
+        # Check if ML service is available
         if not hasattr(request.app.state, "sentinel_agent") or request.app.state.sentinel_agent is None:
-            raise HTTPException(
-                status_code=503,
-                detail="ML service unavailable"
+            logger.error("[ML SERVICE UNAVAILABLE] SentinelAgent not initialized")
+            return UnifiedAnalysisResponse(
+                success=False,
+                media_type=media_type,
+                fake_score=0.0,
+                label="Unknown",
+                processing_time=0,
+                error="ML service temporarily unavailable - please try again later"
             )
         
-        # Execute inference with timeout
-        import asyncio
-        result = await asyncio.wait_for(
-            request.app.state.sentinel_agent.analyze(analysis_request),
-            timeout=300.0  # 5 minutes
-        )
+        try:
+            # Add timeout wrapper for ML inference (5 minutes max)
+            import asyncio
+            result = await asyncio.wait_for(
+                request.app.state.sentinel_agent.analyze(analysis_request),
+                timeout=300.0  # 5 minutes
+            )
+            logger.info("[MODEL INFERENCE DONE] Analysis completed")
+        except asyncio.TimeoutError:
+            logger.error("[MODEL INFERENCE TIMEOUT] Analysis timed out after 5 minutes")
+            return UnifiedAnalysisResponse(
+                success=False,
+                media_type=media_type,
+                fake_score=0.0,
+                label="Unknown",
+                processing_time=300000,  # 5 minutes in ms
+                error="Analysis timeout - file too large or complex. Please try with a smaller file."
+            )
         
         if not result or not hasattr(result, "conclusions") or not result.conclusions:
-            raise HTTPException(
-                status_code=500,
-                detail="No valid inference results"
+            logger.error("[MODEL INFERENCE FAILED] No valid analysis results")
+            return UnifiedAnalysisResponse(
+                success=False,
+                media_type=media_type,
+                fake_score=0.0,
+                label="Unknown",
+                processing_time=0,
+                error="Failed to analyze: No valid analysis results"
             )
+
+        # Get the primary conclusion
+        primary_conclusion = max(
+            result.conclusions, key=lambda c: (c.confidence, c.severity)
+        )
+
+        # Extract model info
+        model_info = {}
+        if result.conclusions:
+            model_info = result.conclusions[0].metadata.get("model_info", {})
+
+        processing_time = (datetime.utcnow() - start_time).total_seconds() * 1000
+
+        response = UnifiedAnalysisResponse(
+            success=True,
+            media_type=media_type,
+            fake_score=float(primary_conclusion.confidence),
+            label="Deepfake" if primary_conclusion.is_deepfake else "Authentic",
+            processing_time=processing_time,
+            model_name=model_info.get("name", "SatyaAI"),
+            model_version=model_info.get("version", "1.0.0"),
+            confidence=float(primary_conclusion.confidence),
+            proof=getattr(result, 'proof', {}),
+            metadata={
+                "processing_time": getattr(result, 'processing_time', 0),
+                "evidence_id": result.evidence_ids[0] if hasattr(result, "evidence_ids") and result.evidence_ids else file.filename,
+            }
+        )
+
+        logger.info(f"[RESPONSE SENT] {media_type} analysis completed successfully")
+        return response
         
         # Get the primary conclusion
         primary_conclusion = max(

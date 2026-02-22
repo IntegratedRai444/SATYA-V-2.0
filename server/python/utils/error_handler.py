@@ -2,8 +2,8 @@
 Comprehensive error handling utilities for the SatyaAI backend.
 """
 
+import asyncio
 import logging
-import signal
 import sys
 import threading
 import time
@@ -19,25 +19,21 @@ logger = logging.getLogger(__name__)
 
 class TimeoutError(Exception):
     """Custom timeout exception."""
-
     pass
 
 
 class MemoryError(Exception):
     """Custom memory limit exception."""
-
     pass
 
 
 class ModelLoadError(Exception):
     """Custom model loading exception."""
-
     pass
 
 
 class AnalysisError(Exception):
     """Custom analysis exception."""
-
     pass
 
 
@@ -50,37 +46,36 @@ class ErrorHandler:
         self.memory_threshold = 0.85  # 85% memory usage threshold
         self.timeout_default = 300  # 5 minutes default timeout
 
-    def timeout_handler(self, signum, frame):
-        """Handle timeout signals."""
-        raise TimeoutError("Operation timed out")
-
     def with_timeout(self, timeout_seconds: int = None):
-        """Decorator to add timeout to functions."""
-
+        """Decorator to add timeout to functions using asyncio."""
         def decorator(func):
             @wraps(func)
-            def wrapper(*args, **kwargs):
+            async def async_wrapper(*args, **kwargs):
                 timeout = timeout_seconds or self.timeout_default
-
-                # Set up signal handler for timeout
-                old_handler = signal.signal(signal.SIGALRM, self.timeout_handler)
-                signal.alarm(timeout)
-
                 try:
-                    result = func(*args, **kwargs)
-                    signal.alarm(0)  # Cancel alarm
-                    return result
-                except TimeoutError:
-                    logger.error(
-                        f"Function {func.__name__} timed out after {timeout} seconds"
-                    )
-                    raise
-                finally:
-                    signal.signal(signal.SIGALRM, old_handler)
-                    signal.alarm(0)
-
-            return wrapper
-
+                    return await asyncio.wait_for(func(*args, **kwargs), timeout=timeout)
+                except asyncio.TimeoutError:
+                    logger.error(f"Function {func.__name__} timed out after {timeout} seconds")
+                    raise TimeoutError(f"Function {func.__name__} timed out after {timeout} seconds")
+            
+            @wraps(func)
+            def sync_wrapper(*args, **kwargs):
+                timeout = timeout_seconds or self.timeout_default
+                # For sync functions, use thread-based timeout (cross-platform)
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(func, *args, **kwargs)
+                    try:
+                        return future.result(timeout=timeout)
+                    except concurrent.futures.TimeoutError:
+                        logger.error(f"Function {func.__name__} timed out after {timeout} seconds")
+                        raise TimeoutError(f"Function {func.__name__} timed out after {timeout} seconds")
+            
+            # Return appropriate wrapper based on function type
+            if asyncio.iscoroutinefunction(func):
+                return async_wrapper
+            else:
+                return sync_wrapper
         return decorator
 
     def with_memory_monitoring(self, max_memory_mb: int = 2048):
@@ -93,7 +88,7 @@ class ErrorHandler:
                 initial_memory = psutil.Process().memory_info().rss / 1024 / 1024
                 system_memory = psutil.virtual_memory()
 
-                if system_memory.percent > self.memory_threshold * 100:
+                if system_memory.percent > self.memory_threshold:  # Fixed: removed * 100
                     logger.warning(
                         f"High system memory usage: {system_memory.percent:.1f}%"
                     )

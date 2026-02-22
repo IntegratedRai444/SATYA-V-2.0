@@ -22,10 +22,10 @@ export class CircuitBreaker {
   constructor(name: string, config: Partial<CircuitBreakerConfig> = {}) {
     this.name = name;
     this.config = {
-      failureThreshold: 5,
-      recoveryTimeout: 60000,        // 1 minute
-      monitoringPeriod: 10000,      // 10 seconds
-      expectedRecoveryTime: 30000,  // 30 seconds
+      failureThreshold: 10,         // Increased for ML operations
+      recoveryTimeout: 120000,       // 2 minutes for ML recovery
+      monitoringPeriod: 60000,       // 1 minute window
+      expectedRecoveryTime: 60000,  // 1 minute expected recovery
       ...config
     };
 

@@ -22,11 +22,25 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Import ML models
+# Import ML models - use consistent import paths
 try:
-    from detectors.models import AudioDetector, ImageDetector, VideoDetector, get_model_info
-except ImportError:
-    from models import AudioDetector, ImageDetector, VideoDetector, get_model_info
+    from detectors.image_detector import ImageDetector
+    from detectors.video_detector import VideoDetector
+    from detectors.audio_detector import AudioDetector
+    from detectors.text_nlp_detector import TextNLPDetector
+    from detectors.models import get_model_info
+except ImportError as e:
+    logger.error(f"Failed to import detectors: {e}")
+    # Fallback imports
+    try:
+        from models.image_model import ImageDetector
+        from models.video_model import VideoDetector
+        from models.audio_model import AudioDetector
+        from models.text_model import TextNLPDetector
+        from models import get_model_info
+    except ImportError as e2:
+        logger.error(f"Failed to import fallback models: {e2}")
+        raise ImportError("Cannot import any detector models")
 
 # Import the reasoning engine
 try:

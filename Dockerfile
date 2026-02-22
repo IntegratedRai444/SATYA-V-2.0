@@ -33,10 +33,10 @@ COPY server/ ./server/
 COPY tsconfig.json ./
 
 # Build server
-RUN npm run build:server
+RUN npm run build
 
 # Stage 3: Python environment
-FROM python:3.13-slim AS python-env
+FROM python:3.11-slim AS python-env
 
 WORKDIR /app/python
 

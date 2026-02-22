@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { Loader2, Upload, Eye, CheckCircle, AlertCircle, FileText, BarChart3, Camera } from 'lucide-react';
 import { useImageAnalysis } from '@/hooks/useApi';
 import { pollAnalysisResult, AnalysisJobStatus } from '@/lib/analysis/pollResult';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 
 interface PollError {
   message: string;
@@ -165,15 +166,17 @@ const ImageAnalysis = () => {
   }, [jobId, analysisStatus]);
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="mb-8">
-        <div className="flex items-center gap-4 mb-3">
-          <div className="w-14 h-14 bg-[#00bfff]/10 rounded-xl flex items-center justify-center border border-[#00bfff]/20">
-            <img src="/image-icon.svg" alt="Image Analysis" className="w-7 h-7 text-[#00bfff]" />
-          </div>
-          <div>
-            <h1 className="text-3xl font-bold text-white">Image Analysis</h1>
-            <p className="text-gray-400 text-sm">Advanced deepfake detection for images with 98.2% accuracy</p>
+    <ErrorBoundary level="page">
+      <div className="container mx-auto px-4 py-8">
+        <div className="mb-8">
+          <div className="flex items-center gap-4 mb-3">
+            <div className="w-14 h-14 bg-[#00bfff]/10 rounded-xl flex items-center justify-center border border-[#00bfff]/20">
+              <img src="/image-icon.svg" alt="Image Analysis" className="w-7 h-7 text-[#00bfff]" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-white">Image Analysis</h1>
+              <p className="text-gray-400 text-sm">Advanced deepfake detection for images with 98.2% accuracy</p>
+            </div>
           </div>
         </div>
 
@@ -395,6 +398,7 @@ const ImageAnalysis = () => {
         </div>
       </div>
     </div>
+    </ErrorBoundary>
   );
 };
 

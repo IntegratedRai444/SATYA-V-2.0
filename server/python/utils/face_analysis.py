@@ -3,20 +3,33 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
-import mediapipe as mp
 import numpy as np
+
+# Try to import MediaPipe with fallback
+try:
+    import mediapipe as mp
+    MEDIAPIPE_AVAILABLE = True
+except ImportError:
+    MEDIAPIPE_AVAILABLE = False
+    mp = None
+    logger = logging.getLogger(__name__)
+    logger.warning("MediaPipe not available - face analysis will be limited")
 
 logger = logging.getLogger(__name__)
 
 # Initialize MediaPipe Face Mesh
-mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh(
-    static_image_mode=False,
-    max_num_faces=1,
-    refine_landmarks=True,
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.5,
-)
+if MEDIAPIPE_AVAILABLE:
+    mp_face_mesh = mp.solutions.face_mesh
+    face_mesh = mp_face_mesh.FaceMesh(
+        static_image_mode=False,
+        max_num_faces=1,
+        refine_landmarks=True,
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5,
+    )
+else:
+    face_mesh = None
+    mp_face_mesh = None
 
 detector = face_mesh  # For backward compatibility
 predictor = face_mesh  # For backward compatibility
@@ -32,9 +45,9 @@ def analyze_facial_landmarks(frames: List[np.ndarray]) -> List[Dict]:
     Returns:
         List of face analysis results per frame
     """
-    if face_mesh is None:
-        logger.warning("Face mesh not available. Skipping facial landmark analysis.")
-        return [{"error": "Face detector not available"} for _ in frames]
+    if not MEDIAPIPE_AVAILABLE or face_mesh is None:
+        logger.warning("Face mesh not available. Using fallback face detection.")
+        return [{"faces_detected": 0, "fallback_used": True} for _ in frames]
 
     results = []
 

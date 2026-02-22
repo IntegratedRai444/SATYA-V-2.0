@@ -5,7 +5,7 @@ This package contains various detectors for deepfake analysis.
 """
 
 # Temporarily disable audio detector due to scipy compatibility issues
-# from .audio_detector import AudioDetector
+from .audio_detector import AudioDetector
 from .fusion_engine import FusionEngine
 # Core detectors
 from .image_detector import ImageDetector
@@ -17,7 +17,7 @@ __all__ = [
     # Core detectors
     "ImageDetector",
     "VideoDetector",
-    # "AudioDetector",  # Temporarily disabled
+    "AudioDetector",  # Re-enabled audio detector
     "TextNLPDetector",
     "FusionEngine",
     "MultimodalFusionDetector",

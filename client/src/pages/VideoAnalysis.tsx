@@ -4,6 +4,7 @@ import { useVideoAnalysis } from '@/hooks/useApi';
 import { pollAnalysisResult } from '@/lib/analysis/pollResult';
 import logger from '@/lib/logger';
 import { formatFileSize } from '@/lib/file-utils';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 
 interface AnalysisResult {
   result: {
@@ -199,7 +200,8 @@ export default function VideoAnalysis() {
   }, [jobId, analysisStatus]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-6">
+    <ErrorBoundary level="page">
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-6">
       <div className="max-w-5xl mx-auto">
         {/* Header */}
         <div className="mb-8">
@@ -413,5 +415,6 @@ export default function VideoAnalysis() {
         </div>
       </div>
     </div>
+    </ErrorBoundary>
   );
 }

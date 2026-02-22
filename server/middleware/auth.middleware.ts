@@ -9,6 +9,7 @@ import RedisStore from 'rate-limit-redis';
 import { createClient } from 'redis';
 import { AuthenticatedRequest, AuthenticatedUser } from '../types/auth';
 import { User } from '@supabase/supabase-js';
+import { setInterval } from 'timers';
 
 // In-memory store for rate limiting when Redis is not available
 class MemoryStore {
@@ -91,8 +92,25 @@ sendCommand: (...args: unknown[]) => (redisClient as any).sendCommand(...args),
 // Initialize the store immediately and store the promise
 const storePromise = initializeRateLimitStore();
 
-// Auth state cache to prevent repeated Supabase calls
+// Auth state cache to prevent repeated Supabase calls with TTL
 const authCache = new Map<string, { user: User; expires: number }>();
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// Cleanup expired cache entries
+const cleanupAuthCache = () => {
+  const now = Date.now();
+  for (const [key, value] of authCache.entries()) {
+    if (now > value.expires) {
+      authCache.delete(key);
+    }
+  }
+};
+
+// Schedule cleanup every minute
+if (typeof setInterval !== 'undefined') {
+  setInterval(cleanupAuthCache, 60 * 1000);
+}
 
 // Rate limiting configuration
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes

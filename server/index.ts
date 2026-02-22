@@ -74,7 +74,7 @@ app.use((err: Error, req: Request, res: Response) => {
     stack: err.stack,
     path: req.path,
     method: req.method,
-    body: req.body,
+    // Don't log entire request body for security
     headers: req.headers
   });
   
