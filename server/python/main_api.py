@@ -5,6 +5,7 @@ import os
 import sys
 import time
 import asyncio
+import psutil
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -54,6 +55,18 @@ except Exception as e:
     logger.error(f"❌ Failed to load configuration: {e}")
     logger.error("Please check your environment variables and .env file")
     sys.exit(1)
+
+# Timeout wrapper for analysis functions
+async def timeout_wrapper(func, *args, timeout=300, **kwargs):
+    """Wrap analysis function with timeout to prevent infinite processing"""
+    try:
+        return await asyncio.wait_for(func(*args, **kwargs), timeout=timeout)
+    except asyncio.TimeoutError:
+        logger.error(f"Analysis timed out after {timeout} seconds")
+        raise HTTPException(
+            status_code=504,
+            detail=f"Analysis timed out after {timeout} seconds"
+        )
 
 try:
     from services.cache import CacheManager
@@ -214,6 +227,7 @@ else:
 try:
     from routes.analysis import router as analysis_router
     from routes.health import router as health_router
+    from routes.results import router as results_router
 
     ROUTES_AVAILABLE = True
 except ImportError as e:
@@ -810,6 +824,7 @@ if ROUTES_AVAILABLE:
     route_configs = [
         (analysis_router, "/api/v2/analysis", ["Analysis"], "Analysis"),  # Only unified routes
         (health_router, "/api/v2/health", ["Health"], "Health"),
+        (results_router, "/api/v2", ["Results"], "Results"),  # Results endpoint for compatibility
     ]
 
     # Register all routes with consistent error handling
@@ -967,31 +982,8 @@ async def root():
 
 
 @app.get("/health")
-
 async def health_check():
-
-    """Simple health check"""
-
-    return {
-
-        "status": "healthy",
-
-        "version": "2.0.0",
-
-        "timestamp": datetime.utcnow().isoformat(),
-
-        "uptime": time.process_time(),
-
-        "ml_models_loaded": ML_AVAILABLE,
-
-        "database_connected": DB_AVAILABLE,
-
-    }
-
-
-# ===========================================================================
-
-@app.get("/api/v2/models/status")
+    """Deep health check that tests actual functionality"""
 
 async def models_status():
 
@@ -1201,6 +1193,16 @@ async def analyze_image_unified(
 
     """
 
+    # Apply timeout wrapper (5 minutes for image analysis)
+    return await timeout_wrapper(_analyze_image_internal, file, analyze_forensics, current_user, timeout=300)
+
+# Internal image analysis function
+async def _analyze_image_internal(
+    file: UploadFile = File(...),
+    analyze_forensics: bool = True,
+    current_user: Optional[Dict] = None
+):
+
     # Check unified detector availability, fallback to SentinelAgent if not available
     if not UNIFIED_DETECTOR_AVAILABLE or not hasattr(app.state, 'unified_detector') or app.state.unified_detector is None:
         logger.warning("⚠️ Unified detector not available, using SentinelAgent fallback")
@@ -1315,33 +1317,33 @@ async def analyze_image_unified(
 @app.post("/api/v2/analysis/unified/video")
 
 async def analyze_video_unified(
-
     file: UploadFile = File(...),
-
     analyze_frames: Optional[int] = None,
-
     current_user: Optional[Dict] = Depends(get_current_user) if MIDDLEWARE_AVAILABLE else None
-
 ):
-
     """
-
     Unified video analysis with consistent interface.
-
     
     Args:
-
         file: Video file to analyze
-
         analyze_frames: Number of frames to analyze
-
         current_user: Authenticated user (if auth enabled)
-
         
     Returns:
-
         Standardized analysis result
+    """
 
+    # Apply timeout wrapper (10 minutes for video analysis)
+    return await timeout_wrapper(_analyze_video_internal, file, analyze_frames, current_user, timeout=600)
+
+# Internal video analysis function
+async def _analyze_video_internal(
+    file: UploadFile,
+    analyze_frames: Optional[int] = None,
+    current_user: Optional[Dict] = None
+):
+    """
+    Internal video analysis with timeout wrapper.
     """
 
     # Check unified detector availability, fallback to SentinelAgent if not available
@@ -1448,17 +1450,11 @@ async def analyze_video_unified(
 @app.post("/api/v2/analysis/unified/audio")
 
 async def analyze_audio_unified(
-
     file: UploadFile = File(...),
-
     current_user: Optional[Dict] = Depends(get_current_user) if MIDDLEWARE_AVAILABLE else None
-
 ):
-
     """
-
     Unified audio analysis with consistent interface.
-
     
     Args:
         file: Audio file to analyze
@@ -1466,6 +1462,18 @@ async def analyze_audio_unified(
         
     Returns:
         Standardized analysis result
+    """
+
+    # Apply timeout wrapper (8 minutes for audio analysis)
+    return await timeout_wrapper(_analyze_audio_internal, file, current_user, timeout=480)
+
+# Internal audio analysis function
+async def _analyze_audio_internal(
+    file: UploadFile,
+    current_user: Optional[Dict] = None
+):
+    """
+    Internal audio analysis with timeout wrapper.
     """
 
     # Check unified detector availability, fallback to SentinelAgent if not available
@@ -2175,30 +2183,25 @@ async def analyze_image_canonical(
 ):
 
     """
+    
+    DEPRECATED: Use /api/v2/analysis/unified/image instead
+    This endpoint kept for backward compatibility only.
 
     Canonical image analysis endpoint.
-
     
     Forwards requests to /api/v2/analysis/unified/image
-
     
     Args:
-
         file: Image file to analyze
-
         analyze_forensics: Whether to perform forensic analysis
-
         current_user: Authenticated user (if auth enabled)
-
         
     Returns:
-
         Image analysis results
-
     """
 
-    logger.info(f"Canonical image analysis: {file.filename}")
-
+    logger.warning(f"[DEPRECATED] /analyze/image endpoint used, please migrate to /api/v2/analysis/unified/image: {file.filename}")
+    
     return await analyze_image_unified(file, analyze_forensics, current_user)
 
 
@@ -2215,33 +2218,26 @@ async def analyze_video_canonical(
     current_user: Optional[Dict] = Depends(get_current_user) if MIDDLEWARE_AVAILABLE else None
 
 ):
-
     """
+    
+    DEPRECATED: Use /api/v2/analysis/unified/video instead
+    This endpoint kept for backward compatibility only.
 
     Canonical video analysis endpoint.
-
     
     Forwards requests to /api/v2/analysis/unified/video
-
     
     Args:
-
         file: Video file to analyze
-
-        analyze_frames: Number of frames to analyze (None for auto)
-
+        analyze_frames: Number of frames to analyze
         analyze_forensics: Whether to perform forensic analysis
-
         current_user: Authenticated user (if auth enabled)
-
         
     Returns:
-
         Video analysis results
-
     """
 
-    logger.info(f"Canonical video analysis: {file.filename}")
+    logger.warning(f"[DEPRECATED] /analyze/video endpoint used, please migrate to /api/v2/analysis/unified/video: {file.filename}")
 
     return await analyze_video_unified(file, analyze_frames, analyze_forensics, current_user)
 
@@ -2255,29 +2251,24 @@ async def analyze_audio_canonical(
     current_user: Optional[Dict] = Depends(get_current_user) if MIDDLEWARE_AVAILABLE else None
 
 ):
-
     """
+    
+    DEPRECATED: Use /api/v2/analysis/unified/audio instead
+    This endpoint kept for backward compatibility only.
 
     Canonical audio analysis endpoint.
-
     
     Forwards requests to /api/v2/analysis/unified/audio
-
     
     Args:
-
         file: Audio file to analyze
-
         current_user: Authenticated user (if auth enabled)
-
         
     Returns:
-
         Audio analysis results
-
     """
 
-    logger.info(f"Canonical audio analysis: {file.filename}")
+    logger.warning(f"[DEPRECATED] /analyze/audio endpoint used, please migrate to /api/v2/analysis/unified/audio: {file.filename}")
 
     return await analyze_audio_unified(file, current_user)
 

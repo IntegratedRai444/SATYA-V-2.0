@@ -73,7 +73,7 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
   retries: 3,
   retryDelay: 1000,
   maxRetryDelay: 30000,
-  retryOn: [408, 429, 500, 502, 503, 504]
+  retryOn: [408, 429, 502, 503, 504] // Removed 500 - never retry internal server errors
 };
 
 // Caches
@@ -109,11 +109,11 @@ const setCachedResponse = (key: string, response: AxiosResponse, ttl: number = D
 };
 
 const createRetryDelay = (retryCount: number, config: RetryConfig): number => {
-  const delay = Math.min(
-    config.retryDelay * Math.pow(2, retryCount - 1) + Math.random() * 1000, // Add jitter
-    config.maxRetryDelay
-  );
-  return delay;
+  // Exponential backoff with jitter: delay = base * 2^(retry-1) + random jitter
+  const exponentialDelay = config.retryDelay * Math.pow(2, retryCount - 1);
+  const jitter = Math.random() * 0.3 * exponentialDelay; // 30% jitter
+  const delay = Math.min(exponentialDelay + jitter, config.maxRetryDelay);
+  return Math.floor(delay);
 };
 
 // Create a cancel token source for request cancellation
@@ -245,8 +245,7 @@ const createEnhancedAxiosInstance = (baseURL: string): AxiosInstance => {
       
       // Log successful request
       const duration = startTime ? Date.now() - startTime : 0;
-      const message = `[${requestId}] ${requestConfig.method?.toUpperCase()} ${requestConfig.url} ${response.status} (${duration}ms)`;
-      console.log(message);
+      // Removed noisy request logging for production
       
       // Cache successful GET responses
       if (requestConfig.method?.toUpperCase() === 'GET' && response.status === 200 && cacheKey) {
@@ -268,6 +267,13 @@ const createEnhancedAxiosInstance = (baseURL: string): AxiosInstance => {
       
       // Don't retry if there's no config or it's not a retryable error
       if (!config || !mergedRetryConfig.retryOn.includes(error.response?.status)) {
+        return Promise.reject(error);
+      }
+      
+      // Never retry multipart/form-data uploads (non-idempotent)
+      const isFormData = config.data instanceof FormData;
+      const isMultipart = config.headers?.['Content-Type']?.includes('multipart/form-data');
+      if (isFormData || isMultipart) {
         return Promise.reject(error);
       }
       
@@ -413,7 +419,7 @@ apiClient.interceptors.request.use(
     
     // Add auth token if available
     const token = await getAccessToken();
-    console.log("Enhanced client auth token:", token ? "Bearer [REDACTED]" : "null");
+    // Removed noisy auth token logging for production
     
     if (token) {
       config.headers = config.headers || {};

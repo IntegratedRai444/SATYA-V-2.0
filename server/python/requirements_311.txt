@@ -22,9 +22,9 @@ cryptography>=42.0.0
 
 # ML/AI Core - Python 3.11 Compatible Versions
 # Use CPU-only versions to avoid CUDA DLL issues on Windows
-torch>=2.9.0+cpu
-torchvision>=0.24.0+cpu
-torchaudio>=2.9.0+cpu
+torch==2.9.0+cpu
+torchvision==0.24.0+cpu
+torchaudio==2.9.0+cpu
 tensorflow>=2.20.0
 keras>=3.13.0
 huggingface-hub>=0.36.0

@@ -1,0 +1,49 @@
+{
+  "total_tests": 10,
+  "real_correct": 0,
+  "fake_correct": 0,
+  "real_total": 5,
+  "fake_total": 5,
+  "results": [
+    {
+      "success": false,
+      "error": "Upload failed: 401"
+    },
+    {
+      "success": false,
+      "error": "Upload failed: 401"
+    },
+    {
+      "success": false,
+      "error": "Upload failed: 401"
+    },
+    {
+      "success": false,
+      "error": "Upload failed: 401"
+    },
+    {
+      "success": false,
+      "error": "Upload failed: 401"
+    },
+    {
+      "success": false,
+      "error": "Upload failed: 401"
+    },
+    {
+      "success": false,
+      "error": "Upload failed: 401"
+    },
+    {
+      "success": false,
+      "error": "Upload failed: 401"
+    },
+    {
+      "success": false,
+      "error": "Upload failed: 401"
+    },
+    {
+      "success": false,
+      "error": "Upload failed: 401"
+    }
+  ]
+}

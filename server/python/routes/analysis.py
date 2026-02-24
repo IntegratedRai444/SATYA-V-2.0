@@ -144,7 +144,7 @@ async def analyze_unified_media(
             metadata={
                 "filename": file.filename,
                 "content_type": file.content_type,
-                "job_id": job_id,
+                "job_id": job_id,  # Use as-is, no prefix manipulation
                 "user_id": user_id,
             },
         )
@@ -222,6 +222,7 @@ async def analyze_unified_media(
             }
         )
 
+        logger.info(f"JOB_COMPLETED {job_id}")
         logger.info(f"[RESPONSE SENT] {media_type} analysis completed successfully")
         return response
         
@@ -565,7 +566,7 @@ async def analyze_image(request: Request, data: AnalysisRequestModel):
             metadata={
                 "filename": data.filename,
                 "mime_type": data.mimeType,
-                "job_id": data.jobId,
+                "job_id": data.jobId,  # Use as-is, no prefix manipulation
                 "request_id": f"req_{uuid.uuid4().hex[:8]}",
             },
         )
@@ -669,7 +670,7 @@ async def analyze_video(request: Request, data: AnalysisRequestModel):
             metadata={
                 "filename": data.filename,
                 "mime_type": data.mimeType,
-                "job_id": data.jobId,
+                "job_id": data.jobId,  # Use as-is, no prefix manipulation
                 "request_id": f"req_{uuid.uuid4().hex[:8]}",
             },
         )
@@ -773,7 +774,7 @@ async def analyze_audio(request: Request, data: AnalysisRequestModel):
             metadata={
                 "filename": data.filename,
                 "mime_type": data.mimeType,
-                "job_id": data.jobId,
+                "job_id": data.jobId,  # Use as-is, no prefix manipulation
                 "request_id": f"req_{uuid.uuid4().hex[:8]}",
             },
         )

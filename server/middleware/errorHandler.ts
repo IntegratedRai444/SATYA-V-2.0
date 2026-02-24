@@ -191,7 +191,7 @@ export const errorHandler = (
   }
 
   // Fallback to generic server error
-  return serverError(res, err);
+  return serverError(res, err.message || 'Internal server error');
 };
 
 /**

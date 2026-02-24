@@ -114,17 +114,10 @@ async def upload_video(
             detector = request.app.state.video_detector
             analysis_result = detector.detect(str(file_path))
 
-            # Save analysis result
+            # Return analysis result for Node to handle
+            # Database persistence is now handled by Node.js
             if analysis_result:
-                db.save_analysis_result(
-                    file_id=file_id,
-                    file_name=file.filename,
-                    file_type="video",
-                    authenticity_score=analysis_result.get("score", 0.0),
-                    label=analysis_result.get("label", "unknown"),
-                    confidence=analysis_result.get("confidence", 0.0),
-                    details=analysis_result,
-                )
+                logger.info(f"📤 Video analysis result for {filename} returned to Node for persistence")
 
         return {
             "success": True,
@@ -206,17 +199,10 @@ async def upload_audio(
             detector = request.app.state.audio_detector
             analysis_result = detector.detect(str(file_path))
 
-            # Save analysis result
+            # Return analysis result for Node to handle
+            # Database persistence is now handled by Node.js
             if analysis_result:
-                db.save_analysis_result(
-                    file_id=file_id,
-                    file_name=file.filename,
-                    file_type="audio",
-                    authenticity_score=analysis_result.get("score", 0.0),
-                    label=analysis_result.get("label", "unknown"),
-                    confidence=analysis_result.get("confidence", 0.0),
-                    details=analysis_result,
-                )
+                logger.info(f"📤 Audio analysis result for {filename} returned to Node for persistence")
 
         return {
             "success": True,
@@ -258,17 +244,10 @@ async def upload_text(
             # Generate ID for text analysis
             file_id = str(uuid.uuid4())
 
-            # Save analysis result
+            # Return analysis result for Node to handle
+            # Database persistence is now handled by Node.js
             if analysis_result:
-                db.save_analysis_result(
-                    file_id=file_id,
-                    file_name="text_input",
-                    file_type="text",
-                    authenticity_score=analysis_result.get("score", 0.0),
-                    label=analysis_result.get("label", "unknown"),
-                    confidence=analysis_result.get("confidence", 0.0),
-                    details=analysis_result,
-                )
+                logger.info(f"📤 Text analysis result returned to Node for persistence")
 
         return {
             "success": True,

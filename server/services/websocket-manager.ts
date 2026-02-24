@@ -10,8 +10,8 @@ import { setInterval, clearInterval } from 'timers';
 // Timer types for compatibility
 type Timer = ReturnType<typeof setInterval> & { ref?: () => void; unref?: () => void; };
 
-// Message size limits
-const MESSAGE_LIMITS = {
+// WebSocket connection limits
+const CONNECTION_LIMITS = {
   MAX_MESSAGE_SIZE: 1024 * 1024, // 1MB max message size
   MAX_CONNECTIONS_PER_IP: 5, // Max concurrent connections per IP
   MESSAGES_PER_MINUTE: 100, // Max messages per minute per connection
@@ -25,6 +25,9 @@ const MESSAGE_LIMITS = {
   MAX_CHANNEL_LENGTH: 100, // Max channel name length
   MAX_HEADER_SIZE: 4096, // 4KB max header size
   MAX_WEBSOCKET_FRAME: 16 * 1024, // 16KB max WebSocket frame size
+  MAX_MEMORY_PER_CONNECTION: 50 * 1024 * 1024, // 50MB max per connection
+  MAX_TOTAL_CONNECTIONS: 1000, // Max total connections system-wide
+  CLEANUP_INTERVAL: 60000 // Cleanup every 1 minute
 } as const;
 
 // WebSocket message type
@@ -44,6 +47,7 @@ const WebSocketMessageType = {
   JOB_COMPLETED: 'JOB_COMPLETED',
   JOB_FAILED: 'JOB_FAILED',
   JOB_ERROR: 'JOB_ERROR',
+  JOB_CANCELLED: 'JOB_CANCELLED',
   DASHBOARD_UPDATE: 'dashboard_update',
   JOB_PROGRESS: 'JOB_PROGRESS',
   JOB_STAGE_UPDATE: 'JOB_STAGE_UPDATE',
@@ -59,7 +63,7 @@ type WebSocketMessage = {
   channel?: string;
   payload?: Record<string, unknown>;
   requestId?: string;
-  timestamp?: number;
+  timestamp?: number | string;
   jobId?: string;
   error?: {
     code: string;
@@ -78,7 +82,7 @@ const messageSchema = z.object({
   channel: z.string().optional(),
   payload: z.record(z.string(), z.unknown()).optional(),
   requestId: z.string().uuid().optional(),
-  timestamp: z.number().int().positive().optional(),
+  timestamp: z.union([z.number().int().positive(), z.string()]).optional(),
   jobId: z.string().optional(),
   error: z.object({
     code: z.string(),
@@ -236,7 +240,7 @@ export class WebSocketManager {
           ws.ping();
         });
       });
-    }, MESSAGE_LIMITS.PING_INTERVAL);
+    }, CONNECTION_LIMITS.PING_INTERVAL);
   }
 
   // Public methods
@@ -328,7 +332,7 @@ export class WebSocketManager {
       ws.connectionTime = Date.now();
       ws.lastActivity = Date.now();
       ws.messageQueue = [];
-      ws.maxQueueSize = MESSAGE_LIMITS.MAX_QUEUE_SIZE;
+      ws.maxQueueSize = CONNECTION_LIMITS.MAX_QUEUE_SIZE;
       ws.subscribedChannels = new Set();
       ws.messageCount = 0;
       ws.lastMessageTime = 0;
@@ -573,6 +577,31 @@ export class WebSocketManager {
       userClients.forEach((ws) => {
         if (ws.readyState === WebSocket.OPEN && ws.subscribedChannels.has(jobChannel)) {
           this.sendToClient(ws, {
+            type: 'JOB_STARTED',
+            jobId,
+            payload: {
+              jobId,
+              status,
+              progress: progress || 0,
+              message: message || 'Job started',
+              timestamp: new Date().toISOString()
+            },
+            timestamp: Date.now()
+          });
+        }
+      });
+    }
+  }
+
+  // Send job progress to specific user
+  public sendJobProgress(userId: string, jobId: string, status: string, progress?: number, message?: string): void {
+    const jobChannel = `job:${jobId}`;
+    const userClients = this.clients.get(userId);
+    
+    if (userClients) {
+      userClients.forEach((ws) => {
+        if (ws.readyState === WebSocket.OPEN && ws.subscribedChannels.has(jobChannel)) {
+          this.sendToClient(ws, {
             type: 'JOB_PROGRESS',
             jobId,
             payload: {
@@ -628,6 +657,29 @@ export class WebSocketManager {
               jobId,
               status: 'failed',
               error,
+              timestamp: new Date().toISOString()
+            },
+            timestamp: Date.now()
+          });
+        }
+      });
+    }
+  }
+
+  // Send job cancellation to specific user
+  public sendJobCancelled(userId: string, jobId: string): void {
+    const jobChannel = `job:${jobId}`;
+    const userClients = this.clients.get(userId);
+    
+    if (userClients) {
+      userClients.forEach((ws) => {
+        if (ws.readyState === WebSocket.OPEN && ws.subscribedChannels.has(jobChannel)) {
+          this.sendToClient(ws, {
+            type: 'JOB_CANCELLED',
+            jobId,
+            payload: {
+              jobId,
+              status: 'cancelled',
               timestamp: new Date().toISOString()
             },
             timestamp: Date.now()

@@ -215,25 +215,24 @@ export const errorResponse = (
 };
 
 export const serverError = (
-  res: Response, 
-  error: Error | string = 'Internal server error'
+  res: Response,
+  message: string,
+  statusCode: number = 500
 ): Response<ApiResponse> => {
-  const errorMessage = typeof error === 'string' ? error : error.message;
-  const errorStack = typeof error === 'string' ? undefined : error.stack;
-  
-  const errorDetails: Record<string, unknown> = {
-    code: 'INTERNAL_SERVER_ERROR',
-    message: 'An unexpected error occurred',
+  const response: ApiResponse = {
+    success: false,
+    error: {
+      code: 'INTERNAL_SERVER_ERROR',
+      message: message
+    },
+    timestamp: new Date().toISOString()
   };
   
-  if (process.env.NODE_ENV !== 'production') {
-    errorDetails.details = errorMessage;
-    if (errorStack) {
-      errorDetails.stack = errorStack;
-    }
+  if (res.requestId) {
+    response.requestId = res.requestId;
   }
 
-  return errorResponse(res, errorDetails as ErrorResponseOptions, 500);
+  return res.status(statusCode).json(response);
 };
 
 export const notFoundResponse = (

@@ -46,13 +46,13 @@ router.get('/stats', dashboardRateLimit, async (req: any, res: Response) => {
 
       // Calculate statistics with safe defaults
     const totalAnalyses = tasks?.length || 0;
-    const deepfakeDetected = tasks?.filter(t => (t.result as Record<string, unknown>)?.is_deepfake === true).length || 0;
-    const realDetected = tasks?.filter(t => (t.result as Record<string, unknown>)?.is_deepfake === false).length || 0;
+    const deepfakeDetected = tasks?.filter(t => t.result?.is_deepfake === true).length || 0;
+    const realDetected = tasks?.filter(t => t.result?.is_deepfake === false).length || 0;
     
     // Calculate average confidence with safe defaults
-    const completedTasks = tasks?.filter(t => t.status === 'completed' && (t.result as Record<string, unknown>)?.confidence) || [];
+    const completedTasks = tasks?.filter(t => t.status === 'completed' && t.result?.confidence) || [];
     const avgConfidence = completedTasks.length > 0 
-      ? completedTasks.reduce((sum, task) => sum + ((task.result as Record<string, unknown>)?.confidence as number || 0), 0) / completedTasks.length 
+      ? completedTasks.reduce((sum, task) => sum + (task.result?.confidence || 0), 0) / completedTasks.length 
       : 0;
 
     // Get last 7 days activity with safe defaults

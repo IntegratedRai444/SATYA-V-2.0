@@ -1,6 +1,12 @@
 // Validate environment variables before anything else
 import { validateEnvironment } from './lib/config/validate-env';
 
+// Production console guard - silence all console.log in production
+if (import.meta.env.PROD) {
+  console.log = () => {};
+  console.debug = () => {};
+}
+
 // Run environment validation with error handling
 try {
   validateEnvironment();

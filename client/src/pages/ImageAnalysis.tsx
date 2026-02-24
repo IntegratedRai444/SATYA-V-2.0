@@ -397,7 +397,6 @@ const ImageAnalysis = () => {
           </div>
         </div>
       </div>
-    </div>
     </ErrorBoundary>
   );
 };

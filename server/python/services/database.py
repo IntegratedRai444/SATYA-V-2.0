@@ -300,24 +300,25 @@ class DatabaseManager:
         analysis_data: dict = None,
         **kwargs,
     ) -> Optional[dict]:
-        """Save analysis result to database using Supabase"""
-        try:
-            result_data = {
-                "job_id": job_id,
-                "model_name": model_name,
-                "confidence": confidence,
-                "is_deepfake": is_deepfake,
-                "analysis_data": analysis_data or {},
-                "created_at": datetime.utcnow().isoformat(),
-                **kwargs,
-            }
-            
-            result = self.supabase.table("analysis_results").insert(result_data).execute()
-            logger.info(f"Analysis result saved: {job_id}")
-            return result.data[0] if result.data else None
-        except Exception as e:
-            logger.error(f"Failed to save analysis: {e}")
-            return None
+        """
+        DEPRECATED: Python no longer writes to database.
+        Node.js owns all database operations for single source of truth.
+        
+        This method is kept for backward compatibility but logs a warning.
+        """
+        logger.warning(f"⚠️ DEPRECATED: save_analysis_result called for job {job_id}. Python should not write to database.")
+        logger.info(f"📤 Analysis result for job {job_id} should be returned to Node for persistence")
+        
+        # Return structured result for Node to handle
+        return {
+            "job_id": job_id,
+            "model_name": model_name,
+            "confidence": confidence,
+            "is_deepfake": is_deepfake,
+            "analysis_data": analysis_data or {},
+            "created_at": datetime.utcnow().isoformat(),
+            **kwargs,
+        }
 
     def get_analysis_by_file_id(self, file_id: str) -> Optional[dict]:
         """Get analysis result by file ID using Supabase"""

@@ -115,7 +115,7 @@ if (typeof setInterval !== 'undefined') {
 // Rate limiting configuration
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 const MAX_REQUESTS_PER_WINDOW = 100; // General API requests
-const MAX_AUTH_REQUESTS = 10; // Auth-specific endpoints (login, register, etc.)
+const MAX_AUTH_REQUESTS = 100; // Auth-specific endpoints (login, register, etc.) - increased for testing
 const MAX_REFRESH_REQUESTS = 5; // Refresh token requests per window
 
 // Create rate limiters as functions that return the configured middleware
@@ -258,15 +258,15 @@ export const getUserId = (req: AuthenticatedRequest): string | null => {
  * Supabase Authentication Middleware with enhanced security and email verification
  */
 export const authenticate = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  console.log('🔍 AUTH MIDDLEWARE CALLED', {
+    path: req.path,
+    hasAuthHeader: !!req.headers.authorization,
+    hasCookie: !!req.cookies?.['sb-access-token'],
+    cookies: req.cookies ? Object.keys(req.cookies) : [],
+    rawCookieHeader: req.headers.cookie
+  });
+  
   try {
-    // Debug: Log the authentication attempt
-    logger.debug('Authentication attempt', {
-      path: req.path,
-      hasAuthHeader: !!req.headers.authorization,
-      hasCookie: !!req.cookies?.['sb-access-token'],
-      userAgent: req.headers['user-agent']
-    });
-
     // Check for token in Authorization header first
     let token: string | null = null;
     const authHeader = req.headers.authorization;
@@ -274,15 +274,39 @@ export const authenticate = async (req: AuthenticatedRequest, res: Response, nex
     // Also check for token in cookies (for web clients)
     if (!authHeader && req.cookies?.['sb-access-token']) {
       token = req.cookies['sb-access-token'];
+      console.log('🔍 Using token from cookies');
     } else if (authHeader?.startsWith('Bearer ')) {
       token = authHeader.substring(7); // Remove 'Bearer ' prefix
+      console.log('🔍 Using token from Authorization header');
     }
+    
+    // If still no token, try to parse from raw cookie header
+    if (!token && req.headers.cookie) {
+      const cookies = req.headers.cookie.split(';').reduce((acc, cookie) => {
+        const [key, value] = cookie.trim().split('=');
+        acc[key] = value;
+        return acc;
+      }, {} as Record<string, string>);
+      
+      if (cookies['sb-access-token']) {
+        token = cookies['sb-access-token'];
+        console.log('🔍 Using token from raw cookie header');
+        // Update req.cookies for consistency
+        if (!req.cookies) req.cookies = {};
+        req.cookies['sb-access-token'] = token;
+      }
+    }
+    
+    console.log('🔍 Final token status:', { hasToken: !!token, tokenLength: token?.length });
     
     if (!token) {
       logger.warn('Authentication failed: No token provided', {
         path: req.path,
         ip: req.ip,
-        userAgent: req.headers['user-agent']
+        userAgent: req.headers['user-agent'],
+        hasAuthHeader: !!authHeader,
+        hasCookies: !!req.cookies,
+        cookieHeader: req.headers.cookie
       });
       return res.status(401).json({
         success: false,

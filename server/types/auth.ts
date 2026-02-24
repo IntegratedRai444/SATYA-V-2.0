@@ -28,6 +28,10 @@ declare module 'express' {
 // Type alias for convenience
 export type AuthenticatedRequest = Request & {
   user?: AuthenticatedUser;
+  locals?: {
+    requestId?: string;
+    [key: string]: unknown;
+  };
   rateLimit?: {
     limit: number;
     current: number;

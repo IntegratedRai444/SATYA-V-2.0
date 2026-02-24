@@ -16,13 +16,23 @@ interface MulterFile {
 import path from 'path';
 import { validateRequest } from '../middleware/validate-request';
 import { logger } from '../config/logger';
-import { pythonBridge } from '../services/python-http-bridge';
+import { enhancedPythonBridge } from '../config/python-bridge';
+import { validateJobId } from '../middleware/validate-job-id';
 import { createAnalysisJob, updateAnalysisJobWithResults } from './history';
+import { errorResponse } from '../utils/apiResponse';
 import FormData from 'form-data';
 import { randomUUID } from 'crypto';
 import { AuthenticatedRequest } from '../types/auth';
+import { requireAuth } from '../middleware/auth.middleware';
 import webSocketManager from '../services/websocket-manager';
+import jobManager from '../services/job-manager';
 import { setImmediate } from 'timers';
+import { requestIdMiddleware, getRequestId } from '../middleware/request-id';
+import { supabaseAdmin } from '../config/supabase';
+import { analysisRateLimit, incrementConcurrentJobs } from '../middleware/rate-limiter';
+import { createFallbackMiddleware } from '../middleware/fallback-middleware';
+import { recordJobStart } from './system-metrics';
+import { captureError } from '../services/error-monitor';
 
 type AnalysisModality = 'image' | 'video' | 'audio' | 'text';
 
@@ -40,6 +50,27 @@ const sendJobProgress = (userId: string, jobId: string, stage: string, progress:
 };
 
 const router = Router();
+
+// Apply request ID middleware to all routes
+router.use(requestIdMiddleware);
+
+// Apply authentication middleware to all routes
+router.use(...requireAuth);
+
+// Apply rate limiting to analysis endpoints  
+router.use('/image', analysisRateLimit);
+router.use('/video', analysisRateLimit);
+router.use('/audio', analysisRateLimit);
+router.use('/text', analysisRateLimit);
+
+// Apply fallback middleware for service failures
+const fallbackMiddleware = createFallbackMiddleware({
+  pythonFailureMessage: 'AI analysis service temporarily unavailable. Please try again later.',
+  databaseFailureMessage: 'Database temporarily unavailable. Your analysis is still being processed.',
+  webSocketFailureMessage: 'Real-time updates temporarily unavailable. Results will be available upon completion.'
+});
+
+router.use(fallbackMiddleware);
 
 // Configure multer for secure file uploads with memory storage
 const storage = multer.memoryStorage();
@@ -153,7 +184,8 @@ const upload = multer({
       }
 
       // Validate filename (allow common valid characters)
-      const sanitizedFilename = path.basename(file.originalname).replace(/[<>:"/\\|?*\x00-\x1F]/g, '');
+      const invalidChars = /[<>:"/\\|?*\x00-\x1F]/;
+      const sanitizedFilename = path.basename(file.originalname).replace(invalidChars, '');
       if (sanitizedFilename !== file.originalname) {
         return cb(new Error('Invalid characters in filename'));
       }
@@ -271,6 +303,11 @@ const handleAnalysisError = async (error: unknown, res: Response, jobId?: string
       });
     } catch (dbError) {
       logger.error('Failed to update job status:', dbError);
+      captureError(dbError instanceof Error ? dbError : new Error(String(dbError)), {
+        jobId,
+        endpoint: 'analysis',
+        method: 'handleAnalysisError'
+      }, 'high');
     }
   }
   
@@ -306,6 +343,8 @@ const handleAnalysisError = async (error: unknown, res: Response, jobId?: string
 // Image analysis endpoint
 router.post(
   '/image',
+  ...requireAuth,
+  analysisRateLimit,
   upload.single('file'),
   validateRequest([]),
   async (req: AuthenticatedRequest, res: Response) => {
@@ -321,6 +360,14 @@ router.post(
       filename: file?.originalname,
       fileSize: file?.size,
     });
+
+    // Increment concurrent job counter
+    if (userId) {
+      incrementConcurrentJobs(userId);
+    }
+
+    // Record job start for metrics
+    recordJobStart();
 
     try {
       // Validate authentication
@@ -348,34 +395,42 @@ router.post(
         size: file.size
       });
 
-      // Create job with standardized ID
-      const jobId = `job_${randomUUID()}`;
+      // Create job with pure UUID (no prefix for database compatibility)
+      const jobId = randomUUID();
+      logger.info('JOB_CREATED', { jobId, type: 'image' });
       
-      // Create job in database
-      const job = await createAnalysisJob(userId || '', {
-        modality: type as AnalysisModality,
-        filename: file.originalname,
-        mime_type: file.mimetype,
-        size_bytes: file.size,
-        metadata: {
-          originalName: file.originalname,
-          mimeType: file.mimetype,
-          size: file.size,
-        },
-      });
+      // Create job in database BEFORE sending response
+      let job: { id: string } | null;
+      try {
+        job = await createAnalysisJob(userId || '', {
+          modality: type as AnalysisModality,
+          filename: file.originalname,
+          mime_type: file.mimetype,
+          size_bytes: file.size,
+          metadata: {
+            originalName: file.originalname,
+            mimeType: file.mimetype,
+            size: file.size,
+          },
+        }, jobId); // 🔥 CRITICAL FIX: Pass jobId to ensure consistency
 
-      logger.info(`[ANALYSIS JOB] Created job ${jobId}`, {
-        correlationId,
-        jobId,
-        type,
-      });
+        logger.info(`[ANALYSIS JOB] Created job ${jobId}`, {
+          correlationId,
+          jobId,
+          type,
+        });
 
-      // Send immediate response with job_id
-      res.status(202).json({
-        success: true,
-        job_id: jobId,
-        status: 'processing',
-      });
+        // Send job started event via WebSocket
+        if (userId) {
+          webSocketManager.sendJobUpdate(userId, jobId, 'processing', 0, 'Job started and queued for processing');
+        }
+      } catch (dbError) {
+        logger.error(`[JOB CREATION FAILED] ${jobId}`, { error: dbError, correlationId });
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to create analysis job'
+        });
+      }
 
       // Process in background
       setImmediate(async () => {
@@ -386,6 +441,10 @@ router.post(
           }
 
           // Forward to Python service for inference only
+          if (!file || !file.buffer) {
+            throw new Error('File is required and must have buffer data');
+          }
+          
           const formData = new FormData();
           formData.append('file', file.buffer, {
             filename: file.originalname,
@@ -398,10 +457,13 @@ router.post(
             sendJobProgress(userId, jobId, 'analyzing', 30);
           }
 
-          const pythonResponse = await pythonBridge.post(`/api/v2/analysis/unified/${type}`, formData, {
-            timeout: 300000, // 5 minutes
-          }) as {
-            data: {
+          const pythonResponse = await enhancedPythonBridge.request({
+        method: 'POST',
+        url: `/api/v2/analysis/unified/${type}`,
+        data: formData,
+        timeout: 300000, // 5 minutes
+      }) as {
+        data: {
               confidence: number;
               is_deepfake: boolean;
               model_name: string;
@@ -418,16 +480,52 @@ router.post(
           // Python returns inference-only payload
           const inferenceResult = pythonResponse.data;
           
-          // Node owns the job lifecycle - update with results
-          await updateAnalysisJobWithResults(job.id, {
-            status: 'completed',
+          // [PYTHON RESULT] - Critical observability point
+          logger.info('[PYTHON RESULT]', {
+            jobId,
+            status: 'success',
             confidence: inferenceResult.confidence,
             is_deepfake: inferenceResult.is_deepfake,
-            model_name: inferenceResult.model_name,
-            model_version: inferenceResult.model_version,
-            analysis_data: inferenceResult.analysis_data,
-            proof_json: inferenceResult.proof,
+            model_name: inferenceResult.model_name
           });
+          
+          // Node owns the job lifecycle - ATOMIC GUARD for finalization
+          if (job?.id) {
+            try {
+              await updateAnalysisJobWithResults(job.id, {
+                status: 'completed',
+                confidence: inferenceResult.confidence,
+                is_deepfake: inferenceResult.is_deepfake,
+                model_name: inferenceResult.model_name,
+                model_version: inferenceResult.model_version,
+                analysis_data: inferenceResult.analysis_data,
+                proof_json: inferenceResult.proof,
+              });
+              
+              // [JOB FINALIZED] - Critical observability point
+              logger.info('[JOB FINALIZED]', {
+                jobId: job.id,
+                status: 'completed',
+                confidence: inferenceResult.confidence
+              });
+              
+            } catch (finalizationError) {
+              // FINALIZATION FAILURE - Force fail state
+              logger.error('[FINALIZATION FAILURE]', {
+                jobId: job.id,
+                error: finalizationError
+              });
+              
+              await updateAnalysisJobWithResults(job.id, {
+                status: 'failed',
+                error_message: 'Finalization failed: ' + String(finalizationError)
+              });
+              
+              throw finalizationError;
+            }
+          } else {
+            logger.error('[NO JOB ID]', { jobId, pythonResponse: 'success' });
+          }
 
           if (userId) {
             sendJobProgress(userId, jobId, 'completed', 100);
@@ -461,9 +559,9 @@ router.post(
             ? ((error as unknown) as { response: { data?: { detail?: string } } }).response?.data?.detail || ((error as unknown) as Error).message || 'Analysis failed'
             : ((error as unknown) as Error).message || 'Analysis failed';
           
-          await updateAnalysisJobWithResults(job.id, {
+          await updateAnalysisJobWithResults(job?.id || '', {
             status: 'failed',
-            error_message: errorMessage,
+            error_message: errorMessage || 'Analysis failed',
           });
 
           if (userId) {
@@ -494,10 +592,10 @@ router.post(
         error: (error as Error).message,
       });
       
-      return res.status(500).json({
-        success: false,
+      return errorResponse(res, {
+        code: 'INTERNAL_SERVER_ERROR',
         message: 'Internal server error',
-      });
+      }, 500);
     }
   }
 );
@@ -530,29 +628,44 @@ router.post(
         });
       }
 
-      // Create job with standardized ID
-      const jobId = `job_${randomUUID()}`;
+      // Create job with pure UUID (no prefix for database compatibility)
+      const jobId = randomUUID();
+      logger.info('JOB_CREATED', { jobId, type: 'video' });
       
       // Create job in database
-      const job = await createAnalysisJob(userId || '', {
-        modality: type as AnalysisModality,
-        filename: file.originalname,
-        mime_type: file.mimetype,
-        size_bytes: file.size,
-        metadata: {
-          originalName: file.originalname,
-          mimeType: file.mimetype,
-          size: file.size,
-        },
-      });
+      let job: { id: string } | null;
+      try {
+        job = await createAnalysisJob(userId || '', {
+          modality: type as AnalysisModality,
+          filename: file.originalname,
+          mime_type: file.mimetype,
+          size_bytes: file.size,
+          metadata: {
+            originalName: file.originalname,
+            mimeType: file.mimetype,
+            size: file.size,
+          },
+        }, jobId); // CRITICAL FIX: Pass jobId to ensure consistency
 
-      logger.info(`[ANALYSIS JOB] Created job ${jobId}`, {
-        correlationId,
-        jobId,
-        type,
-      });
+        logger.info(`[ANALYSIS JOB] Created job ${jobId}`, {
+          correlationId,
+          jobId,
+          type,
+        });
 
-      // Send immediate response with job_id
+        // Send job started event via WebSocket
+        if (userId) {
+          webSocketManager.sendJobUpdate(userId, jobId, 'processing', 0, 'Job started and queued for processing');
+        }
+      } catch (dbError) {
+        logger.error(`[JOB CREATION FAILED] ${jobId}`, { error: dbError, correlationId });
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to create analysis job' // CRITICAL FIX: Remove job_id from error response to prevent frontend polling for non-existent jobs
+        });
+      }
+
+    // Send immediate response with job_id only after successful DB creation
       res.status(202).json({
         success: true,
         job_id: jobId,
@@ -568,6 +681,10 @@ router.post(
           }
 
           // Forward to Python service for inference only
+          if (!file || !file.buffer) {
+            throw new Error('File is required and must have buffer data');
+          }
+          
           const formData = new FormData();
           formData.append('file', file.buffer, {
             filename: file.originalname,
@@ -580,7 +697,10 @@ router.post(
             sendJobProgress(userId, jobId, 'analyzing', 30);
           }
 
-          const pythonResponse = await pythonBridge.post(`/api/v2/analysis/unified/${type}`, formData, {
+          const pythonResponse = await enhancedPythonBridge.request({
+            method: 'POST',
+            url: `/api/v2/analysis/unified/${type}`,
+            data: formData,
             timeout: 300000, // 5 minutes
           }) as {
             data: {
@@ -600,16 +720,52 @@ router.post(
           // Python returns inference-only payload
           const inferenceResult = pythonResponse.data;
           
-          // Node owns the job lifecycle - update with results
-          await updateAnalysisJobWithResults(job.id, {
-            status: 'completed',
+          // [PYTHON RESULT] - Critical observability point
+          logger.info('[PYTHON RESULT]', {
+            jobId,
+            status: 'success',
             confidence: inferenceResult.confidence,
             is_deepfake: inferenceResult.is_deepfake,
-            model_name: inferenceResult.model_name,
-            model_version: inferenceResult.model_version,
-            analysis_data: inferenceResult.analysis_data,
-            proof_json: inferenceResult.proof,
+            model_name: inferenceResult.model_name
           });
+          
+          // Node owns the job lifecycle - ATOMIC GUARD for finalization
+          if (job?.id) {
+            try {
+              await updateAnalysisJobWithResults(job.id, {
+                status: 'completed',
+                confidence: inferenceResult.confidence,
+                is_deepfake: inferenceResult.is_deepfake,
+                model_name: inferenceResult.model_name,
+                model_version: inferenceResult.model_version,
+                analysis_data: inferenceResult.analysis_data,
+                proof_json: inferenceResult.proof,
+              });
+              
+              // [JOB FINALIZED] - Critical observability point
+              logger.info('[JOB FINALIZED]', {
+                jobId: job.id,
+                status: 'completed',
+                confidence: inferenceResult.confidence
+              });
+              
+            } catch (finalizationError) {
+              // FINALIZATION FAILURE - Force fail state
+              logger.error('[FINALIZATION FAILURE]', {
+                jobId: job.id,
+                error: finalizationError
+              });
+              
+              await updateAnalysisJobWithResults(job.id, {
+                status: 'failed',
+                error_message: 'Finalization failed: ' + String(finalizationError)
+              });
+              
+              throw finalizationError;
+            }
+          } else {
+            logger.error('[NO JOB ID]', { jobId, pythonResponse: 'success' });
+          }
 
           if (userId) {
             sendJobProgress(userId, jobId, 'completed', 100);
@@ -643,9 +799,9 @@ router.post(
             ? ((error as unknown) as { response: { data?: { detail?: string } } }).response?.data?.detail || ((error as unknown) as Error).message || 'Analysis failed'
             : ((error as unknown) as Error).message || 'Analysis failed';
           
-          await updateAnalysisJobWithResults(job.id, {
+          await updateAnalysisJobWithResults(job?.id || '', {
             status: 'failed',
-            error_message: errorMessage,
+            error_message: errorMessage || 'Analysis failed',
           });
 
           if (userId) {
@@ -676,10 +832,10 @@ router.post(
         error: (error as Error).message,
       });
       
-      return res.status(500).json({
-        success: false,
+      return errorResponse(res, {
+        code: 'INTERNAL_SERVER_ERROR',
         message: 'Internal server error',
-      });
+      }, 500);
     }
   }
 );
@@ -712,29 +868,44 @@ router.post(
         });
       }
 
-      // Create job with standardized ID
-      const jobId = `job_${randomUUID()}`;
+      // Create job with pure UUID (no prefix for database compatibility)
+      const jobId = randomUUID();
+      logger.info('JOB_CREATED', { jobId, type: 'audio' });
       
       // Create job in database
-      const job = await createAnalysisJob(userId || '', {
-        modality: type as AnalysisModality,
-        filename: file.originalname,
-        mime_type: file.mimetype,
-        size_bytes: file.size,
-        metadata: {
-          originalName: file.originalname,
-          mimeType: file.mimetype,
-          size: file.size,
-        },
-      });
+      let job: { id: string } | null;
+      try {
+        job = await createAnalysisJob(userId || '', {
+          modality: type as AnalysisModality,
+          filename: file.originalname,
+          mime_type: file.mimetype,
+          size_bytes: file.size,
+          metadata: {
+            originalName: file.originalname,
+            mimeType: file.mimetype,
+            size: file.size,
+          },
+        }, jobId); // CRITICAL FIX: Pass jobId to ensure consistency
 
-      logger.info(`[ANALYSIS JOB] Created job ${jobId}`, {
-        correlationId,
-        jobId,
-        type,
-      });
+        logger.info(`[ANALYSIS JOB] Created job ${jobId}`, {
+          correlationId,
+          jobId,
+          type,
+        });
 
-      // Send immediate response with job_id
+        // Send job started event via WebSocket
+        if (userId) {
+          webSocketManager.sendJobUpdate(userId, jobId, 'processing', 0, 'Job started and queued for processing');
+        }
+      } catch (dbError) {
+        logger.error(`[JOB CREATION FAILED] ${jobId}`, { error: dbError, correlationId });
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to create analysis job' // CRITICAL FIX: Remove job_id from error response to prevent frontend polling for non-existent jobs
+        });
+      }
+
+    // Send immediate response with job_id only after successful DB creation
       res.status(202).json({
         success: true,
         job_id: jobId,
@@ -750,6 +921,10 @@ router.post(
           }
 
           // Forward to Python service for inference only
+          if (!file || !file.buffer) {
+            throw new Error('File is required and must have buffer data');
+          }
+          
           const formData = new FormData();
           formData.append('file', file.buffer, {
             filename: file.originalname,
@@ -762,7 +937,10 @@ router.post(
             sendJobProgress(userId, jobId, 'analyzing', 30);
           }
 
-          const pythonResponse = await pythonBridge.post(`/api/v2/analysis/unified/${type}`, formData, {
+          const pythonResponse = await enhancedPythonBridge.request({
+            method: 'POST',
+            url: `/api/v2/analysis/unified/${type}`,
+            data: formData,
             timeout: 300000, // 5 minutes
           }) as {
             data: {
@@ -782,16 +960,52 @@ router.post(
           // Python returns inference-only payload
           const inferenceResult = pythonResponse.data;
           
-          // Node owns the job lifecycle - update with results
-          await updateAnalysisJobWithResults(job.id, {
-            status: 'completed',
+          // [PYTHON RESULT] - Critical observability point
+          logger.info('[PYTHON RESULT]', {
+            jobId,
+            status: 'success',
             confidence: inferenceResult.confidence,
             is_deepfake: inferenceResult.is_deepfake,
-            model_name: inferenceResult.model_name,
-            model_version: inferenceResult.model_version,
-            analysis_data: inferenceResult.analysis_data,
-            proof_json: inferenceResult.proof,
+            model_name: inferenceResult.model_name
           });
+          
+          // Node owns the job lifecycle - ATOMIC GUARD for finalization
+          if (job?.id) {
+            try {
+              await updateAnalysisJobWithResults(job.id, {
+                status: 'completed',
+                confidence: inferenceResult.confidence,
+                is_deepfake: inferenceResult.is_deepfake,
+                model_name: inferenceResult.model_name,
+                model_version: inferenceResult.model_version,
+                analysis_data: inferenceResult.analysis_data,
+                proof_json: inferenceResult.proof,
+              });
+              
+              // [JOB FINALIZED] - Critical observability point
+              logger.info('[JOB FINALIZED]', {
+                jobId: job.id,
+                status: 'completed',
+                confidence: inferenceResult.confidence
+              });
+              
+            } catch (finalizationError) {
+              // FINALIZATION FAILURE - Force fail state
+              logger.error('[FINALIZATION FAILURE]', {
+                jobId: job.id,
+                error: finalizationError
+              });
+              
+              await updateAnalysisJobWithResults(job.id, {
+                status: 'failed',
+                error_message: 'Finalization failed: ' + String(finalizationError)
+              });
+              
+              throw finalizationError;
+            }
+          } else {
+            logger.error('[NO JOB ID]', { jobId, pythonResponse: 'success' });
+          }
 
           if (userId) {
             sendJobProgress(userId, jobId, 'completed', 100);
@@ -825,9 +1039,9 @@ router.post(
             ? ((error as unknown) as { response: { data?: { detail?: string } } }).response?.data?.detail || ((error as unknown) as Error).message || 'Analysis failed'
             : ((error as unknown) as Error).message || 'Analysis failed';
           
-          await updateAnalysisJobWithResults(job.id, {
+          await updateAnalysisJobWithResults(job?.id || '', {
             status: 'failed',
-            error_message: errorMessage,
+            error_message: errorMessage || 'Analysis failed',
           });
 
           if (userId) {
@@ -858,10 +1072,10 @@ router.post(
         error: (error as Error).message,
       });
       
-      return res.status(500).json({
-        success: false,
+      return errorResponse(res, {
+        code: 'INTERNAL_SERVER_ERROR',
         message: 'Internal server error',
-      });
+      }, 500);
     }
   }
 );
@@ -906,28 +1120,42 @@ router.post(
         });
       }
 
-      // Create job with standardized ID
-      const jobId = `job_${randomUUID()}`;
+      // Create job with pure UUID (no prefix for database compatibility)
+      const jobId = randomUUID();
+      logger.info('JOB_CREATED', { jobId, type: 'text' });
       
       // Create job in database
-      const job = await createAnalysisJob(userId || '', {
-        modality: type as 'image' | 'video' | 'audio' | 'text',
-        filename: 'text-input',
-        mime_type: 'text/plain',
-        size_bytes: text.length,
-        metadata: {
-          textLength: text.length,
-          wordCount: text.split(/\s+/).filter(word => word.length > 0).length,
-        },
-      });
+      let job: { id: string } | null;
+      try {
+        job = await createAnalysisJob(userId || '', {
+          modality: 'text' as AnalysisModality,
+          filename: 'text-input',
+          mime_type: 'text/plain',
+          size_bytes: text.length,
+          metadata: {
+            media_type: 'text'
+          },
+        }, jobId); // CRITICAL FIX: Pass jobId to ensure consistency
 
-      logger.info(`[ANALYSIS JOB] Created job ${jobId}`, {
-        correlationId,
-        jobId,
-        type,
-      });
+        logger.info(`[ANALYSIS JOB] Created job ${jobId}`, {
+          correlationId,
+          jobId,
+          type,
+        });
 
-      // Send immediate response with job_id
+        // Send job started event via WebSocket
+        if (userId) {
+          webSocketManager.sendJobUpdate(userId, jobId, 'processing', 0, 'Job started and queued for processing');
+        }
+      } catch (dbError) {
+        logger.error(`[JOB CREATION FAILED] ${jobId}`, { error: dbError, correlationId });
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to create analysis job' // CRITICAL FIX: Remove job_id from error response to prevent frontend polling for non-existent jobs
+        });
+      }
+
+    // Send immediate response with job_id only after successful DB creation
       res.status(202).json({
         success: true,
         job_id: jobId,
@@ -943,19 +1171,28 @@ router.post(
           }
 
           // Forward to Python service for text analysis
-          const pythonResponse = await pythonBridge.post(`/api/v2/analysis/${type}`, {
-            text,
-            job_id: jobId,
-            user_id: userId || '',
-          }, {
+          const pythonResponse = await enhancedPythonBridge.request({
+            method: 'POST',
+            url: `/upload/text`,
+            data: {
+              text,
+              job_id: jobId,
+              user_id: userId || '',
+              analyze: true
+            },
             timeout: 60000, // 1 minute for text analysis
           }) as {
             data: {
               success: boolean;
-              is_ai_generated: boolean;
-              confidence: number;
-              explanation: string;
-              model_name: string;
+              text_length: number;
+              word_count: number;
+              timestamp: string;
+              analysis: {
+                is_ai_generated: boolean;
+                confidence: number;
+                explanation: string;
+                model_name: string;
+              };
             };
           };
 
@@ -966,22 +1203,58 @@ router.post(
           // Python returns text analysis result
           const textResult = pythonResponse.data;
           
-          // Node owns the job lifecycle - update with results
-          await updateAnalysisJobWithResults(job.id, {
-            status: 'completed',
-            confidence: textResult.confidence,
-            is_deepfake: textResult.is_ai_generated,
-            model_name: textResult.model_name,
-            model_version: '1.0.0',
-            analysis_data: {
-              explanation: textResult.explanation,
-              text_length: text.length,
-            },
-            proof_json: {
-              analysis_type: 'text',
-              timestamp: new Date().toISOString(),
-            },
+          // [PYTHON RESULT] - Critical observability point
+          logger.info('[PYTHON RESULT]', {
+            jobId,
+            status: 'success',
+            confidence: textResult.analysis?.confidence || 0,
+            is_ai_generated: textResult.analysis?.is_ai_generated || false,
+            model_name: textResult.analysis?.model_name || 'Unknown'
           });
+          
+          // Node owns job lifecycle - ATOMIC GUARD for finalization
+          if (job?.id) {
+            try {
+              await updateAnalysisJobWithResults(job.id, {
+                status: 'completed',
+                confidence: textResult.analysis?.confidence || 0,
+                is_deepfake: textResult.analysis?.is_ai_generated || false,
+                model_name: textResult.analysis?.model_name || 'Unknown',
+                model_version: '1.0.0',
+                analysis_data: {
+                  explanation: textResult.analysis?.explanation || '',
+                  text_length: textResult.text_length || 0,
+                },
+                proof_json: {
+                  analysis_type: 'text',
+                  timestamp: new Date().toISOString(),
+                },
+              });
+              
+              // [JOB FINALIZED] - Critical observability point
+              logger.info('[JOB FINALIZED]', {
+                jobId: job.id,
+                status: 'completed',
+                confidence: textResult.analysis?.confidence || 0
+              });
+              
+            } catch (finalizationError) {
+              // FINALIZATION FAILURE - Force fail state
+              logger.error('[FINALIZATION FAILURE]', {
+                jobId: job.id,
+                error: finalizationError
+              });
+              
+              await updateAnalysisJobWithResults(job.id, {
+                status: 'failed',
+                error_message: 'Finalization failed: ' + String(finalizationError)
+              });
+              
+              throw finalizationError;
+            }
+          } else {
+            logger.error('[NO JOB ID]', { jobId, pythonResponse: 'success' });
+          }
 
           if (userId) {
             sendJobProgress(userId, jobId, 'completed', 100);
@@ -993,10 +1266,10 @@ router.post(
               timestamp: Date.now(),
               data: {
                 status: 'completed',
-                confidence: textResult.confidence,
-                is_ai_generated: textResult.is_ai_generated,
-                model_name: textResult.model_name,
-                explanation: textResult.explanation,
+                confidence: textResult.analysis?.confidence || 0,
+                is_ai_generated: textResult.analysis?.is_ai_generated || false,
+                model_name: textResult.analysis?.model_name || 'Unknown',
+                explanation: textResult.analysis?.explanation || '',
               },
             });
           }
@@ -1005,19 +1278,18 @@ router.post(
             correlationId,
             jobId,
             type,
-            confidence: textResult.confidence,
-            is_ai_generated: textResult.is_ai_generated,
+            confidence: textResult.analysis?.confidence || 0,
+            is_ai_generated: textResult.analysis?.is_ai_generated || false,
           });
-
         } catch (error) {
           // Handle analysis error
           const errorMessage = error && typeof error === 'object' && 'response' in error 
             ? ((error as unknown) as { response: { data?: { detail?: string } } }).response?.data?.detail || ((error as unknown) as Error).message || 'Analysis failed'
             : ((error as unknown) as Error).message || 'Analysis failed';
           
-          await updateAnalysisJobWithResults(job.id, {
+          await updateAnalysisJobWithResults(job?.id || '', {
             status: 'failed',
-            error_message: errorMessage,
+            error_message: errorMessage || 'Analysis failed',
           });
 
           if (userId) {
@@ -1048,10 +1320,10 @@ router.post(
         error: (error as Error).message,
       });
       
-      return res.status(500).json({
-        success: false,
+      return errorResponse(res, {
+        code: 'INTERNAL_SERVER_ERROR',
         message: 'Internal server error',
-      });
+      }, 500);
     }
   }
 );
@@ -1074,18 +1346,23 @@ router.get('/status/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     
-    const result = await pythonBridge.get<{
-      success: boolean;
+    const result = await enhancedPythonBridge.request({
+      method: 'GET',
+      url: `/analyze/status/${id}`,
+    }) as {
       data: {
-        status: string;
-        progress?: number;
-        message?: string;
-        created_at?: string;
-        updated_at?: string;
-        completed_at?: string;
-        error?: string;
+        success: boolean;
+        data: {
+          status: string;
+          progress?: number;
+          message?: string;
+          created_at?: string;
+          updated_at?: string;
+          completed_at?: string;
+          error?: string;
+        };
       };
-    }>(`/analyze/status/${id}`);
+    };
 
     res.json({
       success: true,
@@ -1096,53 +1373,216 @@ router.get('/status/:id', async (req: Request, res: Response) => {
   }
 });
 
-// Get analysis results (for polling)
-router.get('/results/:jobId', async (req: Request, res: Response) => {
+// Get analysis status (for polling)
+router.get('/status/:id', async (req: Request, res: Response) => {
   try {
-    const { jobId } = req.params;
+    const { id } = req.params;
+    const correlationId = getRequestId(req);
     
-    // Query the database for the job
-    const result = await pythonBridge.get(`/results/${jobId}`) as {
-      status: string;
-      result?: {
-        is_deepfake: boolean;
-        confidence: number;
-        model_name: string;
-        model_version: string;
-        analysis_data?: {
-          processing_time?: number;
-        };
-      };
-      error?: string;
-    };
+    logger.info(`[STATUS] Fetching status for job ${id}`, {
+      correlationId,
+      jobId: id
+    });
     
-    // Transform the result to match the expected format
-    const transformedResult = {
-      id: jobId,
-      status: result.status || 'processing',
-      result: result.result ? {
-        isAuthentic: !result.result.is_deepfake,
-        confidence: result.result.confidence,
-        details: {
-          isDeepfake: result.result.is_deepfake,
-          modelInfo: {
-            name: result.result.model_name,
-            version: result.result.model_version
-          }
+    // Query the database for the job status
+    const { data: jobData, error } = await supabaseAdmin
+      .from('tasks')
+      .select('id, status, progress, started_at, updated_at, error')
+      .eq('id', id)
+      .single();
+    
+    if (error || !jobData) {
+      logger.error(`[STATUS] Job not found in database`, {
+        correlationId,
+        jobId: id,
+        error: error?.message
+      });
+      
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'JOB_NOT_FOUND',
+          message: `Analysis job ${id} not found`
         },
-        metrics: {
-          processingTime: result.result.analysis_data?.processing_time || 0,
-          modelVersion: result.result.model_version
-        }
-      } : undefined,
-      error: result.error
+        requestId: correlationId,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    const statusResponse = {
+      success: true,
+      data: {
+        status: jobData.status,
+        progress: jobData.progress || 0,
+        created_at: jobData.started_at,
+        updated_at: jobData.updated_at,
+        error: jobData.error
+      }
     };
     
-    res.json(transformedResult);
+    logger.info(`[STATUS] Returning job status`, {
+      correlationId,
+      jobId: id,
+      status: statusResponse.data.status
+    });
+    
+    res.json(statusResponse);
   } catch (error) {
     await handleAnalysisError(error, res);
   }
 });
 
-export { router as analysisRouter };
+// Get analysis results (for polling)
+router.get('/results/:jobId', validateJobId, async (req: Request, res: Response) => {
+  try {
+    const { jobId } = req.params;
+    const correlationId = getRequestId(req);
+    
+    logger.info(`[RESULTS] Fetching results for job ${jobId}`, {
+      correlationId,
+      jobId
+    });
+    
+    // Query the database for the job using pure UUID
+    const { data: jobData, error } = await supabaseAdmin
+      .from('tasks')
+      .select('*')
+      .eq('id', jobId)
+      .single();
+    
+    if (error || !jobData) {
+      logger.error(`[RESULTS] Job not found in database`, {
+        correlationId,
+        jobId,
+        error: error?.message
+      });
+      
+      // Return 404 only if job truly doesn't exist
+      return res.status(404).json({
+        success: false,
+        error: 'JOB_NOT_FOUND',
+        jobId,
+      });
+    }
 
+    // Auto-fail stuck jobs (safety guard)
+    const maxProcessingTime = 10 * 60 * 1000; // 10 minutes
+    const jobAge = Date.now() - new Date(jobData.created_at).getTime();
+    const isStuck = jobData.status === 'processing' && jobAge > maxProcessingTime;
+    
+    if (isStuck) {
+      logger.warn(`Auto-failing stuck job: ${jobId}`, {
+        status: jobData.status,
+        age: jobAge,
+        maxAge: maxProcessingTime
+      });
+      
+      // Update to failed status
+      await supabaseAdmin
+        .from('tasks')
+        .update({ 
+          status: 'failed',
+          error: 'Job automatically failed due to timeout',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', jobId);
+      
+      jobData.status = 'failed';
+      jobData.error = 'Job automatically failed due to timeout';
+    }
+
+    // Return clean response with UUID consistency and field mapping
+    logger.info('RESULT_FETCH', { jobId, status: jobData.status });
+    return res.json({
+      success: true,
+      jobId: jobData.id,
+      status: jobData.status,
+      result: jobData.result ?? null,
+      reportCode: jobData.report_code,  // Transform snake_case to camelCase
+      createdAt: jobData.created_at,   // Transform snake_case to camelCase
+      updatedAt: jobData.updated_at   // Transform snake_case to camelCase
+    });
+  } catch (error) {
+    logger.error('Results endpoint error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'INTERNAL_SERVER_ERROR',
+      message: 'Failed to fetch results'
+    });
+  }
+});
+
+// POST /api/v2/analysis/jobs/:jobId/cancel - Cancel a running job
+router.post('/jobs/:jobId/cancel', validateJobId, async (req: AuthenticatedRequest, res: Response) => {
+  const { jobId } = req.params;
+  const userId = req.user?.id;
+  const requestId = req.locals?.requestId || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+  logger.info('[JOB CANCELLATION] Request received', { jobId, userId, requestId });
+
+  try {
+    // Validate authentication
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'AUTHENTICATION_REQUIRED',
+          message: 'Authentication required to cancel jobs'
+        }
+      });
+    }
+
+    // Attempt to cancel job through job manager
+    const cancelled = await jobManager.cancelJob(jobId, userId);
+
+    if (!cancelled) {
+      // Job might not exist or belong to user
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'JOB_NOT_FOUND_OR_NOT_CANCELLABLE',
+          message: 'Job not found or cannot be cancelled'
+        }
+      });
+    }
+
+    logger.info('[JOB CANCELLATION] Success', { jobId, userId, requestId });
+
+    return res.json({
+      success: true,
+      message: 'Job cancelled successfully',
+      jobId,
+      status: 'cancelled'
+    });
+
+  } catch (error) {
+    logger.error('[JOB CANCELLATION] Error', {
+      jobId,
+      userId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      requestId
+    });
+
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'CANCELLATION_FAILED',
+        message: 'Failed to cancel job. Please try again.'
+      }
+    });
+  }
+});
+
+// DEPRECATED: Use /api/v2/results/:jobId instead
+// This endpoint kept for backward compatibility only
+router.get('/history/:jobId', validateJobId, async (req: Request, res: Response) => {
+  logger.warn('[DEPRECATED] /history endpoint used, please migrate to /results', {
+    jobId: req.params.jobId,
+    userAgent: req.get('User-Agent')
+  });
+  
+  // Redirect to canonical endpoint
+  return res.redirect(307, `/api/v2/results/${req.params.jobId}`);
+});
+
+export default router;

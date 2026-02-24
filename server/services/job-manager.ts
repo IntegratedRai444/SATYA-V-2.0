@@ -74,19 +74,7 @@ class JobManager {
         .eq('user_id', userId);
 
       // Send WebSocket notification
-      webSocketManager.sendEventToUser(userId, {
-        type: 'JOB_ERROR',
-        jobId,
-        timestamp: Date.now(),
-        error: {
-          code: 'JOB_CANCELLED',
-          message: 'Job was cancelled by user'
-        },
-        data: {
-          modality: job.modality,
-          cancelledAt: Date.now()
-        }
-      });
+      webSocketManager.sendJobCancelled(userId, jobId);
 
       // Remove from tracking
       this.runningJobs.delete(jobId);
@@ -128,17 +116,48 @@ class JobManager {
   }
 
   // Cleanup old jobs (call this periodically)
-  cleanup(): void {
+  async cleanup(): Promise<void> {
     const now = Date.now();
     const maxAge = 30 * 60 * 1000; // 30 minutes
+    const maxProcessingTime = 10 * 60 * 1000; // 10 minutes max processing time
 
     for (const [jobId, job] of this.runningJobs.entries()) {
+      // Clean up stale jobs
       if (now - job.startTime > maxAge) {
         logger.warn(`Cleaning up stale job: ${jobId}`, { 
           age: now - job.startTime,
           status: job.status 
         });
         this.runningJobs.delete(jobId);
+      }
+      
+      // Timeout jobs running too long
+      if (job.status === 'running' && (now - job.startTime > maxProcessingTime)) {
+        logger.warn(`Timing out job: ${jobId}`, { 
+          processingTime: now - job.startTime,
+          status: job.status 
+        });
+        
+        // Mark as failed in database
+        const updateResult = await supabase
+          .from('tasks')
+          .update({ 
+            status: 'failed',
+            error: 'Job timed out after maximum processing time',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', jobId);
+          
+        if (updateResult.error) {
+          logger.error(`Failed to update timed out job ${jobId}:`, updateResult.error);
+        } else {
+          // Send WebSocket notification for timeout
+          webSocketManager.sendJobFailed(job.userId, jobId, 'Job timed out after maximum processing time');
+          
+          // Remove from tracking
+          this.runningJobs.delete(jobId);
+          logger.info(`Job ${jobId} marked as failed due to timeout`);
+        }
       }
     }
   }
@@ -148,8 +167,8 @@ class JobManager {
 const jobManager = new JobManager();
 
 // Cleanup stale jobs every 5 minutes
-setInterval(() => {
-  jobManager.cleanup();
+setInterval(async () => {
+  await jobManager.cleanup();
 }, 5 * 60 * 1000);
 
 export default jobManager;

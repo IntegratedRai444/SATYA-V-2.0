@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { supabase, supabaseAdmin } from '../config/supabase';
 import { logger } from '../config/logger';
+import { randomUUID } from 'node:crypto';
 
 const router = Router();
 
@@ -285,14 +286,19 @@ export const createAnalysisJob = async (
     size_bytes: number;
     metadata?: Record<string, unknown>;
     status?: 'pending' | 'processing' | 'completed' | 'failed';
-  }
+  },
+  jobId?: string // Allow external jobId to be passed
 ) => {
   // Generate report code
   const reportCode = `RPT-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
   
+  // Generate jobId if not provided (ensures consistency)
+  const finalJobId = jobId || randomUUID();
+  
   const { data, error } = await supabaseAdmin
     .from('tasks')
     .insert({
+      id: finalJobId, // Use consistent ID
       user_id: userId,
       type: 'analysis',
       status: jobData.status || 'processing',
@@ -318,8 +324,66 @@ export const createAnalysisJob = async (
     .single();
 
   if (error) {
-    logger.error('Failed to create analysis job:', error);
+    logger.error('TASK INSERT FAILED', { 
+      jobId: finalJobId, 
+      error: error.message,
+      details: error,
+      userId,
+      jobData 
+    });
     throw new Error(`Failed to create analysis job: ${error.message}`);
+  }
+
+  logger.info('TASK INSERT SUCCESS', { 
+    jobId: finalJobId,
+    returnedId: data?.id,
+    reportCode: data?.report_code 
+  });
+
+  return data;
+};
+
+// 🔥 NEW: Update job with Python worker results
+export const updateJobWithResults = async (
+  jobId: string,
+  result: {
+    is_deepfake: boolean;
+    confidence: number;
+    model_name: string;
+    model_version: string;
+    analysis_data?: {
+      processing_time?: number;
+    };
+  },
+  status: 'completed' | 'failed' = 'completed',
+  errorMessage?: string
+) => {
+  const { data, error: dbError } = await supabaseAdmin
+    .from('tasks')
+    .update({
+      status,
+      result: {
+        confidence: result.confidence,
+        is_deepfake: result.is_deepfake,
+        model_name: result.model_name,
+        model_version: result.model_version,
+        summary: {
+          processing_time: result.analysis_data?.processing_time || 0,
+          completed_at: new Date().toISOString()
+        }
+      },
+      progress: 100,
+      updated_at: new Date().toISOString(),
+      error: errorMessage || null
+    })
+    .eq('id', jobId)
+    .select('id, status, updated_at')
+    .single();
+
+  if (dbError) {
+    logger.error(`Failed to update job ${jobId}:`, dbError);
+    const errorMsg = typeof dbError.message === 'string' ? dbError.message : 'Unknown database error';
+    throw new Error(`Failed to update job: ${errorMsg}`);
   }
 
   return data;

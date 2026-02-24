@@ -3,6 +3,21 @@
  * Ensures only one instance of Supabase client exists across the entire application
  */
 
+// Console filter to suppress Supabase debug noise
+if (typeof window !== 'undefined') {
+  const originalLog = console.log;
+  console.log = (...args: any[]) => {
+    const msg = args?.[0]?.toString() ?? '';
+    // Filter out common Supabase noise
+    if (msg.includes('GoTrueClient')) return;
+    if (msg.includes('_acquireLock')) return;
+    if (msg.includes('auto refresh token')) return;
+    if (msg.includes('refreshSession')) return;
+    if (msg.includes('No session')) return;
+    originalLog(...args);
+  };
+}
+
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/supabase.types';
 
@@ -18,7 +33,6 @@ declare global {
 // Environment configuration
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const isDev = import.meta.env.DEV;
 
 // More graceful error handling
 if (!supabaseUrl || !supabaseAnonKey) {
@@ -123,7 +137,7 @@ if (supabaseUrl && supabaseAnonKey) {
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
-        debug: isDev,
+        debug: false, // Disable Supabase debug noise
       },
       global: {
         headers: {

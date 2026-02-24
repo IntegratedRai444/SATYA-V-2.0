@@ -2,9 +2,11 @@ import * as dotenv from 'dotenv';
 import express, { type Request, type Response } from 'express';
 import { createServer } from 'http';
 import path from 'path';
+import cookieParser from 'cookie-parser';
 import webSocketManager from './services/websocket-manager';
 import { routes } from './routes';
 import { createRequestLogger } from './config/logger';
+import { systemRouter } from './routes/system-health';
 
 // Load environment variables
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
@@ -19,13 +21,25 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // Body parsing middleware
+app.use(cookieParser());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Request logging middleware
+app.use((req, res, next) => {
+  console.log('🔍 REQUEST DEBUG', {
+    path: req.path,
+    method: req.method,
+    headers: req.headers,
+    cookies: req.cookies,
+    rawCookies: req.headers.cookie
+  });
+  next();
+});
+
 app.use(createRequestLogger());
 
-// Basic CORS middleware
+// CORS middleware with credentials support
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   const allowedOrigins = [
@@ -42,8 +56,9 @@ app.use((req, res, next) => {
   }
   
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, HEAD');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, x-request-id, x-csrf-token, x-api-version');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, x-request-id, x-csrf-token, x-api-version, Cookie');
   res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Expose-Headers', 'Set-Cookie');
   
   if (req.method === 'OPTIONS') {
     res.sendStatus(200);
@@ -65,6 +80,7 @@ app.get('/health', (req: Request, res: Response) => {
 
 // API routes are handled by the router
 app.use('/api/v2', routes);
+app.use('/system', systemRouter);
 
 // Error handling middleware (must be last)
 app.use((err: Error, req: Request, res: Response) => {

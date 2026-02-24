@@ -6,17 +6,16 @@
 
 import { getAccessToken } from '../lib/auth/getAccessToken';
 import { API_CONFIG } from '../lib/config/urls';
+import { logger as appLogger } from '../lib/utils/logger';
 
 // Get JWT token for WebSocket authentication
 const getAuthToken = async (): Promise<string | null> => {
   try {
     const token = await getAccessToken();
-    if (import.meta.env.DEV) {
-      console.log("WebSocket auth token:", token ? "Bearer [REDACTED]" : "null");
-    }
+    // Removed noisy WebSocket auth logging for production
     return token;
   } catch (error) {
-    console.error('Error getting auth token for WebSocket:', error);
+    appLogger.error('Error getting auth token for WebSocket:', error);
     return null;
   }
 };
@@ -30,7 +29,7 @@ import {
   type MessageHandler,
   type EventType,
   type QueuedMessage,
-  type ErrorMessage
+  type ErrorMessage,
 } from '../types/websocket';
 
 // Re-export types for backward compatibility

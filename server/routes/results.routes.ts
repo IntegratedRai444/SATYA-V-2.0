@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { supabase } from '../config/supabase';
+import { supabase, supabaseAdmin } from '../config/supabase';
 import { logger } from '../config/logger';
 
 const router = Router();
@@ -20,28 +20,87 @@ router.get('/:id', async (req: Request, res: Response) => {
     // Fetch analysis result from tasks table
     const { data: task, error } = await supabase
       .from('tasks')
-      .select(`
-        id,
-        type,
-        status,
-        file_name,
-        file_type,
-        file_size,
-        result,
-        report_code,
-        created_at,
-        completed_at,
-        error
-      `)
+      .select(`id, type, status, file_name, file_type, file_size, result, report_code, created_at, completed_at, error`)
       .eq('id', id)
       .eq('user_id', userId)
       .eq('type', 'analysis')
       .single();
 
     if (error || !task) {
+      // Check if this is a stuck processing job (fail-safe)
+      if (!task) {
+        // Try to find the job without user filter for recovery
+        const { data: orphanJob } = await supabase
+          .from('tasks')
+          .select('id, status, created_at')
+          .eq('id', id)
+          .eq('type', 'analysis')
+          .single();
+          
+        if (orphanJob && orphanJob.status === 'processing') {
+          // Job is stuck in processing - mark as failed
+          await supabaseAdmin
+            .from('tasks')
+            .update({
+              status: 'failed',
+              error: 'Job failed due to processing timeout',
+              completed_at: new Date().toISOString()
+            })
+            .eq('id', id);
+            
+          return res.status(200).json({
+            id,
+            type: 'analysis',
+            status: 'failed',
+            error: 'Job failed due to processing timeout',
+            created_at: orphanJob.created_at,
+            completed_at: new Date().toISOString()
+          });
+        }
+      }
+      
       return res.status(404).json({
         success: false,
         error: 'Analysis result not found'
+      });
+    }
+
+    // 3-State Model: Handle processing jobs
+    if (task.status === 'processing') {
+      // Check if job is stuck (timeout recovery)
+      const jobAge = Date.now() - new Date(task.created_at).getTime();
+      const TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+      
+      if (jobAge > TIMEOUT_MS) {
+        // Job is stuck - mark as failed
+        await supabaseAdmin
+          .from('tasks')
+          .update({
+            status: 'failed',
+            error: 'Job failed due to timeout',
+            completed_at: new Date().toISOString()
+          })
+          .eq('id', id);
+          
+        return res.status(200).json({
+          id: task.id,
+          type: task.type,
+          status: 'failed',
+          error: 'Job failed due to timeout',
+          created_at: task.created_at,
+          completed_at: new Date().toISOString()
+        });
+      }
+      
+      return res.status(200).json({
+        id: task.id,
+        type: task.type,
+        status: 'processing',
+        file_name: task.file_name,
+        file_type: task.file_type,
+        file_size: task.file_size,
+        created_at: task.created_at,
+        message: 'Analysis is still in progress'
       });
     }
 
