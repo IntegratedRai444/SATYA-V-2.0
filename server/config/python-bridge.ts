@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { pythonConfig } from './python-config';
 import { logger } from './logger';
+import { getAccessToken } from "../auth/getAccessToken";
 
 // Define custom types since axios types are problematic
 type CustomAxiosRequestConfig = {
@@ -215,7 +216,7 @@ class PythonServiceHealth {
         `${pythonConfig.apiUrl}/health`,
         {
           timeout: 5000, // 5 second timeout for health check
-          // Health endpoint is public - no API key required
+          // Health endpoint should be public - no API key required for Python service
         }
       );
 
@@ -270,6 +271,7 @@ export class EnhancedPythonBridge {
     data?: unknown;
     headers?: Record<string, string>;
     timeout?: number;
+    userToken?: string; // Pass user token from request context
   }): Promise<T> {
     // Perform health check if needed
     if (healthChecker.shouldCheckHealth()) {
@@ -294,6 +296,8 @@ export class EnhancedPythonBridge {
           'X-API-Key': pythonConfig.apiKey,
           'X-Request-Id': requestId,
           'X-Correlation-Id': requestId,
+          // Pass user's JWT token for Python service authentication
+          'Authorization': config.userToken ? `Bearer ${config.userToken}` : `Bearer ${await getAccessToken()}`,
         },
         timeout: config.timeout || pythonConfig.requestTimeout
       });

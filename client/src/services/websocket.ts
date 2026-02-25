@@ -469,11 +469,11 @@ class WebSocketService {
     if (this.socket?.readyState === WebSocket.OPEN) {
       const pingMessage: WebSocketMessage = {
         type: 'ping',
-        timestamp: new Date().toISOString(),
+        timestamp: Date.now(),
         id: `ping-${Date.now()}`,
         payload: {
-          serverTime: new Date().toISOString(),
-          clientTime: new Date().toISOString()
+          serverTime: Date.now(),
+          clientTime: Date.now()
         }
       };
       this.socket.send(JSON.stringify(pingMessage));
@@ -532,7 +532,7 @@ class WebSocketService {
 
     this.messageQueue.push({
       message: wsMessage,
-      timestamp: new Date().toISOString(),
+      timestamp: Date.now(),
       retries: 0,
       priority: 'normal' as const
     });

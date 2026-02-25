@@ -40,6 +40,7 @@ router.get('/',
         `)
         .eq('user_id', userId)
         .eq('type', 'analysis')
+        .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .range(offset, limit);
 
@@ -114,107 +115,22 @@ router.get('/',
   }
 );
 
-// GET /api/v2/history/:jobId - Get full job details with analysis results
-router.get('/:jobId',
-  async (req: Request, res: Response) => {
-    try {
-      const userId = req.user?.id;
-      const { jobId } = req.params;
-
-      if (!userId) {
-        return res.status(401).json({
-          success: false,
-          error: 'User not authenticated'
-        });
-      }
-
-      // Fetch job details
-      const { data: job, error: jobError } = await supabase
-        .from('tasks')
-        .select(`
-          id,
-          type,
-          status,
-          file_name,
-          file_type,
-          file_size,
-          file_path,
-          progress,
-          metadata,
-          error,
-          report_code,
-          started_at,
-          completed_at,
-          created_at,
-          updated_at
-        `)
-        .eq('id', jobId)
-        .eq('user_id', userId)
-        .eq('type', 'analysis')
-        .single();
-
-      
-      if (jobError || !job) {
-        return res.status(404).json({
-          success: false,
-          error: 'Analysis job not found'
-        });
-      }
-
-      // Fetch analysis results (stored in tasks.result)
-      const jobWithResult = job as {
-        result?: {
-          confidence?: number;
-          is_deepfake?: boolean;
-          model_name?: string;
-          model_version?: string;
-          summary?: Record<string, unknown>;
-          analysis_data?: Record<string, unknown>;
-          proof_json?: Record<string, unknown>;
-          [key: string]: unknown;
-        };
-      } | null;
-      
-      const analysisData = jobWithResult?.result;
-      const results = analysisData ? [{
-        id: job.id,
-        model_name: analysisData.model_name || 'SatyaAI',
-        confidence: analysisData.confidence,
-        is_deepfake: analysisData.is_deepfake,
-        analysis_data: analysisData,
-        proof_json: analysisData.proof_json || {},
-        created_at: job.created_at
-      }] : [];
-
-      res.json({
-        success: true,
-        data: {
-          job: {
-            ...job,
-            modality: job.type,
-            filename: job.file_name,
-            mime_type: job.file_type,
-            size_bytes: job.file_size,
-            reportCode: job.report_code,  // ADD THIS LINE
-            confidence: analysisData?.confidence,
-            is_deepfake: analysisData?.is_deepfake,
-            model_name: analysisData?.model_name,
-            model_version: analysisData?.model_version,
-            summary: analysisData?.summary,
-            error_message: job.error
-          },
-          results: results || []
-        }
-      });
-    } catch (error) {
-      logger.error('History detail route error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Internal server error'
-      });
-    }
+// 🔥 STEP 5 — REMOVE LEGACY REDIRECT
+// GET /api/v2/history/:jobId - REDIRECT to canonical results endpoint
+router.get('/:jobId', async (req: Request, res: Response) => {
+  try {
+    const { jobId } = req.params;
+    
+    // 🔥 PURE REDIRECT - No DB queries inside legacy routes
+    return res.redirect(307, `/api/v2/results/${jobId}`);
+  } catch (error) {
+    logger.error('History redirect error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
   }
-);
+});
 
 // DELETE /api/v2/history/:jobId - Delete a specific analysis job
 router.delete('/:jobId',
@@ -343,96 +259,51 @@ export const createAnalysisJob = async (
   return data;
 };
 
-// 🔥 NEW: Update job with Python worker results
-export const updateJobWithResults = async (
-  jobId: string,
-  result: {
-    is_deepfake: boolean;
-    confidence: number;
-    model_name: string;
-    model_version: string;
-    analysis_data?: {
-      processing_time?: number;
-    };
-  },
-  status: 'completed' | 'failed' = 'completed',
-  errorMessage?: string
-) => {
-  const { data, error: dbError } = await supabaseAdmin
-    .from('tasks')
-    .update({
-      status,
-      result: {
-        confidence: result.confidence,
-        is_deepfake: result.is_deepfake,
-        model_name: result.model_name,
-        model_version: result.model_version,
-        summary: {
-          processing_time: result.analysis_data?.processing_time || 0,
-          completed_at: new Date().toISOString()
-        }
-      },
-      progress: 100,
-      updated_at: new Date().toISOString(),
-      error: errorMessage || null
-    })
-    .eq('id', jobId)
-    .select('id, status, updated_at')
-    .single();
+// 🔥 REMOVED: Legacy updateJobWithResults function
+// Use updateAnalysisJobWithResults instead for consistency
 
-  if (dbError) {
-    logger.error(`Failed to update job ${jobId}:`, dbError);
-    const errorMsg = typeof dbError.message === 'string' ? dbError.message : 'Unknown database error';
-    throw new Error(`Failed to update job: ${errorMsg}`);
-  }
-
-  return data;
-};
-
-export const getAnalysisHistory = async (
+export const getPaginatedAnalysisHistory = async (
   userId: string,
-  { limit = 20, offset = 0 }: { limit?: number; offset?: number; type?: string } = {}
-): Promise<{ items: {
-            id: string;
-            type: string;
-            status: string;
-            file_name: string;
-            file_type: string;
-            file_size: number;
-            file_path: string;
-            progress: number;
-            metadata: Record<string, unknown>;
-            error: string | null;
-            report_code: string;
-            started_at: string;
-            completed_at?: string;
-            created_at: string;
-            updated_at: string;
-            deleted_at: string | null;
-          }[]; total: number }> => {
+  page: number = 1,
+  limit: number = 20
+) => {
+  const offset = (page - 1) * limit;
+
   const { data, error } = await supabase
     .from('tasks')
-    .select('id, type, status, file_name, file_type, file_size, file_path, progress, metadata, error, report_code, started_at, completed_at, created_at, updated_at, deleted_at')
+    .select(`
+      id,
+      type,
+      status,
+      file_name,
+      file_type,
+      file_size,
+      result,
+      report_code,
+      created_at,
+      completed_at
+    `)
     .eq('user_id', userId)
     .eq('type', 'analysis')
+    .is('deleted_at', null)
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1);
 
   if (error) {
     logger.error('Failed to fetch analysis history:', error);
-    throw new Error('Failed to fetch analysis history');
+    return { items: [], total: 0 };
   }
 
-  const total = await supabase
+  const { count } = await supabase
     .from('tasks')
-    .select('id', { count: 'exact' })
+    .select('*', { count: 'exact', head: true })
     .eq('user_id', userId)
-    .eq('type', 'analysis');
+    .eq('type', 'analysis')
+    .is('deleted_at', null);
 
-  return { items: data || [], total: total.count || 0 };
+  return { items: data || [], total: count || 0 };
 };
 
-// Helper function to update analysis job with results
 export const updateAnalysisJobWithResults = async (
   jobId: string,
   results: {
@@ -447,8 +318,7 @@ export const updateAnalysisJobWithResults = async (
     error_message?: string;
   }
 ) => {
-  // Update the job
-  const { data: jobUpdate, error: jobUpdateError } = await supabaseAdmin
+  const { data, error: jobUpdateError } = await supabaseAdmin
     .from('tasks')
     .update({
       status: results.status,
@@ -467,15 +337,15 @@ export const updateAnalysisJobWithResults = async (
       }
     })
     .eq('id', jobId)
-    .select()
+    .select('id, status, updated_at')
     .single();
 
   if (jobUpdateError) {
     logger.error('Failed to update analysis job:', jobUpdateError);
-    throw new Error('Failed to update analysis job');
+    throw new Error(`Failed to update analysis job: ${jobUpdateError.message}`);
   }
 
-  return jobUpdate;
+  return data;
 };
 
 export { router as historyRouter };

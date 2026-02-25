@@ -20,16 +20,18 @@ router.get('/:id', async (req: Request, res: Response) => {
     // Fetch analysis result from tasks table
     const { data: task, error } = await supabase
       .from('tasks')
-      .select(`id, type, status, file_name, file_type, file_size, result, report_code, created_at, completed_at, error`)
+      .select(`id, type, status, file_name, file_type, file_size, result, report_code, created_at, completed_at, error, updated_at`) // 🔥 Add updated_at to select
       .eq('id', id)
       .eq('user_id', userId)
       .eq('type', 'analysis')
+      .is('deleted_at', null) // 🔥 CRITICAL FIX: Add soft delete filter like other routes
       .single();
 
     if (error || !task) {
-      // Check if this is a stuck processing job (fail-safe)
+      // 🔥 STEP 7 — ADD RACE CONDITION GUARD
+      // Check if this is a race condition - job might still be inserting
       if (!task) {
-        // Try to find the job without user filter for recovery
+        // Try to find job without user filter to check if it exists
         const { data: orphanJob } = await supabase
           .from('tasks')
           .select('id, status, created_at')
@@ -38,23 +40,15 @@ router.get('/:id', async (req: Request, res: Response) => {
           .single();
           
         if (orphanJob && orphanJob.status === 'processing') {
-          // Job is stuck in processing - mark as failed
-          await supabaseAdmin
-            .from('tasks')
-            .update({
-              status: 'failed',
-              error: 'Job failed due to processing timeout',
-              completed_at: new Date().toISOString()
-            })
-            .eq('id', id);
-            
+          // Job exists but user_id not yet committed - return processing state
           return res.status(200).json({
-            id,
-            type: 'analysis',
-            status: 'failed',
-            error: 'Job failed due to processing timeout',
-            created_at: orphanJob.created_at,
-            completed_at: new Date().toISOString()
+            success: true,
+            jobId: orphanJob.id,
+            status: 'processing',
+            result: null,
+            reportCode: null,
+            createdAt: orphanJob.created_at,
+            updatedAt: orphanJob.created_at
           });
         }
       }
@@ -69,7 +63,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     if (task.status === 'processing') {
       // Check if job is stuck (timeout recovery)
       const jobAge = Date.now() - new Date(task.created_at).getTime();
-      const TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+      const TIMEOUT_MS = 30 * 60 * 1000; // 🔥 STEP 8 — EXTEND TIMEOUT (IMPORTANT): 30 minutes for slow models
       
       if (jobAge > TIMEOUT_MS) {
         // Job is stuck - mark as failed
@@ -83,45 +77,38 @@ router.get('/:id', async (req: Request, res: Response) => {
           .eq('id', id);
           
         return res.status(200).json({
-          id: task.id,
-          type: task.type,
+          success: true,
+          jobId: task.id,
           status: 'failed',
-          error: 'Job failed due to timeout',
-          created_at: task.created_at,
-          completed_at: new Date().toISOString()
+          result: null
         });
       }
       
       return res.status(200).json({
-        id: task.id,
-        type: task.type,
+        success: true,
+        jobId: task.id,
         status: 'processing',
-        file_name: task.file_name,
-        file_type: task.file_type,
-        file_size: task.file_size,
-        created_at: task.created_at,
-        message: 'Analysis is still in progress'
+        result: null
       });
     }
 
-    // Format the response
+    // 🔥 STEP 1 — LOCK RESPONSE CONTRACT (CRITICAL)
+    // Canonical response shape - NO nested wrappers, NO extra fields
     const result = {
-      id: task.id,
-      type: task.type,
+      jobId: task.id,
       status: task.status,
-      filename: task.file_name,
-      fileType: task.file_type,
-      fileSize: task.file_size,
-      reportCode: task.report_code,
-      result: task.result,
-      createdAt: task.created_at,
-      completedAt: task.completed_at,
-      error: task.error
+      result: task.result ?? null
     };
+
+    logger.info('[RESULT_FETCH]', { 
+      jobId: task.id, 
+      status: task.status,
+      hasResult: !!task.result 
+    });
 
     res.json({
       success: true,
-      data: result
+      ...result // 🔥 FLATTENED RESPONSE - NO {data: {...}} wrapper
     });
   } catch (error) {
     logger.error('Error fetching analysis result:', error);
@@ -152,6 +139,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
       .eq('id', id)
       .eq('user_id', userId)
       .eq('type', 'analysis')
+      .is('deleted_at', null) // 🔥 CRITICAL FIX: Add soft delete filter for consistency
       .single();
 
     if (checkError || !task) {

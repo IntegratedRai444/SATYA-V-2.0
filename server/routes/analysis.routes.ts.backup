@@ -367,7 +367,7 @@ router.post(
     const type = 'image';
     const correlationId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const file = req.file;
-    const userId = req.user?.id;
+    const userId = req.user?.id;\n    const userToken = extractTokenFromRequest(req);
     const userToken = extractTokenFromRequest(req);
 
     logger.info(`[ROUTE] Incoming ${type} analysis request`, {
@@ -414,7 +414,6 @@ router.post(
 
       // Create job with pure UUID (no prefix for database compatibility)
       const jobId = randomUUID();
-      const startTime = Date.now(); // 🔥 STEP 9 — ADD FINALIZATION LOGGING: Track processing time
       logger.info('JOB_CREATED', { jobId, type: 'image' });
       
       // Create job in database BEFORE sending response
@@ -438,11 +437,6 @@ router.post(
           type,
         });
 
-        // 🔥 CRITICAL FIX: Ensure DB transaction is committed before proceeding
-        if (!job || !job.id) {
-          throw new Error('Failed to create job in database');
-        }
-
         // Send job started event via WebSocket
         if (userId) {
           webSocketManager.sendJobUpdate(userId, jobId, 'processing', 0, 'Job started and queued for processing');
@@ -454,13 +448,6 @@ router.post(
           error: 'Failed to create analysis job'
         });
       }
-
-      // 🔥 CRITICAL FIX: Send immediate response after job creation
-      res.status(202).json({
-        success: true,
-        job_id: jobId,
-        status: 'processing'
-      });
 
       // Process in background
       setImmediate(async () => {
@@ -491,7 +478,7 @@ router.post(
         method: 'POST',
         url: `/api/v2/analysis/unified/${type}`,
         data: formData,
-        timeout: 900000, // 15 minutes
+        timeout: 300000, // 5 minutes\n            userToken: userToken || undefined
         userToken: userToken || undefined
       }) as {
         data: {
@@ -533,12 +520,11 @@ router.post(
                 proof_json: inferenceResult.proof,
               });
               
-              // 🔥 STEP 9 — LOG FINALIZATION EVENTS
+              // [JOB FINALIZED] - Critical observability point
               logger.info('[JOB FINALIZED]', {
                 jobId: job.id,
                 status: 'completed',
-                confidence: inferenceResult.confidence,
-                processing_time: Date.now() - startTime
+                confidence: inferenceResult.confidence
               });
               
             } catch (finalizationError) {
@@ -641,7 +627,7 @@ router.post(
     const type = 'video';
     const correlationId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const file = req.file;
-    const userId = req.user?.id;
+    const userId = req.user?.id;\n    const userToken = extractTokenFromRequest(req);
     const userToken = extractTokenFromRequest(req);
 
     logger.info(`[ANALYSIS REQUEST] ${type} analysis started`, {
@@ -663,7 +649,6 @@ router.post(
 
       // Create job with pure UUID (no prefix for database compatibility)
       const jobId = randomUUID();
-      const startTime = Date.now(); // 🔥 STEP 9 — ADD FINALIZATION LOGGING: Track processing time
       logger.info('JOB_CREATED', { jobId, type: 'video' });
       
       // Create job in database
@@ -686,11 +671,6 @@ router.post(
           jobId,
           type,
         });
-
-        // 🔥 CRITICAL FIX: Ensure DB transaction is committed before proceeding
-        if (!job || !job.id) {
-          throw new Error('Failed to create job in database');
-        }
 
         // Send job started event via WebSocket
         if (userId) {
@@ -740,8 +720,7 @@ router.post(
             method: 'POST',
             url: `/api/v2/analysis/unified/${type}`,
             data: formData,
-            timeout: 300000, // 5 minutes
-            userToken: userToken || undefined
+            timeout: 300000, // 5 minutes\n            userToken: userToken || undefined
           }) as {
             data: {
               confidence: number;
@@ -782,12 +761,11 @@ router.post(
                 proof_json: inferenceResult.proof,
               });
               
-              // 🔥 STEP 9 — LOG FINALIZATION EVENTS
+              // [JOB FINALIZED] - Critical observability point
               logger.info('[JOB FINALIZED]', {
                 jobId: job.id,
                 status: 'completed',
-                confidence: inferenceResult.confidence,
-                processing_time: Date.now() - startTime
+                confidence: inferenceResult.confidence
               });
               
             } catch (finalizationError) {
@@ -890,8 +868,7 @@ router.post(
     const type = 'audio';
     const correlationId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const file = req.file;
-    const userId = req.user?.id;
-    const userToken = extractTokenFromRequest(req);
+    const userId = req.user?.id;\n    const userToken = extractTokenFromRequest(req);
 
     logger.info(`[ANALYSIS REQUEST] ${type} analysis started`, {
       correlationId,
@@ -912,7 +889,6 @@ router.post(
 
       // Create job with pure UUID (no prefix for database compatibility)
       const jobId = randomUUID();
-      const startTime = Date.now(); // 🔥 STEP 9 — ADD FINALIZATION LOGGING: Track processing time
       logger.info('JOB_CREATED', { jobId, type: 'audio' });
       
       // Create job in database
@@ -935,11 +911,6 @@ router.post(
           jobId,
           type,
         });
-
-        // 🔥 CRITICAL FIX: Ensure DB transaction is committed before proceeding
-        if (!job || !job.id) {
-          throw new Error('Failed to create job in database');
-        }
 
         // Send job started event via WebSocket
         if (userId) {
@@ -989,8 +960,7 @@ router.post(
             method: 'POST',
             url: `/api/v2/analysis/unified/${type}`,
             data: formData,
-            timeout: 300000, // 5 minutes
-            userToken: userToken || undefined
+            timeout: 300000, // 5 minutes\n            userToken: userToken || undefined
           }) as {
             data: {
               confidence: number;
@@ -1031,12 +1001,11 @@ router.post(
                 proof_json: inferenceResult.proof,
               });
               
-              // 🔥 STEP 9 — LOG FINALIZATION EVENTS
+              // [JOB FINALIZED] - Critical observability point
               logger.info('[JOB FINALIZED]', {
                 jobId: job.id,
                 status: 'completed',
-                confidence: inferenceResult.confidence,
-                processing_time: Date.now() - startTime
+                confidence: inferenceResult.confidence
               });
               
             } catch (finalizationError) {
@@ -1137,8 +1106,7 @@ router.post(
   async (req: AuthenticatedRequest, res: Response) => {
     const type = 'text';
     const correlationId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const userId = req.user?.id;
-    const userToken = extractTokenFromRequest(req);
+    const userId = req.user?.id;\n    const userToken = extractTokenFromRequest(req);
     const { text } = req.body;
 
     logger.info(`[ANALYSIS REQUEST] ${type} analysis started`, {
@@ -1173,7 +1141,6 @@ router.post(
 
       // Create job with pure UUID (no prefix for database compatibility)
       const jobId = randomUUID();
-      const startTime = Date.now(); // 🔥 STEP 9 — ADD FINALIZATION LOGGING: Track processing time
       logger.info('JOB_CREATED', { jobId, type: 'text' });
       
       // Create job in database
@@ -1194,11 +1161,6 @@ router.post(
           jobId,
           type,
         });
-
-        // 🔥 CRITICAL FIX: Ensure DB transaction is committed before proceeding
-        if (!job || !job.id) {
-          throw new Error('Failed to create job in database');
-        }
 
         // Send job started event via WebSocket
         if (userId) {
@@ -1238,7 +1200,6 @@ router.post(
               analyze: true
             },
             timeout: 60000, // 1 minute for text analysis
-            userToken: userToken || undefined
           }) as {
             data: {
               success: boolean;
@@ -1399,18 +1360,11 @@ router.post(
   }
 );
 
-// Get analysis status - DEPRECATED: Use /api/v2/results/:id instead
-// This route calls Python which can create conflicting states with DB truth
+// Get analysis status
 router.get('/status/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     
-    // 🔥 DEPRECATED: Redirect to canonical results endpoint
-    return res.redirect(307, `/api/v2/results/${id}`);
-    
-    // Legacy Python call (commented out to prevent state conflicts)
-    // This code is disabled to avoid conflicting states between Python and DB
-    /*
     const result = await enhancedPythonBridge.request({
       method: 'GET',
       url: `/analyze/status/${id}`,
@@ -1433,21 +1387,154 @@ router.get('/status/:id', async (req: Request, res: Response) => {
       success: true,
       data: result.data,
     });
-    */
-    
   } catch (error) {
     await handleAnalysisError(error, res);
   }
 });
 
-// REMOVED: Duplicate route - consolidated with line 1369 implementation
+// Get analysis status (for polling)
+router.get('/status/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const correlationId = getRequestId(req);
+    
+    logger.info(`[STATUS] Fetching status for job ${id}`, {
+      correlationId,
+      jobId: id
+    });
+    
+    // Query the database for the job status
+    const { data: jobData, error } = await supabaseAdmin
+      .from('tasks')
+      .select('id, status, progress, started_at, updated_at, error')
+      .eq('id', id)
+      .single();
+    
+    if (error || !jobData) {
+      logger.error(`[STATUS] Job not found in database`, {
+        correlationId,
+        jobId: id,
+        error: error?.message
+      });
+      
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'JOB_NOT_FOUND',
+          message: `Analysis job ${id} not found`
+        },
+        requestId: correlationId,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    const statusResponse = {
+      success: true,
+      data: {
+        status: jobData.status,
+        progress: jobData.progress || 0,
+        created_at: jobData.started_at,
+        updated_at: jobData.updated_at,
+        error: jobData.error
+      }
+    };
+    
+    logger.info(`[STATUS] Returning job status`, {
+      correlationId,
+      jobId: id,
+      status: statusResponse.data.status
+    });
+    
+    res.json(statusResponse);
+  } catch (error) {
+    await handleAnalysisError(error, res);
+  }
+});
 
-// REMOVED: Shadow results route - use ONLY /api/v2/results/:id in results.routes.ts
+// Get analysis results (for polling)
+router.get('/results/:jobId', validateJobId, async (req: Request, res: Response) => {
+  try {
+    const { jobId } = req.params;
+    const correlationId = getRequestId(req);
+    
+    logger.info(`[RESULTS] Fetching results for job ${jobId}`, {
+      correlationId,
+      jobId
+    });
+    
+    // Query the database for the job using pure UUID
+    const { data: jobData, error } = await supabaseAdmin
+      .from('tasks')
+      .select('*')
+      .eq('id', jobId)
+      .single();
+    
+    if (error || !jobData) {
+      logger.error(`[RESULTS] Job not found in database`, {
+        correlationId,
+        jobId,
+        error: error?.message
+      });
+      
+      // Return 404 only if job truly doesn't exist
+      return res.status(404).json({
+        success: false,
+        error: 'JOB_NOT_FOUND',
+        jobId,
+      });
+    }
+
+    // Auto-fail stuck jobs (safety guard)
+    const maxProcessingTime = 10 * 60 * 1000; // 10 minutes
+    const jobAge = Date.now() - new Date(jobData.created_at).getTime();
+    const isStuck = jobData.status === 'processing' && jobAge > maxProcessingTime;
+    
+    if (isStuck) {
+      logger.warn(`Auto-failing stuck job: ${jobId}`, {
+        status: jobData.status,
+        age: jobAge,
+        maxAge: maxProcessingTime
+      });
+      
+      // Update to failed status
+      await supabaseAdmin
+        .from('tasks')
+        .update({ 
+          status: 'failed',
+          error: 'Job automatically failed due to timeout',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', jobId);
+      
+      jobData.status = 'failed';
+      jobData.error = 'Job automatically failed due to timeout';
+    }
+
+    // Return clean response with UUID consistency and field mapping
+    logger.info('RESULT_FETCH', { jobId, status: jobData.status });
+    return res.json({
+      success: true,
+      jobId: jobData.id,
+      status: jobData.status,
+      result: jobData.result ?? null,
+      reportCode: jobData.report_code,  // Transform snake_case to camelCase
+      createdAt: jobData.created_at,   // Transform snake_case to camelCase
+      updatedAt: jobData.updated_at   // Transform snake_case to camelCase
+    });
+  } catch (error) {
+    logger.error('Results endpoint error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'INTERNAL_SERVER_ERROR',
+      message: 'Failed to fetch results'
+    });
+  }
+});
 
 // POST /api/v2/analysis/jobs/:jobId/cancel - Cancel a running job
 router.post('/jobs/:jobId/cancel', validateJobId, async (req: AuthenticatedRequest, res: Response) => {
   const { jobId } = req.params;
-  const userId = req.user?.id;
+  const userId = req.user?.id;\n    const userToken = extractTokenFromRequest(req);
   const requestId = req.locals?.requestId || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
   logger.info('[JOB CANCELLATION] Request received', { jobId, userId, requestId });

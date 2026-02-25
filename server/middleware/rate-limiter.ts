@@ -25,7 +25,7 @@ class RateLimiter {
     this.configs.set('analysis', {
       windowMs: 60 * 1000, // 1 minute
       maxRequests: 100, // 100 analyses per minute (increased for testing)
-      maxConcurrent: 10, // 10 concurrent jobs (increased for testing)
+      maxConcurrent: 20, // 20 concurrent jobs (increased for testing)
       message: 'Too many analyses. Please wait before trying again.'
     });
 
@@ -48,7 +48,7 @@ class RateLimiter {
     }
 
     return (req: Request, res: Response, next: NextFunction) => {
-      const userId = (req as any).user?.id;
+      const userId = (req as Request & { user?: { id?: string } }).user?.id;
       
       // Skip rate limiting for unauthenticated requests (they'll be caught by auth middleware)
       if (!userId) {

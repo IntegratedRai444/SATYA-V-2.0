@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { supabase } from '../config/supabase';
 import { logger } from '../config/logger';
 import rateLimit from 'express-rate-limit';
+import { requireAuth } from '../middleware/auth.middleware';
 
 const router = Router();
 
@@ -32,7 +33,7 @@ router.get('/stats', dashboardRateLimit, async (req: any, res: Response) => {
       .from('tasks')
       .select('status, type, created_at, result')
       .eq('user_id', userId)
-      .eq('deleted_at', null)
+      .is('deleted_at', null) // Fix: Use is() for null check instead of eq()
       .order('created_at', { ascending: false })
       .limit(1000);
 
@@ -46,13 +47,13 @@ router.get('/stats', dashboardRateLimit, async (req: any, res: Response) => {
 
       // Calculate statistics with safe defaults
     const totalAnalyses = tasks?.length || 0;
-    const deepfakeDetected = tasks?.filter(t => t.result?.is_deepfake === true).length || 0;
-    const realDetected = tasks?.filter(t => t.result?.is_deepfake === false).length || 0;
+    const deepfakeDetected = tasks?.filter((t: { result?: { is_deepfake?: boolean } }) => t.result?.is_deepfake === true).length || 0;
+    const realDetected = tasks?.filter((t: { result?: { is_deepfake?: boolean } }) => t.result?.is_deepfake === false).length || 0;
     
     // Calculate average confidence with safe defaults
-    const completedTasks = tasks?.filter(t => t.status === 'completed' && t.result?.confidence) || [];
+    const completedTasks = tasks?.filter((t: { status?: string; result?: { confidence?: number } }) => t.status === 'completed' && t.result?.confidence) || [];
     const avgConfidence = completedTasks.length > 0 
-      ? completedTasks.reduce((sum, task) => sum + (task.result?.confidence || 0), 0) / completedTasks.length 
+      ? completedTasks.reduce((sum: number, task: { result?: { confidence?: number } }) => sum + (task.result?.confidence || 0), 0) / completedTasks.length 
       : 0;
 
     // Get last 7 days activity with safe defaults
@@ -65,8 +66,8 @@ router.get('/stats', dashboardRateLimit, async (req: any, res: Response) => {
       date.setDate(date.getDate() - i);
       const dateStr = date.toISOString().split('T')[0];
       
-      const dayCount = tasks?.filter(task => {
-        const taskDate = new Date(task.created_at).toISOString().split('T')[0];
+      const dayCount = tasks?.filter((task: { created_at?: string }) => {
+        const taskDate = new Date(task.created_at || '').toISOString().split('T')[0];
         return taskDate === dateStr;
       }).length || 0;
       
@@ -168,14 +169,8 @@ router.get('/analytics', dashboardRateLimit, async (req: any, res: Response) => 
 
 // GET /api/v2/dashboard/recent-activity - Get recent user activity
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-router.get('/recent-activity', dashboardRateLimit, async (req: any, res: Response) => {
+router.get('/recent-activity', requireAuth, dashboardRateLimit, async (req: any, res: Response) => {
   try {
-    // Use auth validation helper
-    const { validateAuth } = await import('../middleware/auth.middleware');
-    if (!validateAuth(req, res)) {
-      return;
-    }
-
     const userId = req.user?.id;
     
     // Get recent analysis activities (last 10)

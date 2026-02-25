@@ -25,7 +25,7 @@ const v2Router = Router();
 v2Router.use('/auth', authRouter);
 
 // Dashboard routes (PROTECTED)
-v2Router.use('/dashboard', ...requireAuth, dashboardRouter);
+v2Router.use('/dashboard', requireAuth, dashboardRouter);
 
 // Test route without authentication
 v2Router.get('/test', (req: Request, res: Response) => {
@@ -33,28 +33,28 @@ v2Router.get('/test', (req: Request, res: Response) => {
 });
 
 // History routes (PROTECTED)
-v2Router.use('/history', ...requireAuth, historyRouter);
+v2Router.use('/history', requireAuth, historyRouter);
 
 // Analysis routes (PROTECTED)
-v2Router.use('/analysis', ...requireAuth, analysisRouter);
+v2Router.use('/analysis', requireAuth, analysisRouter);
 
 // Chat routes (PROTECTED)
-v2Router.use('/chat', ...requireAuth, chatRouter);
+v2Router.use('/chat', requireAuth, chatRouter);
 
 // Notifications routes (PROTECTED)
-v2Router.use('/notifications', ...requireAuth, notificationsRouter);
+v2Router.use('/notifications', requireAuth, notificationsRouter);
 
 // User routes (PROTECTED)
-v2Router.use('/user', ...requireAuth, userRouter);
+v2Router.use('/user', requireAuth, userRouter);
 
 // Results routes (PROTECTED)
-v2Router.use('/results', ...requireAuth, resultsRouter);
+v2Router.use('/results', requireAuth, resultsRouter);
 
 // Models routes (PUBLIC - for model info)
 v2Router.use('/models', modelsRouter);
 
 // System metrics route (PROTECTED - for admin monitoring)
-v2Router.use('/system', ...requireAuth, getSystemMetrics);
+v2Router.use('/system', requireAuth, getSystemMetrics);
 
 // Note: WebSocket connections are handled directly by the WebSocket server
 // at /api/v2/dashboard/ws - no Express route needed
