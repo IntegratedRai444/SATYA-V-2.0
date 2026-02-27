@@ -76,7 +76,7 @@ const TextAnalysis: React.FC = () => {
           setAnalysisStatus('failed');
         });
       
-      return () => polling.cancel();
+      return polling.cancel; // Return proper cleanup function
     }
   }, [jobId, analysisStatus]);
 

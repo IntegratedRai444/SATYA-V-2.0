@@ -91,25 +91,24 @@ export class TaskManager {
     userId: string
   ): Promise<Task> {
     try {
-      const reportCode = this.generateReportCode(type);
-      
       const taskData = {
         user_id: userId,
         type,
-        status: 'queued' as const,
-        progress: 0,
-        file_name: fileInfo.name,
-        file_size: fileInfo.size,
-        file_type: fileInfo.type,
-        file_path: fileInfo.path,
-        report_code: reportCode,
-        metadata: JSON.stringify({
+        filename: fileInfo.name,
+        result: 'processing',
+        confidence_score: 0,
+        detection_details: null,
+        metadata: {
           originalName: fileInfo.name,
+          fileSize: fileInfo.size,
+          fileType: fileInfo.type,
+          filePath: fileInfo.path,
           uploadedAt: new Date().toISOString()
-        })
+        },
+        created_at: new Date().toISOString()
       };
       const { data: task, error } = await supabase
-        .from('tasks')
+        .from('scans')
         .insert(taskData)
         .select('*')
         .single();
@@ -133,7 +132,7 @@ export class TaskManager {
   async getTaskStatus(taskId: string): Promise<Task | null> {
     try {
       const { data: task, error } = await supabase
-        .from('tasks')
+        .from('scans')
         .select('*')
         .eq('id', taskId)
         .single();
@@ -147,18 +146,18 @@ export class TaskManager {
         updatedAt: task.updated_at ? new Date(task.updated_at) : null,
         userId: task.user_id,
         type: task.type,
-        status: task.status,
-        progress: task.progress,
-        fileName: task.file_name,
-        fileSize: task.file_size,
-        fileType: task.file_type,
-        filePath: task.file_path,
-        reportCode: task.report_code,
-        result: task.result ? JSON.parse(task.result) : null,
-        error: task.error ? JSON.parse(task.error) : null,
-        startedAt: task.started_at ? new Date(task.started_at) : null,
-        completedAt: task.completed_at ? new Date(task.completed_at) : null,
-        metadata: task.metadata ? JSON.parse(task.metadata) : {}
+        status: task.result === 'processing' ? 'processing' : task.result === 'failed' ? 'failed' : 'completed',
+        progress: task.confidence_score > 0 ? 100 : 0,
+        fileName: task.filename,
+        fileSize: 0, // Not stored in scans table
+        fileType: task.type,
+        filePath: '', // Not stored in scans table
+        reportCode: '', // Not stored in scans table
+        result: task.detection_details ? task.detection_details : null,
+        error: task.confidence_score === 0 ? { message: 'Analysis failed' } : null,
+        startedAt: task.created_at ? new Date(task.created_at) : null,
+        completedAt: task.updated_at ? new Date(task.updated_at) : null,
+        metadata: task.metadata ? task.metadata : {}
       } as Task;
     } catch (error) {
       logger.error('Error getting task status', error as Error);
@@ -203,12 +202,11 @@ export class TaskManager {
       }
 
       const { error } = await supabase
-        .from('tasks')
+        .from('scans')
         .update({
-          progress: updateData.progress,
-          status: updateData.status,
-          started_at: updateData.startedAt?.toISOString(),
-          metadata: updateData.metadata
+          result: updateData.status === 'completed' ? 'completed' : updateData.status === 'failed' ? 'failed' : 'processing',
+          confidence_score: updateData.progress === 100 ? 1 : updateData.progress / 100,
+          updated_at: new Date().toISOString()
         })
         .eq('id', taskId);
 
@@ -229,12 +227,12 @@ export class TaskManager {
   async completeTask(taskId: string, result: AnalysisResult): Promise<void> {
     try {
       const { error } = await supabase
-        .from('tasks')
+        .from('scans')
         .update({
-          status: 'completed',
-          progress: 100,
-          result: JSON.stringify(result),
-          completed_at: new Date().toISOString()
+          result: 'completed',
+          confidence_score: result.confidence || 1,
+          detection_details: result,
+          updated_at: new Date().toISOString()
         })
         .eq('id', taskId);
 
@@ -250,16 +248,16 @@ export class TaskManager {
   /**
    * Fail a task with error information
    * @param taskId - Task ID
-   * @param error - Error information
+   * @param errorInfo - Error information
    */
-  async failTask(taskId: string, error: ErrorInfo): Promise<void> {
+  async failTask(taskId: string): Promise<void> {
     try {
       const { error: updateError } = await supabase
-        .from('tasks')
+        .from('scans')
         .update({
-          status: 'failed',
-          error: JSON.stringify(error),
-          completed_at: new Date().toISOString()
+          result: 'failed',
+          confidence_score: 0,
+          updated_at: new Date().toISOString()
         })
         .eq('id', taskId);
 
@@ -278,35 +276,39 @@ export class TaskManager {
    * @param filters - Optional filters
    * @returns Array of tasks
    */
-  async getUserTasks(userId: string, filters: TaskFilters = {}): Promise<Task[]> {
+  async getUserTasks(userId: string): Promise<Task[]> {
     try {
       // Build query
-      let query = supabase
-        .from('tasks')
+      const { data, error } = await supabase
+        .from('scans')
         .select('*')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
       
-      // Apply status filter if provided
-      if (filters.status) {
-        query = query.eq('status', filters.status);
-      }
-
-      // Apply pagination
-      if (filters.limit) {
-        query = query.limit(filters.limit);
-      }
-      if (filters.offset) {
-        query = query.range(filters.offset, filters.offset + (filters.limit || 10) - 1);
-      }
-
-      const { data: userTasks, error } = await query;
-
       if (error) {
         throw new Error(`Failed to get user tasks: ${error.message}`);
       }
-
-      return userTasks as Task[];
+      
+      // Map scans to Task interface
+      return (data || []).map((scan) => ({
+        id: scan.id,
+        createdAt: new Date(scan.created_at),
+        updatedAt: scan.updated_at ? new Date(scan.updated_at) : null,
+        userId: scan.user_id,
+        type: scan.type,
+        status: scan.result === 'processing' ? 'processing' : scan.result === 'failed' ? 'failed' : 'completed',
+        progress: scan.confidence_score > 0 ? 100 : 0,
+        fileName: scan.filename,
+        fileSize: 0,
+        fileType: scan.type,
+        filePath: '',
+        reportCode: '',
+        result: scan.detection_details ? scan.detection_details : null,
+        error: scan.confidence_score === 0 ? { message: 'Analysis failed' } : null,
+        startedAt: scan.created_at ? new Date(scan.created_at) : null,
+        completedAt: scan.updated_at ? new Date(scan.updated_at) : null,
+        metadata: scan.metadata ? scan.metadata : {}
+      })) as Task[];
     } catch (error) {
       logger.error('Error getting user tasks', error as Error);
       throw new Error('Failed to get user tasks');

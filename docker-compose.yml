@@ -7,11 +7,12 @@ services:
       dockerfile: Dockerfile
     container_name: satyaai-app
     ports:
-      - "5001:5001"
+      - '5001:5001'
     environment:
       - NODE_ENV=production
       - PORT=5001
-      - PYTHON_PORT=5001
+      - PYTHON_PORT=8000
+      - PYTHON_URL=http://satyaai-app:8000
       - DATABASE_URL=/app/database/db.sqlite
       - JWT_SECRET=${JWT_SECRET:-change-this-secret-in-production}
       - SESSION_SECRET=${SESSION_SECRET:-change-this-secret-in-production}
@@ -29,6 +30,35 @@ services:
       timeout: 3s
       retries: 3
       start_period: 40s
+    networks:
+      - satyaai-network
+    depends_on:
+      - python-service
+
+  python-service:
+    build:
+      context: ./server/python
+      dockerfile: Dockerfile
+    container_name: satyaai-python
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHON_ENV=production
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DATABASE_URL=/app/database/db.sqlite
+      - LOG_LEVEL=info
+    volumes:
+      - ./models:/app/models
+      - ./uploads:/app/uploads
+      - ./database:/app/database
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:8000/health']
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
     networks:
       - satyaai-network
 

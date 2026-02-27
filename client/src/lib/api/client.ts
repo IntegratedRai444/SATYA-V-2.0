@@ -1,10 +1,9 @@
 import axios, { AxiosInstance, AxiosResponse, AxiosRequestConfig } from 'axios';
-import { API_CONFIG } from '../config/urls';
 import { v4 as uuidv4 } from 'uuid';
 import { metrics, trackError as logError } from '@/lib/services/metrics';
 import { getAccessToken } from "../auth/getAccessToken";
 import { getCsrfToken } from './services/csrfService';
-import { getSecureRefreshToken, setSecureAccessToken, clearSecureTokens } from '../auth/secureTokenStorage';
+import { supabase } from '@/lib/supabaseSingleton';
 
 // Export types needed by services
 export interface ApiResponse<T = unknown> {
@@ -241,7 +240,7 @@ const createEnhancedAxiosInstance = (baseURL: string): AxiosInstance => {
     (response) => {
       const { config } = response;
       const requestConfig = config as RequestConfig;
-      const { requestId, cacheKey, startTime } = requestConfig.metadata || {};
+      const { cacheKey, startTime } = requestConfig.metadata || {};
       
       // Log successful request
       const duration = startTime ? Date.now() - startTime : 0;
@@ -330,19 +329,18 @@ const refreshTokenWithQueue = async (): Promise<string> => {
   
   try {
     refreshPromise = (async () => {
-      const refreshToken = getSecureRefreshToken();
-      if (!refreshToken) {
-        throw new Error('No refresh token available');
+      // Use Supabase native refresh instead of custom token storage
+      const { data, error } = await supabase.auth.refreshSession();
+      
+      if (error) {
+        throw new Error(`Token refresh failed: ${error.message}`);
       }
       
-      const response = await axios.post(
-        `${API_CONFIG.BASE_URL}/auth/refresh-token`,
-        { refreshToken },
-        { withCredentials: true }
-      );
+      if (!data.session?.access_token) {
+        throw new Error('No access token received from refresh');
+      }
       
-      const { accessToken } = response.data;
-      setSecureAccessToken(accessToken);
+      const accessToken = data.session.access_token;
       
       // Resolve all queued requests
       refreshQueue.forEach(({ resolve }) => resolve(accessToken));
@@ -590,8 +588,8 @@ apiClient.interceptors.response.use(
         });
       }
       console.error('Session expired. Please log in again.');
-      // Clear tokens securely
-      clearSecureTokens();
+      // Clear tokens using Supabase native method
+      await supabase.auth.signOut();
       window.location.href = '/login';
     }
   }

@@ -5,6 +5,7 @@ Handle analysis history and statistics with database integration
 
 import logging
 import sys
+import os
 from pathlib import Path
 from typing import List, Optional
 import base64
@@ -114,7 +115,7 @@ class AnalysisResponse(BaseModel):
     summary: dict
     proof: dict
 
-@router.post("/analyze/{media_type}")
+@router.post("/unified/{media_type}")
 async def analyze_unified_media(
     media_type: str,
     file: UploadFile = File(...),
@@ -169,17 +170,17 @@ async def analyze_unified_media(
             import asyncio
             result = await asyncio.wait_for(
                 request.app.state.sentinel_agent.analyze(analysis_request),
-                timeout=300.0  # 5 minutes
+                timeout=900.0  # 15 minutes - aligned with Node
             )
             logger.info("[MODEL INFERENCE DONE] Analysis completed")
         except asyncio.TimeoutError:
-            logger.error("[MODEL INFERENCE TIMEOUT] Analysis timed out after 5 minutes")
+            logger.error("[MODEL INFERENCE TIMEOUT] Analysis timed out after 15 minutes")
             return UnifiedAnalysisResponse(
                 success=False,
                 media_type=media_type,
                 fake_score=0.0,
                 label="Unknown",
-                processing_time=300000,  # 5 minutes in ms
+                processing_time=900000,  # 15 minutes in ms
                 error="Analysis timeout - file too large or complex. Please try with a smaller file."
             )
         
@@ -330,21 +331,21 @@ async def analyze_video_unified(request: Request, data: UnifiedAnalysisRequest):
             )
         
         try:
-            # Add timeout wrapper for ML inference (5 minutes max)
+            # Add timeout wrapper for ML inference (15 minutes max)
             import asyncio
             result = await asyncio.wait_for(
                 request.app.state.sentinel_agent.analyze(analysis_request),
-                timeout=300.0  # 5 minutes
+                timeout=900.0  # 15 minutes - aligned with Node
             )
             logger.info("[MODEL INFERENCE DONE] Analysis completed")
         except asyncio.TimeoutError:
-            logger.error("[MODEL INFERENCE TIMEOUT] Video analysis timed out after 5 minutes")
+            logger.error("[MODEL INFERENCE TIMEOUT] Video analysis timed out after 15 minutes")
             return UnifiedAnalysisResponse(
                 success=False,
                 media_type="video",
                 fake_score=0.0,
                 label="Unknown",
-                processing_time=300000,  # 5 minutes in ms
+                processing_time=900000,  # 15 minutes in ms
                 error="Video analysis timeout - file too large or complex. Please try with a smaller file."
             )
 
@@ -466,21 +467,21 @@ async def analyze_audio_unified(request: Request, data: UnifiedAnalysisRequest):
             )
         
         try:
-            # Add timeout wrapper for ML inference (5 minutes max)
+            # Add timeout wrapper for ML inference (15 minutes max)
             import asyncio
             result = await asyncio.wait_for(
                 request.app.state.sentinel_agent.analyze(analysis_request),
-                timeout=300.0  # 5 minutes
+                timeout=900.0  # 15 minutes - aligned with Node
             )
             logger.info("[MODEL INFERENCE DONE] Analysis completed")
         except asyncio.TimeoutError:
-            logger.error("[MODEL INFERENCE TIMEOUT] Audio analysis timed out after 5 minutes")
+            logger.error("[MODEL INFERENCE TIMEOUT] Audio analysis timed out after 15 minutes")
             return UnifiedAnalysisResponse(
                 success=False,
                 media_type="audio",
                 fake_score=0.0,
                 label="Unknown",
-                processing_time=300000,  # 5 minutes in ms
+                processing_time=900000,  # 15 minutes in ms
                 error="Audio analysis timeout - file too large or complex. Please try with a smaller file."
             )
 
@@ -576,10 +577,10 @@ async def analyze_image(request: Request, data: AnalysisRequestModel):
             import asyncio
             result = await asyncio.wait_for(
                 request.app.state.sentinel_agent.analyze(analysis_request),
-                timeout=300.0  # 5 minutes
+                timeout=900.0  # 15 minutes - aligned with Node
             )
         except asyncio.TimeoutError:
-            logger.error("[MODEL INFERENCE TIMEOUT] Image analysis timed out after 5 minutes")
+            logger.error("[MODEL INFERENCE TIMEOUT] Image analysis timed out after 15 minutes")
             raise HTTPException(
                 status_code=408,
                 detail="Image analysis timeout - file too large or complex. Please try with a smaller file."
@@ -680,10 +681,10 @@ async def analyze_video(request: Request, data: AnalysisRequestModel):
             import asyncio
             result = await asyncio.wait_for(
                 request.app.state.sentinel_agent.analyze(analysis_request),
-                timeout=300.0  # 5 minutes
+                timeout=900.0  # 15 minutes - aligned with Node
             )
         except asyncio.TimeoutError:
-            logger.error("[MODEL INFERENCE TIMEOUT] Video analysis timed out after 5 minutes")
+            logger.error("[MODEL INFERENCE TIMEOUT] Video analysis timed out after 15 minutes")
             raise HTTPException(
                 status_code=408,
                 detail="Video analysis timeout - file too large or complex. Please try with a smaller file."
@@ -784,10 +785,10 @@ async def analyze_audio(request: Request, data: AnalysisRequestModel):
             import asyncio
             result = await asyncio.wait_for(
                 request.app.state.sentinel_agent.analyze(analysis_request),
-                timeout=300.0  # 5 minutes
+                timeout=900.0  # 15 minutes - aligned with Node
             )
         except asyncio.TimeoutError:
-            logger.error("[MODEL INFERENCE TIMEOUT] Audio analysis timed out after 5 minutes")
+            logger.error("[MODEL INFERENCE TIMEOUT] Audio analysis timed out after 15 minutes")
             raise HTTPException(
                 status_code=408,
                 detail="Audio analysis timeout - file too large or complex. Please try with a smaller file."
@@ -945,6 +946,130 @@ async def get_analysis_detail(file_id: str):
     except Exception as e:
         logger.error(f"Failed to get analysis detail: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to get analysis: {str(e)}")
+
+@router.get("/model-verification")
+async def get_model_verification(request: Request):
+    """
+    Model verification endpoint - expose current model status and source information
+    """
+    try:
+        logger.info("[MODEL VERIFICATION] Checking model status and sources")
+        
+        # Check if SentinelAgent is available
+        if not hasattr(request.app.state, "sentinel_agent"):
+            return {
+                "status": "error",
+                "message": "ML models not initialized",
+                "models_loaded": False,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        
+        sentinel_agent = request.app.state.sentinel_agent
+        verification_info = {
+            "status": "verified",
+            "timestamp": datetime.utcnow().isoformat(),
+            "strict_deepfake_mode": os.getenv('STRICT_DEEPFAKE_MODE', 'true').lower() == 'true',
+            "models": {}
+        }
+        
+        # Check image detector models
+        if hasattr(sentinel_agent, "image_detector") and sentinel_agent.image_detector:
+            image_detector = sentinel_agent.image_detector
+            
+            # Get model info from deepfake classifier if available
+            if hasattr(image_detector, 'deepfake_classifier') and image_detector.deepfake_classifier:
+                classifier = image_detector.deepfake_classifier
+                model_info = classifier.get_model_info() if hasattr(classifier, 'get_model_info') else {}
+                safety_flags = getattr(classifier, 'safety_flags', None)
+                
+                verification_info["models"]["image"] = {
+                    "loaded": True,
+                    "model_type": getattr(classifier, 'model_type', 'unknown'),
+                    "device": str(getattr(classifier, 'device', 'unknown')),
+                    "model_authenticity": {
+                        "is_real_deepfake_model": safety_flags.is_deepfake_model if safety_flags else False,
+                        "is_fallback_model": safety_flags.is_fallback_model if safety_flags else False,
+                        "model_source": getattr(safety_flags, 'model_source', 'unknown') if safety_flags else 'unknown',
+                        "user_friendly_source": "Real Deepfake Detection Model" if (safety_flags and safety_flags.is_deepfake_model and not safety_flags.is_fallback_model) else "Fallback Model (Not Deepfake-Specific)",
+                        "warning": None if (safety_flags and safety_flags.is_deepfake_model and not safety_flags.is_fallback_model) else "⚠️ FALLBACK MODEL IN USE",
+                    },
+                    "confidence_transparency": {
+                        "is_raw_confidence": True,
+                        "adjustments_applied": False,
+                        "temperature_scaling": False,
+                        "confidence_penalty_applied": False
+                    },
+                    "load_time": getattr(classifier, 'load_time', 0.0),
+                    "performance_metrics": classifier.get_performance_metrics() if hasattr(classifier, 'get_performance_metrics') else {}
+                }
+            else:
+                verification_info["models"]["image"] = {
+                    "loaded": True,
+                    "model_type": "unknown",
+                    "warning": "Deepfake classifier not accessible"
+                }
+        else:
+            verification_info["models"]["image"] = {
+                "loaded": False,
+                "error": "Image detector not initialized"
+            }
+        
+        # Check video detector models
+        if hasattr(sentinel_agent, "video_detector") and sentinel_agent.video_detector:
+            verification_info["models"]["video"] = {
+                "loaded": True,
+                "model_type": "video_detector",
+                "note": "Video detector model verification not implemented"
+            }
+        else:
+            verification_info["models"]["video"] = {
+                "loaded": False,
+                "error": "Video detector not initialized"
+            }
+        
+        # Check audio detector models
+        if hasattr(sentinel_agent, "audio_detector") and sentinel_agent.audio_detector:
+            verification_info["models"]["audio"] = {
+                "loaded": True,
+                "model_type": "audio_detector", 
+                "note": "Audio detector model verification not implemented"
+            }
+        else:
+            verification_info["models"]["audio"] = {
+                "loaded": False,
+                "error": "Audio detector not initialized"
+            }
+        
+        # Overall system status
+        all_models_loaded = all(
+            model_info.get("loaded", False) 
+            for model_info in verification_info["models"].values()
+        )
+        
+        verification_info["system_status"] = {
+            "all_models_loaded": all_models_loaded,
+            "real_deepfake_models_in_use": any(
+                model_info.get("model_authenticity", {}).get("is_real_deepfake_model", False)
+                for model_info in verification_info["models"].values()
+            ),
+            "fallback_models_in_use": any(
+                model_info.get("model_authenticity", {}).get("is_fallback_model", False)
+                for model_info in verification_info["models"].values()
+            )
+        }
+        
+        logger.info(f"[MODEL VERIFICATION] Status: {verification_info['system_status']}")
+        
+        return verification_info
+        
+    except Exception as e:
+        logger.error(f"[MODEL VERIFICATION] Failed: {e}", exc_info=True)
+        return {
+            "status": "error",
+            "message": f"Model verification failed: {str(e)}",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
 
 @router.get("/health")
 async def health_check(request: Request):

@@ -3,19 +3,25 @@
  * Ensures only one instance of Supabase client exists across the entire application
  */
 
-// Console filter to suppress Supabase debug noise
-if (typeof window !== 'undefined') {
-  const originalLog = console.log;
-  console.log = (...args: any[]) => {
-    const msg = args?.[0]?.toString() ?? '';
-    // Filter out common Supabase noise
-    if (msg.includes('GoTrueClient')) return;
-    if (msg.includes('_acquireLock')) return;
-    if (msg.includes('auto refresh token')) return;
-    if (msg.includes('refreshSession')) return;
-    if (msg.includes('No session')) return;
-    originalLog(...args);
-  };
+// Console filter to suppress Supabase debug noise (scoped to Supabase only)
+const originalConsoleLog = console.log;
+const supabaseLogFilter = (...args: any[]) => {
+  const msg = args?.[0]?.toString() ?? '';
+  // Only filter known Supabase noise, let everything else through
+  const isSupabaseNoise = msg.includes('GoTrueClient') || 
+                           msg.includes('_acquireLock') || 
+                           msg.includes('auto refresh token') || 
+                           msg.includes('refreshSession') || 
+                           msg.includes('No session');
+  
+  if (!isSupabaseNoise) {
+    originalConsoleLog(...args);
+  }
+};
+
+// Apply filter only in development
+if (typeof window !== 'undefined' && import.meta.env.DEV) {
+  console.log = supabaseLogFilter;
 }
 
 import { createClient } from '@supabase/supabase-js';

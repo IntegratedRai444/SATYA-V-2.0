@@ -45,8 +45,9 @@ router.get('/health', async (req: Request, res: Response) => {
     try {
       const startTime = Date.now();
       const { error } = await supabaseAdmin
-        .from('tasks')
-        .select('count')
+        .from('scans')
+        .select('id')
+        .is('deleted_at', null)  
         .limit(1)
         .single();
       

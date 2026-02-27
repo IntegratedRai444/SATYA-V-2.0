@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { supabase, supabaseAdmin } from '../config/supabase';
 import { logger } from '../config/logger';
+import { JOB_TIMEOUTS } from '../config/job-timeouts';
 
 const router = Router();
 
@@ -17,10 +18,10 @@ router.get('/:id', async (req: Request, res: Response) => {
       });
     }
 
-    // Fetch analysis result from tasks table
+    // Fetch analysis result from scans table
     const { data: task, error } = await supabase
-      .from('tasks')
-      .select(`id, type, status, file_name, file_type, file_size, result, report_code, created_at, completed_at, error, updated_at`) // 🔥 Add updated_at to select
+      .from('scans')
+      .select(`id, type, filename, result, confidence_score, detection_details, metadata, created_at, updated_at`)
       .eq('id', id)
       .eq('user_id', userId)
       .eq('type', 'analysis')
@@ -33,22 +34,19 @@ router.get('/:id', async (req: Request, res: Response) => {
       if (!task) {
         // Try to find job without user filter to check if it exists
         const { data: orphanJob } = await supabase
-          .from('tasks')
-          .select('id, status, created_at')
+          .from('scans')
+          .select('id, result, created_at')
           .eq('id', id)
           .eq('type', 'analysis')
           .single();
           
-        if (orphanJob && orphanJob.status === 'processing') {
+        if (orphanJob && orphanJob.result === 'processing') {
           // Job exists but user_id not yet committed - return processing state
           return res.status(200).json({
             success: true,
             jobId: orphanJob.id,
             status: 'processing',
-            result: null,
-            reportCode: null,
-            createdAt: orphanJob.created_at,
-            updatedAt: orphanJob.created_at
+            result: null
           });
         }
       }
@@ -60,19 +58,29 @@ router.get('/:id', async (req: Request, res: Response) => {
     }
 
     // 3-State Model: Handle processing jobs
-    if (task.status === 'processing') {
+    if (task.result === 'processing') {
       // Check if job is stuck (timeout recovery)
       const jobAge = Date.now() - new Date(task.created_at).getTime();
-      const TIMEOUT_MS = 30 * 60 * 1000; // 🔥 STEP 8 — EXTEND TIMEOUT (IMPORTANT): 30 minutes for slow models
       
-      if (jobAge > TIMEOUT_MS) {
+      if (jobAge > JOB_TIMEOUTS.MAX_PROCESSING_TIME) {
+        // 🔒 VERIFY OWNERSHIP BEFORE ADMIN UPDATE
+        const { data: ownerCheck } = await supabase
+          .from('scans')
+          .select('user_id')
+          .eq('id', id)
+          .single();
+          
+        if (!ownerCheck || ownerCheck.user_id !== userId) {
+          return res.status(403).json({ error: 'Access denied' });
+        }
+        
         // Job is stuck - mark as failed
         await supabaseAdmin
-          .from('tasks')
+          .from('scans')
           .update({
-            status: 'failed',
-            error: 'Job failed due to timeout',
-            completed_at: new Date().toISOString()
+            result: 'failed',
+            confidence_score: 0,
+            updated_at: new Date().toISOString()
           })
           .eq('id', id);
           
@@ -96,17 +104,17 @@ router.get('/:id', async (req: Request, res: Response) => {
     // Canonical response shape - NO nested wrappers, NO extra fields
     const result = {
       jobId: task.id,
-      status: task.status,
-      result: task.result ?? null
+      status: task.result,
+      result: task.detection_details ?? null
     };
 
     logger.info('[RESULT_FETCH]', { 
       jobId: task.id, 
-      status: task.status,
-      hasResult: !!task.result 
+      status: task.result,
+      hasResult: !!task.detection_details 
     });
 
-    res.json({
+    res.status(200).json({
       success: true,
       ...result // 🔥 FLATTENED RESPONSE - NO {data: {...}} wrapper
     });
@@ -134,7 +142,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
     // Check if task belongs to user
     const { data: task, error: checkError } = await supabase
-      .from('tasks')
+      .from('scans')
       .select('id')
       .eq('id', id)
       .eq('user_id', userId)
@@ -151,7 +159,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
     // Delete the task
     const { error: deleteError } = await supabase
-      .from('tasks')
+      .from('scans')
       .delete()
       .eq('id', id)
       .eq('user_id', userId);
@@ -164,7 +172,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
       });
     }
 
-    res.json({
+    res.status(200).json({
       success: true,
       message: 'Analysis result deleted successfully'
     });

@@ -57,7 +57,7 @@ export interface AnalysisResult {
 
 export interface JobStartResponse {
   success: boolean;
-  job_id: string; // Updated to match unified endpoint
+  jobId: string; // Updated to match unified endpoint
   status: string; // Add missing status field
 }
 
@@ -197,7 +197,7 @@ export class AnalysisService extends BaseService {
         timeout: 360000, // 6 minutes timeout
       });
 
-      return response.job_id;
+      return response.jobId;
     } catch (error) {
       console.error('Image analysis failed:', error);
       
@@ -241,7 +241,7 @@ export class AnalysisService extends BaseService {
         timeout: 360000, // 6 minutes timeout
       });
 
-      return response.job_id;
+      return response.jobId;
     } catch (error) {
       console.error('Video analysis error:', error);
       throw new Error('Failed to start video analysis');
@@ -264,7 +264,7 @@ export class AnalysisService extends BaseService {
         timeout: 360000, // 6 minutes timeout
       });
 
-      return response.job_id;
+      return response.jobId;
     } catch (error) {
       console.error('Audio analysis error:', error);
       throw new Error('Failed to start audio analysis');

@@ -1,9 +1,9 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Loader2, Upload, Mic, CheckCircle, AlertCircle, FileText, BarChart3, Eye } from 'lucide-react';
 import { useAudioAnalysis } from '@/hooks/useApi';
-import { pollAnalysisResult } from '@/lib/analysis/pollResult';
+import { pollAnalysisResult, AnalysisJobStatus } from '@/lib/analysis/pollResult';
+import { normalizeJobResponse } from '@/lib/analysis/jobIdNormalizer';
 import { AnalysisResult } from '@/lib/api/services/analysisService';
-import type { AnalysisJobStatus } from '@/lib/analysis/pollResult';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 
 export default function AudioAnalysis() {
@@ -135,21 +135,22 @@ export default function AudioAnalysis() {
       
       pollResult.promise
         .then((job: AnalysisJobStatus) => {
-          if (job.status === 'completed' && job.result) {
+          const normalizedJob = normalizeJobResponse(job);
+          if (normalizedJob.status === 'completed' && normalizedJob.result) {
             const analysisResult: AnalysisResult = {
               result: {
-                isAuthentic: job.result.isAuthentic,
-                confidence: job.result.confidence,
+                isAuthentic: normalizedJob.result.isAuthentic,
+                confidence: normalizedJob.result.confidence,
                 details: {
-                  isDeepfake: job.result.details.isDeepfake,
-                  modelInfo: job.result.details.modelInfo || {},
+                  isDeepfake: normalizedJob.result.details.isDeepfake,
+                  modelInfo: normalizedJob.result.details.modelInfo || {},
                 },
                 metrics: {
-                  processingTime: job.result.metrics?.processingTime || 0,
-                  modelVersion: job.result.metrics?.modelVersion || '1.0.0'
+                  processingTime: normalizedJob.result.metrics?.processingTime || 0,
+                  modelVersion: normalizedJob.result.metrics?.modelVersion || '1.0.0'
                 }
               },
-              id: job.id,
+              id: normalizedJob.id || `audio_${Date.now()}`,
               type: 'audio',
               status: 'completed',
               createdAt: new Date().toISOString(), // Use current time since not provided

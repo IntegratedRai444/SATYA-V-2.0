@@ -3,16 +3,54 @@ import express, { type Request, type Response } from 'express';
 import { createServer } from 'http';
 import path from 'path';
 import cookieParser from 'cookie-parser';
+import { setInterval } from 'timers';
 import webSocketManager from './services/websocket-manager';
 import { routes } from './routes';
 import { createRequestLogger } from './config/logger';
 import { systemRouter } from './routes/system-health';
+import { reconcileStaleJobs, cleanupRunningJobs } from './startup/reconcileJobs';
 
 // Load environment variables
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 const app = express();
 const port = process.env.PORT || 5001;
+
+// 🔥 FIX 5 — Memory Hard Floor: Add memory monitoring
+const HARD_LIMIT_MB = 4096; // 4GB hard cap
+
+// Memory monitoring function
+const checkMemoryUsage = () => {
+  const memUsage = process.memoryUsage();
+  const rssMB = memUsage.rss / 1024 / 1024;
+  
+  if (rssMB > HARD_LIMIT_MB) {
+    console.error('🚨 HARD MEMORY CAP REACHED', {
+      rss: `${rssMB.toFixed(2)}MB`,
+      heapTotal: `${(memUsage.heapTotal / 1024 / 1024).toFixed(2)}MB`,
+      heapUsed: `${(memUsage.heapUsed / 1024 / 1024).toFixed(2)}MB`,
+      external: `${(memUsage.external / 1024 / 1024).toFixed(2)}MB`,
+      limit: `${HARD_LIMIT_MB}MB`
+    });
+    
+    // Trigger emergency cleanup
+    console.error('🧹 Triggering emergency cleanup due to memory pressure');
+    
+    // Force garbage collection
+    if (global.gc) {
+      global.gc();
+    }
+    
+    // In production, you might want to restart the process
+    if (process.env.NODE_ENV === 'production') {
+      console.error('💀 Memory limit exceeded in production - initiating graceful shutdown');
+      process.exit(1);
+    }
+  }
+};
+
+// Check memory every 30 seconds
+setInterval(checkMemoryUsage, 30000);
 
 // Set development mode for better Supabase auth handling
 if (process.env.NODE_ENV !== 'production') {
@@ -108,11 +146,42 @@ app.use((err: Error, req: Request, res: Response) => {
 // WebSocket endpoint implementation - handled by webSocketManager
 const httpServer = createServer(app);
 
-httpServer.listen(Number(port), '0.0.0.0', () => {
+httpServer.listen(Number(port), '0.0.0.0', async () => {
   console.log(`Server running on port ${port}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  
+  // 🔥 FIX 3 — Job Reconciliation on Server Boot
+  console.log('🔄 Starting job reconciliation...');
+  await reconcileStaleJobs();
+  console.log('✅ Job reconciliation completed');
   
   // Initialize WebSocket manager
   webSocketManager.initialize(httpServer);
   console.log('WebSocket server initialized');
 });
+
+// 🔥 FIX 3 — Graceful shutdown handlers
+const gracefulShutdown = async (signal: string) => {
+  console.log(`\n${signal} received - starting graceful shutdown...`);
+  
+  try {
+    // Cleanup running jobs
+    console.log('🧹 Cleaning up running jobs...');
+    await cleanupRunningJobs();
+    
+    // Shutdown WebSocket manager
+    console.log('🔌 Shutting down WebSocket manager...');
+    webSocketManager.shutdown();
+    
+    console.log('✅ Graceful shutdown completed');
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error during graceful shutdown:', error);
+    process.exit(1);
+  }
+};
+
+// Register shutdown handlers
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGUSR2', () => gracefulShutdown('SIGUSR2')); // For nodemon restarts

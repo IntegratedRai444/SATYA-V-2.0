@@ -564,18 +564,64 @@ export class WebSocketManager {
     }
   }
 
-  public sendEventToUser(userId: string, message: WebSocketMessage): void {
-    this.sendToUser(userId, message);
+  public async sendEventToUser(userId: string, event: WebSocketMessage): Promise<void> {
+    try {
+      // 🔥 FIX 2 — WebSocket Ghost State Guard: Validate before emitting
+      if (event?.jobId) {
+        const { supabaseAdmin } = await import('../config/supabase');
+        const { data: job, error } = await supabaseAdmin
+          .from('scans')
+          .select('id,result')
+          .eq('id', event.jobId)
+          .single();
+
+        if (error || !job) {
+          logger.debug('[WS GHOST GUARD] Job not found, dropping event', { 
+            userId, 
+            jobId: event.jobId,
+            eventType: event.type,
+            error: error?.message 
+          });
+          return; // job deleted or invalid
+        }
+
+        if (job.result === 'completed' || job.result === 'failed') {
+          // Optional: drop stale updates for completed/failed jobs
+          if (event.type === 'JOB_PROGRESS' || event.type === 'JOB_STARTED') {
+            logger.debug('[WS GHOST GUARD] Dropping stale update for completed/failed job', { 
+              userId, 
+              jobId: event.jobId,
+              jobStatus: job.result,
+              eventType: event.type 
+            });
+            return;
+          }
+        }
+      }
+
+      // existing emit logic
+      this.sendToUser(userId, event);
+    } catch (err) {
+      logger.warn('WebSocket validation failed', err);
+    }
   }
 
-  // Send job update to specific user
+  // Send job update to specific user with reliability improvements
   public sendJobUpdate(userId: string, jobId: string, status: string, progress?: number, message?: string): void {
     const jobChannel = `job:${jobId}`;
     const userClients = this.clients.get(userId);
     
-    if (userClients) {
-      userClients.forEach((ws) => {
-        if (ws.readyState === WebSocket.OPEN && ws.subscribedChannels.has(jobChannel)) {
+    if (!userClients || userClients.size === 0) {
+      logger.debug('[JOB_UPDATE] No active clients for user', { userId, jobId });
+      return;
+    }
+
+    let sentCount = 0;
+    let failedCount = 0;
+    
+    userClients.forEach((ws) => {
+      if (ws.readyState === WebSocket.OPEN && ws.subscribedChannels.has(jobChannel)) {
+        try {
           this.sendToClient(ws, {
             type: 'JOB_STARTED',
             jobId,
@@ -588,19 +634,48 @@ export class WebSocketManager {
             },
             timestamp: Date.now()
           });
+          sentCount++;
+        } catch (error) {
+          failedCount++;
+          logger.error('[JOB_UPDATE] Failed to send to client', {
+            clientId: ws.clientId,
+            userId,
+            jobId,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
         }
+      }
+    });
+
+    // Log delivery results for observability
+    if (sentCount > 0 || failedCount > 0) {
+      logger.debug('[JOB_UPDATE] Delivery results', {
+        userId,
+        jobId,
+        status,
+        sentCount,
+        failedCount,
+        totalClients: userClients.size
       });
     }
   }
 
-  // Send job progress to specific user
+  // Send job progress to specific user with reliability improvements
   public sendJobProgress(userId: string, jobId: string, status: string, progress?: number, message?: string): void {
     const jobChannel = `job:${jobId}`;
     const userClients = this.clients.get(userId);
     
-    if (userClients) {
-      userClients.forEach((ws) => {
-        if (ws.readyState === WebSocket.OPEN && ws.subscribedChannels.has(jobChannel)) {
+    if (!userClients || userClients.size === 0) {
+      logger.debug('[JOB_PROGRESS] No active clients for user', { userId, jobId });
+      return;
+    }
+
+    let sentCount = 0;
+    let failedCount = 0;
+    
+    userClients.forEach((ws) => {
+      if (ws.readyState === WebSocket.OPEN && ws.subscribedChannels.has(jobChannel)) {
+        try {
           this.sendToClient(ws, {
             type: 'JOB_PROGRESS',
             jobId,
@@ -613,19 +688,49 @@ export class WebSocketManager {
             },
             timestamp: Date.now()
           });
+          sentCount++;
+        } catch (error) {
+          failedCount++;
+          logger.error('[JOB_PROGRESS] Failed to send to client', {
+            clientId: ws.clientId,
+            userId,
+            jobId,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
         }
+      }
+    });
+
+    // Log delivery results for observability
+    if (sentCount > 0 || failedCount > 0) {
+      logger.debug('[JOB_PROGRESS] Delivery results', {
+        userId,
+        jobId,
+        status,
+        progress,
+        sentCount,
+        failedCount,
+        totalClients: userClients.size
       });
     }
   }
 
-  // Send job completion to specific user
+  // Send job completion to specific user with reliability improvements
   public sendJobCompleted(userId: string, jobId: string, result?: unknown): void {
     const jobChannel = `job:${jobId}`;
     const userClients = this.clients.get(userId);
     
-    if (userClients) {
-      userClients.forEach((ws) => {
-        if (ws.readyState === WebSocket.OPEN && ws.subscribedChannels.has(jobChannel)) {
+    if (!userClients || userClients.size === 0) {
+      logger.debug('[JOB_COMPLETED] No active clients for user', { userId, jobId });
+      return;
+    }
+
+    let sentCount = 0;
+    let failedCount = 0;
+    
+    userClients.forEach((ws) => {
+      if (ws.readyState === WebSocket.OPEN && ws.subscribedChannels.has(jobChannel)) {
+        try {
           this.sendToClient(ws, {
             type: 'JOB_COMPLETED',
             jobId,
@@ -637,19 +742,47 @@ export class WebSocketManager {
             },
             timestamp: Date.now()
           });
+          sentCount++;
+        } catch (error) {
+          failedCount++;
+          logger.error('[JOB_COMPLETED] Failed to send to client', {
+            clientId: ws.clientId,
+            userId,
+            jobId,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
         }
+      }
+    });
+
+    // Log delivery results for observability
+    if (sentCount > 0 || failedCount > 0) {
+      logger.info('[JOB_COMPLETED] Delivery results', {
+        userId,
+        jobId,
+        sentCount,
+        failedCount,
+        totalClients: userClients.size
       });
     }
   }
 
-  // Send job failure to specific user
+  // Send job failure to specific user with reliability improvements
   public sendJobFailed(userId: string, jobId: string, error: string): void {
     const jobChannel = `job:${jobId}`;
     const userClients = this.clients.get(userId);
     
-    if (userClients) {
-      userClients.forEach((ws) => {
-        if (ws.readyState === WebSocket.OPEN && ws.subscribedChannels.has(jobChannel)) {
+    if (!userClients || userClients.size === 0) {
+      logger.debug('[JOB_FAILED] No active clients for user', { userId, jobId });
+      return;
+    }
+
+    let sentCount = 0;
+    let failedCount = 0;
+    
+    userClients.forEach((ws) => {
+      if (ws.readyState === WebSocket.OPEN && ws.subscribedChannels.has(jobChannel)) {
+        try {
           this.sendToClient(ws, {
             type: 'JOB_FAILED',
             jobId,
@@ -661,7 +794,27 @@ export class WebSocketManager {
             },
             timestamp: Date.now()
           });
+          sentCount++;
+        } catch (sendError) {
+          failedCount++;
+          logger.error('[JOB_FAILED] Failed to send to client', {
+            clientId: ws.clientId,
+            userId,
+            jobId,
+            error: sendError instanceof Error ? sendError.message : 'Unknown error'
+          });
         }
+      }
+    });
+
+    // Log delivery results for observability
+    if (sentCount > 0 || failedCount > 0) {
+      logger.info('[JOB_FAILED] Delivery results', {
+        userId,
+        jobId,
+        sentCount,
+        failedCount,
+        totalClients: userClients.size
       });
     }
   }

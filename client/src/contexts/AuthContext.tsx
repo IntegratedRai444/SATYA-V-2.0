@@ -1,6 +1,9 @@
 import React, { createContext, ReactNode } from 'react';
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 
+// Re-export useSupabaseAuth as the canonical auth hook
+export { useSupabaseAuth as useAuth };
+
 interface AuthContextType {
   user: ReturnType<typeof useSupabaseAuth>['user'];
   session: ReturnType<typeof useSupabaseAuth>['session'];

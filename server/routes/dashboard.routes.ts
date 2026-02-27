@@ -28,30 +28,47 @@ router.get('/stats', dashboardRateLimit, async (req: any, res: Response) => {
       });
     }
 
-    // Get user's analysis statistics (limited to last 1000 for performance)
-    const { data: tasks, error: tasksError } = await supabase
-      .from('tasks')
-      .select('status, type, created_at, result')
-      .eq('user_id', userId)
-      .is('deleted_at', null) // Fix: Use is() for null check instead of eq()
-      .order('created_at', { ascending: false })
-      .limit(1000);
+    // 🔥 PRODUCTION: Null-safe database query with proper error handling
+    let tasks: any[] = [];
+    try {
+      const { data: tasksData, error: tasksError } = await supabase
+        .from('tasks')
+        .select('result, type, created_at, confidence_score')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(1000);
 
-    if (tasksError) {
-      console.error("[CONTROLLER ERROR] Dashboard stats DB error:", tasksError);
+      if (tasksError) {
+        logger.error('[DASHBOARD_STATS] Database query failed', {
+          userId,
+          error: tasksError.message,
+          code: tasksError.code
+        });
+        throw new Error(`Database query failed: ${tasksError.message}`);
+      }
+
+      tasks = tasksData || [];
+    } catch (dbError) {
+      logger.error('[DASHBOARD_STATS] Unexpected database error', {
+        userId,
+        error: dbError instanceof Error ? dbError.message : 'Unknown error'
+      });
+      
       return res.status(500).json({
         success: false,
-        error: 'Failed to fetch dashboard statistics'
+        error: 'DATABASE_ERROR',
+        message: 'Failed to fetch dashboard statistics',
+        requestId: `dash_${Date.now()}`
       });
     }
 
-      // Calculate statistics with safe defaults
+    // Calculate statistics with safe defaults
     const totalAnalyses = tasks?.length || 0;
     const deepfakeDetected = tasks?.filter((t: { result?: { is_deepfake?: boolean } }) => t.result?.is_deepfake === true).length || 0;
     const realDetected = tasks?.filter((t: { result?: { is_deepfake?: boolean } }) => t.result?.is_deepfake === false).length || 0;
     
     // Calculate average confidence with safe defaults
-    const completedTasks = tasks?.filter((t: { status?: string; result?: { confidence?: number } }) => t.status === 'completed' && t.result?.confidence) || [];
+    const completedTasks = tasks?.filter((t: { result?: { confidence?: number } }) => t.result?.confidence) || [];
     const avgConfidence = completedTasks.length > 0 
       ? completedTasks.reduce((sum: number, task: { result?: { confidence?: number } }) => sum + (task.result?.confidence || 0), 0) / completedTasks.length 
       : 0;
@@ -115,11 +132,10 @@ router.get('/analytics', dashboardRateLimit, async (req: any, res: Response) => 
     // Get user's analysis data
     const { data: tasks, error: tasksError } = await supabase
       .from('tasks')
-      .select('id, type, created_at, file_name, result')
+      .select('id, type, created_at, filename, result, confidence_score')
       .eq('user_id', userId)
-      .eq('deleted_at', null)
       .order('created_at', { ascending: false })
-      .limit(50); // Recent 50 activities
+      .limit(100); // Recent 50 activities
 
     if (tasksError) {
       logger.error('Dashboard analytics error:', tasksError);
@@ -145,7 +161,7 @@ router.get('/analytics', dashboardRateLimit, async (req: any, res: Response) => 
       created_at: task.created_at,
       confidence: (task.result as Record<string, unknown>)?.confidence as number || 0,
       is_deepfake: (task.result as Record<string, unknown>)?.is_deepfake as boolean || false,
-      file_name: task.file_name || 'Unknown'
+      file_name: task.filename || 'Unknown'
     })) || [];
 
     const analytics = {
@@ -176,9 +192,8 @@ router.get('/recent-activity', requireAuth, dashboardRateLimit, async (req: any,
     // Get recent analysis activities (last 10)
     const { data: activities, error: activitiesError } = await supabase
       .from('tasks')
-      .select('id, type, status, created_at, confidence, is_deepfake, file_name')
+      .select('id, type, result, created_at, confidence_score, filename')
       .eq('user_id', userId)
-      .eq('deleted_at', null)
       .order('created_at', { ascending: false })
       .limit(10);
 

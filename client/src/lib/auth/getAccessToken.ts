@@ -22,7 +22,7 @@ export async function getAccessToken(): Promise<string | null> {
   }
   
   try {
-    // Fetch fresh token from Supabase
+    // Fetch fresh token from Supabase (uses native storage)
     const { data, error } = await supabase.auth.getSession();
     
     if (error) {

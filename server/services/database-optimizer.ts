@@ -207,9 +207,10 @@ class DatabaseOptimizer {
       `user_tasks:${userId}:${limit}:${offset}`,
       async () => {
         const { data: tasks, error } = await supabase
-          .from('tasks')
+          .from('scans')
           .select('*')
           .eq('user_id', userId)
+          .is('deleted_at', null)  // 🔒 ADD SOFT DELETE FILTER
           .order('created_at', { ascending: false })
           .range(offset, offset + limit - 1);
         
@@ -235,9 +236,10 @@ class DatabaseOptimizer {
       async () => {
         // Get total tasks count
         const { data: allTasks, error: totalError } = await supabase
-          .from('tasks')
+          .from('scans')
           .select('id')
-          .eq('user_id', userId);
+          .eq('user_id', userId)
+          .is('deleted_at', null);  // 🔒 ADD SOFT DELETE FILTER
         
         if (totalError) {
           throw new Error(`Failed to get total tasks: ${totalError.message}`);
@@ -247,9 +249,10 @@ class DatabaseOptimizer {
         // Get recent tasks (last 7 days)
         const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
         const { data: recentTasks, error: recentError } = await supabase
-          .from('tasks')
+          .from('scans')
           .select('created_at')
           .eq('user_id', userId)
+          .is('deleted_at', null)  // 🔒 ADD SOFT DELETE FILTER
           .gte('created_at', oneWeekAgo)
           .order('created_at', { ascending: false })
           .limit(5);
@@ -287,7 +290,7 @@ class DatabaseOptimizer {
         
         // Get total tasks count
         const { data: allTasks, error: tasksError } = await supabase
-          .from('tasks')
+          .from('scans')
           .select('id');
         
         if (tasksError) {
@@ -310,7 +313,7 @@ class DatabaseOptimizer {
         // Get recent tasks (last 24 hours)
         const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
         const { data: recentTasks, error: recentTasksError } = await supabase
-          .from('tasks')
+          .from('scans')
           .select('id')
           .gte('created_at', oneDayAgo);
         

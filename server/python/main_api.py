@@ -15,13 +15,37 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 load_dotenv()
 load_dotenv('../../.env')
 
-# Force CPU-only mode to fix CUDA compatibility issues
+# Setup logging first
+handlers = [logging.StreamHandler()]
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper() if os.getenv("LOG_LEVEL") else "INFO",
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=handlers,
+)
+logger = logging.getLogger(__name__)
+
+# Run startup validation after logger is defined
+try:
+    from startup_validator import validate_startup
+    if not validate_startup():
+        logger.error("🚫 Startup validation failed - exiting")
+        sys.exit(1)
+    logger.info("✅ Startup validation passed")
+except ImportError as e:
+    logger.warning(f"⚠️ Could not import startup validator: {e}")
+    logger.warning("⚠️ Continuing without validation (development mode)")
+
+# Detect GPU availability safely
 os.environ['ENABLE_ML_MODELS'] = 'true'
 os.environ['FORCE_ML_LOADING'] = 'true'
-os.environ['CUDA_VISIBLE_DEVICES'] = ''  # Disable CUDA
-os.environ['TORCH_CUDA_ARCH_LIST'] = ''  # Disable CUDA arch list
 import torch
-# Let PyTorch handle CUDA naturally - don't force it
+
+# Only disable CUDA if not available
+if not torch.cuda.is_available():
+    os.environ['CUDA_VISIBLE_DEVICES'] = ''
+    logger.warning("CUDA not available, falling back to CPU")
+else:
+    logger.info(f"CUDA available: {torch.cuda.device_count()} devices")
 
 from fastapi import FastAPI, HTTPException, Request, status, UploadFile, File, Depends
 from fastapi.exceptions import RequestValidationError
@@ -38,14 +62,6 @@ if sys.platform == "win32":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
-handlers = [logging.StreamHandler()]
-logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO").upper() if os.getenv("LOG_LEVEL") else "INFO",
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=handlers,
-)
-logger = logging.getLogger(__name__)
-
 from config import Settings
 
 try:
@@ -57,7 +73,7 @@ except Exception as e:
     sys.exit(1)
 
 # Timeout wrapper for analysis functions
-async def timeout_wrapper(func, *args, timeout=300, **kwargs):
+async def timeout_wrapper(func, *args, timeout=600, **kwargs):
     """Wrap analysis function with timeout to prevent infinite processing"""
     try:
         return await asyncio.wait_for(func(*args, **kwargs), timeout=timeout)
@@ -227,7 +243,6 @@ else:
 try:
     from routes.analysis import router as analysis_router
     from routes.health import router as health_router
-    from routes.results import router as results_router
 
     ROUTES_AVAILABLE = True
 except ImportError as e:
@@ -300,6 +315,96 @@ except ImportError:
 
 
 # Lifespan context manager for startup/shutdown
+
+def validate_environment():
+    """
+    Validate environment before starting the server
+    Prevents deployment if critical requirements are not met
+    """
+    logger.info("🔍 ENVIRONMENT VALIDATION STARTED")
+    validation_errors = []
+    validation_warnings = []
+    
+    # Check ML models are enabled
+    ml_models_enabled = os.getenv('ENABLE_ML_MODELS', 'true').lower() == 'true'
+    if not ml_models_enabled:
+        validation_errors.append(
+            "❌ CRITICAL: ENABLE_ML_MODELS is set to false. "
+            "ML models must be enabled for deepfake detection."
+        )
+    
+    # Check strict deepfake mode
+    strict_deepfake_mode = os.getenv('STRICT_DEEPFAKE_MODE', 'true').lower() == 'true'
+    if not strict_deepfake_mode:
+        validation_warnings.append(
+            "⚠️ WARNING: STRICT_DEEPFAKE_MODE is disabled. "
+            "Fallback models may be used (not recommended for production)."
+        )
+    
+    # Check for real deepfake model files
+    from pathlib import Path
+    model_dir = Path(__file__).parent / "models"
+    
+    required_models = {
+        "EfficientNet-B7": model_dir / "dfdc_efficientnet_b7" / "model.safetensors",
+        "Xception": model_dir / "xception" / "model.pth"
+    }
+    
+    missing_models = []
+    for model_name, model_path in required_models.items():
+        if not model_path.exists():
+            missing_models.append(f"{model_name} ({model_path})")
+    
+    if missing_models:
+        validation_errors.append(
+            f"❌ CRITICAL: Real deepfake models missing: {', '.join(missing_models)}. "
+            "Real deepfake model files are required for authentic deepfake detection."
+        )
+    
+    # Check model file sizes (should be substantial for real models)
+    model_size_issues = []
+    for model_name, model_path in required_models.items():
+        if model_path.exists():
+            size_mb = model_path.stat().st_size / (1024 * 1024)
+            if size_mb < 50:  # Real models should be > 50MB
+                model_size_issues.append(f"{model_name} ({size_mb:.1f}MB - too small for real model)")
+    
+    if model_size_issues:
+        validation_warnings.append(
+            f"⚠️ WARNING: Model sizes seem small: {', '.join(model_size_issues)}. "
+            "Verify these are real trained deepfake models."
+        )
+    
+    # Report validation results
+    if validation_errors:
+        logger.error("🚨 ENVIRONMENT VALIDATION FAILED:")
+        for error in validation_errors:
+            logger.error(f"  {error}")
+        logger.error("")
+        logger.error("🛑 SERVER STARTUP BLOCKED - Fix critical issues before starting")
+        sys.exit(1)
+    
+    if validation_warnings:
+        logger.warning("⚠️ ENVIRONMENT VALIDATION WARNINGS:")
+        for warning in validation_warnings:
+            logger.warning(f"  {warning}")
+        logger.warning("")
+    
+    # Success message
+    models_status = "✅ All real deepfake models present" if not missing_models else "❌ Models missing"
+    mode_status = "✅ Strict deepfake mode enabled" if strict_deepfake_mode else "⚠️ Strict mode disabled"
+    ml_status = "✅ ML models enabled" if ml_models_enabled else "❌ ML models disabled"
+    
+    logger.info(f"🎯 ENVIRONMENT VALIDATION RESULTS:")
+    logger.info(f"  {ml_status}")
+    logger.info(f"  {mode_status}")
+    logger.info(f"  {models_status}")
+    logger.info("✅ ENVIRONMENT VALIDATION COMPLETED")
+
+
+# Validate environment before starting the server
+validate_environment()
+
 
 @asynccontextmanager
 
@@ -508,20 +613,22 @@ async def lifespan(app: FastAPI):
         if DB_AVAILABLE:
             logger.info("Closing database connections...")
             await db_manager.disconnect()
-        logger.info("✅ Server shutdown complete")
+        logger.info(" Server shutdown complete")
     except Exception as e:
         logger.error(f"Error during shutdown: {e}", exc_info=True)
 
 
-# Initialize FastAPI app with lifespan (single instance)
+# Initialize FastAPI app with startup tracking
 app = FastAPI(
-    title="SatyaAI Internal API",
-    docs_url="/api/docs",  # Enable Swagger UI at /api/docs
-    redoc_url="/api/redoc",  # Enable ReDoc at /api/redoc
-    description="Python-First REST API for deepfake detection using ML/DL/NLP",
+    title="SatyaAI ML Service",
+    description="Deepfake Detection API with Multi-Modal Analysis",
     version="2.0.0",
-    lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc"
 )
+
+# Track startup time
+app.state.start_time = time.time()
 
 # ============================================================================
 # MIDDLEWARE CONFIGURATION
@@ -824,7 +931,6 @@ if ROUTES_AVAILABLE:
     route_configs = [
         (analysis_router, "/api/v2/analysis", ["Analysis"], "Analysis"),  # Only unified routes
         (health_router, "/api/v2/health", ["Health"], "Health"),
-        (results_router, "/api/v2", ["Results"], "Results"),  # Results endpoint for compatibility
     ]
 
     # Register all routes with consistent error handling
@@ -2271,6 +2377,75 @@ async def analyze_audio_canonical(
     logger.warning(f"[DEPRECATED] /analyze/audio endpoint used, please migrate to /api/v2/analysis/unified/audio: {file.filename}")
 
     return await analyze_audio_unified(file, current_user)
+
+
+@app.get("/health")
+async def health_check():
+    """
+    Comprehensive health check endpoint
+    Returns service health status, model status, and system information
+    """
+    try:
+        import torch
+        from services.detector_singleton import DetectorSingleton
+        from sentinel_agent import SentinelAgent
+        
+        # Get service uptime
+        uptime = time.time() - app.state.start_time if hasattr(app.state, 'start_time') else 0
+        
+        # Check model status
+        models_loaded = False
+        gpu_available = False
+        
+        try:
+            # Check if models are loaded
+            detector = DetectorSingleton()
+            models_loaded = detector.image_detector is not None
+            
+            # Check GPU availability
+            gpu_available = torch.cuda.is_available()
+            
+        except Exception as e:
+            logger.warning(f"Health check model status failed: {e}")
+        
+        # Memory usage
+        memory_info = psutil.virtual_memory()
+        
+        health_status = {
+            "status": "healthy",
+            "timestamp": datetime.utcnow().isoformat(),
+            "service_uptime": uptime,
+            "models_loaded": models_loaded,
+            "gpu_available": gpu_available,
+            "system": {
+                "cpu_percent": psutil.cpu_percent(),
+                "memory_percent": memory_info.percent,
+                "memory_available_gb": memory_info.available / (1024**3),
+                "python_version": sys.version,
+                "pytorch_version": torch.__version__,
+                "cuda_available": gpu_available,
+                "cuda_devices": torch.cuda.device_count() if gpu_available else 0
+            },
+            "endpoints": {
+                "analysis": "/api/v2/analysis/unified/{media_type}",
+                "health": "/health",
+                "info": "/analyze/info"
+            },
+            "strict_mode": os.getenv("STRICT_DEEPFAKE_MODE", "false") == "true"
+        }
+        
+        return health_status
+        
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return {
+            "status": "unhealthy",
+            "timestamp": datetime.utcnow().isoformat(),
+            "error": str(e),
+            "service_uptime": 0,
+            "models_loaded": False,
+            "gpu_available": False
+        }
 
 
 @app.get("/analyze/info")

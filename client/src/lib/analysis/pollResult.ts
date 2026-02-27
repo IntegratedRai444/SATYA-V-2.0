@@ -1,4 +1,6 @@
 import api from "@/lib/api"
+import { JOB_TIMEOUTS } from "@/config/job-timeouts"
+import { normalizeJobResponse } from "./jobIdNormalizer"  // SAFETY SHIM: Add backward compatibility
 
 
 
@@ -88,8 +90,8 @@ export function pollAnalysisResult(
   // Default options
   const config: Required<PollingOptions> = {
     interval: options.interval || 2000, // Start with 2 seconds
-    maxInterval: options.maxInterval || 30000, // Max 30 seconds
-    timeout: options.timeout || 300000, // 5 minutes default
+    maxInterval: options.maxInterval || JOB_TIMEOUTS.POLLING_MAX_INTERVAL,
+    timeout: options.timeout || JOB_TIMEOUTS.POLLING_TIMEOUT,
     maxRetries: options.maxRetries || 10,
     backoffFactor: options.backoffFactor || 1.5,
     jitter: options.jitter !== false,
@@ -164,7 +166,10 @@ export function pollAnalysisResult(
       responseTimes.push(responseTime);
       metrics.averageResponseTime = responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length;
 
-      if (!response.data) {
+      // SAFETY SHIM: Normalize response for backward compatibility
+      const normalizedData = normalizeJobResponse(response.data);
+      
+      if (!normalizedData) {
         throw new PollingError(
           'No data received from server',
           'NO_DATA',
@@ -172,7 +177,7 @@ export function pollAnalysisResult(
         );
       }
 
-      const jobStatus: AnalysisJobStatus = response.data;
+      const jobStatus: AnalysisJobStatus = normalizedData as AnalysisJobStatus;  // ✅ FIX: Type assertion for compatibility
       
       // Validate response structure
       if (!jobStatus.id || !jobStatus.status) {

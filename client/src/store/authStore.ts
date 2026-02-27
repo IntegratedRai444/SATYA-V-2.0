@@ -101,6 +101,17 @@ export const useAuthStore = create<AuthState>((set) => ({
   clearError: () => set({ error: null }),
 }));
 
-// Initialize auth store on import
-const authStore = useAuthStore.getState();
-authStore.initialize();
+// Initialize auth store on import with proper error handling
+const initializeAuthStore = async () => {
+  try {
+    const authStore = useAuthStore.getState();
+    if (!authListenerSetup) {
+      await authStore.initialize();
+    }
+  } catch (error) {
+    console.error('Failed to initialize auth store:', error);
+  }
+};
+
+// Initialize asynchronously to avoid blocking
+initializeAuthStore();

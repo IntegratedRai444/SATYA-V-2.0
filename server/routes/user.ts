@@ -232,9 +232,9 @@ router.delete('/account', userRateLimit, auditLogger('user_delete', 'user_accoun
       .update({ deleted_at: new Date().toISOString() })
       .eq('user_id', userId);
 
-    // Soft delete user's tasks
+    // Soft delete user's scans
     await supabase
-      .from('tasks')
+      .from('scans')
       .update({ deleted_at: new Date().toISOString() })
       .eq('user_id', userId);
 
@@ -281,16 +281,16 @@ router.get('/stats', userRateLimit, auditLogger('sensitive_data_access', 'user_s
 
     // Get user's analysis statistics
     const { data: tasks } = await supabase
-      .from('tasks')
-      .select('status, type, created_at')
+      .from('scans')
+      .select('result, type, created_at')
       .eq('user_id', userId)
-      .eq('deleted_at', null);
+      .is('deleted_at', null);
 
     const stats = {
       total_analyses: tasks?.length || 0,
-      completed_analyses: tasks?.filter(t => t.status === 'completed').length || 0,
-      pending_analyses: tasks?.filter(t => ['pending', 'queued', 'processing'].includes(t.status)).length || 0,
-      failed_analyses: tasks?.filter(t => t.status === 'failed').length || 0,
+      completed_analyses: tasks?.filter(t => t.result === 'completed').length || 0,
+      pending_analyses: tasks?.filter(t => ['processing'].includes(t.result)).length || 0,
+      failed_analyses: tasks?.filter(t => t.result === 'failed').length || 0,
       image_analyses: tasks?.filter(t => t.type === 'image').length || 0,
       video_analyses: tasks?.filter(t => t.type === 'video').length || 0,
       audio_analyses: tasks?.filter(t => t.type === 'audio').length || 0,
@@ -329,10 +329,10 @@ router.get('/analytics', userRateLimit, auditLogger('sensitive_data_access', 'us
 
     // Get user's analysis data
     const { data: tasks, error: tasksError } = await supabase
-      .from('tasks')
-      .select('id, type, created_at, file_name, result')
+      .from('scans')
+      .select('id, type, created_at, filename, result, confidence_score')
       .eq('user_id', userId)
-      .eq('deleted_at', null)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .limit(50); // Recent 50 activities
 
@@ -363,7 +363,7 @@ router.get('/analytics', userRateLimit, auditLogger('sensitive_data_access', 'us
       created_at: task.created_at,
       confidence: (task.result as Record<string, unknown>)?.confidence as number || 0,
       is_deepfake: (task.result as Record<string, unknown>)?.is_deepfake as boolean || false,
-      file_name: task.file_name || 'Unknown'
+      file_name: task.filename || 'Unknown'
     })) || [];
 
     const analytics = {

@@ -456,8 +456,8 @@ class SentinelAgent:
         # Track execution start time
         start_time = time.time()
         
-        # Set timeout for analysis (5 minutes maximum)
-        timeout_seconds = 300
+        # Set timeout for analysis (15 minutes maximum - aligned with Node)
+        timeout_seconds = 900
         
         try:
             # Execute the actual analysis with timeout

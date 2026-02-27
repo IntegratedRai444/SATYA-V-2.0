@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { Loader2, Upload, Eye, CheckCircle, AlertCircle, FileText, BarChart3, Camera } from 'lucide-react';
 import { useImageAnalysis } from '@/hooks/useApi';
 import { pollAnalysisResult, AnalysisJobStatus } from '@/lib/analysis/pollResult';
+import { normalizeJobResponse } from '@/lib/analysis/jobIdNormalizer';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 
 interface PollError {
@@ -121,34 +122,35 @@ const ImageAnalysis = () => {
       // Handle the polling promise
       polling.promise
         .then((job: AnalysisJobStatus) => {
-          if (job.status === 'completed' && job.result) {
+          const normalizedJob = normalizeJobResponse(job);
+          if (normalizedJob.status === 'completed' && normalizedJob.result) {
             const analysisResult: LocalAnalysisResult = {
               result: {
-                isAuthentic: !job.result.details.isDeepfake, // Backend sends isDeepfake (camelCase)
-                confidence: job.result.confidence,
+                isAuthentic: !normalizedJob.result.details.isDeepfake, // Use normalized response
+                confidence: normalizedJob.result.confidence,
                 details: {
-                  isDeepfake: job.result.details.isDeepfake,
-                  modelInfo: job.result.details.modelInfo,
+                  isDeepfake: normalizedJob.result.details.isDeepfake,
+                  modelInfo: normalizedJob.result.details.modelInfo,
                 },
                 metrics: {
-                  processingTime: job.result.metrics.processingTime,
-                  modelVersion: job.result.metrics.modelVersion
+                  processingTime: normalizedJob.result.metrics.processingTime,
+                  modelVersion: normalizedJob.result.metrics.modelVersion
                 }
               },
               key_findings: [
-                !job.result.details.isDeepfake 
+                !normalizedJob.result.details.isDeepfake 
                   ? 'No signs of manipulation detected' 
                   : 'Potential signs of manipulation found',
-                `Confidence: ${(job.result.confidence * 100).toFixed(1)}%`,
-                `Model: ${job.result.details.modelInfo?.name || 'SatyaAI'}`,
+                `Confidence: ${(normalizedJob.result.confidence * 100).toFixed(1)}%`,
+                `Model: ${normalizedJob.result.details.modelInfo?.name || 'SatyaAI'}`,
                 'Analysis completed successfully'
               ],
-              case_id: job.id || `CASE_${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
+              case_id: normalizedJob.id || `CASE_${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
               analysis_date: new Date().toISOString(),
               technical_details: {
-                processing_time_seconds: job.result.metrics.processingTime,
-                model_used: job.result.details.modelInfo?.name as string || 'SatyaAI',
-                model_version: job.result.metrics.modelVersion
+                processing_time_seconds: normalizedJob.result.metrics.processingTime,
+                model_used: normalizedJob.result.details.modelInfo?.name as string || 'SatyaAI',
+                model_version: normalizedJob.result.metrics.modelVersion
               }
             };
             setAnalysisResult(analysisResult);
@@ -370,6 +372,51 @@ const ImageAnalysis = () => {
                         {analysisResult.result.metrics.processingTime.toFixed(2)}s
                       </span>
                     </div>
+                  )}
+                  
+                  {/* Model Source Information */}
+                  {analysisResult.result.details.modelInfo && (
+                    <>
+                      <div className={`flex justify-between items-center p-3 rounded-lg ${
+                        (analysisResult.result.details.modelInfo as any)?.modelAuthenticity?.is_real_deepfake_model 
+                          ? 'bg-green-500/10 border border-green-500/30' 
+                          : 'bg-yellow-500/10 border border-yellow-500/30'
+                      }`}>
+                        <span className="text-gray-300 text-sm font-medium">Model Source</span>
+                        <div className="text-right">
+                          <span className={`text-sm font-semibold ${
+                            (analysisResult.result.details.modelInfo as any)?.modelAuthenticity?.is_real_deepfake_model 
+                              ? 'text-green-400' 
+                              : 'text-yellow-400'
+                          }`}>
+                            {(analysisResult.result.details.modelInfo as any)?.modelAuthenticity?.user_friendly_source}
+                          </span>
+                          {(analysisResult.result.details.modelInfo as any)?.modelAuthenticity?.warning && (
+                            <div className="text-xs text-yellow-400 mt-1">
+                              {(analysisResult.result.details.modelInfo as any)?.modelAuthenticity?.warning}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Model Type */}
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-300 text-sm">Model Type</span>
+                        <span className="text-white font-semibold text-sm">
+                          {(analysisResult.result.details.modelInfo as any)?.model_type?.toUpperCase() || 'UNKNOWN'}
+                        </span>
+                      </div>
+                      
+                      {/* Confidence Transparency */}
+                      {(analysisResult.result.details.modelInfo as any)?.confidence_transparency && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-300 text-sm">Confidence</span>
+                          <span className="text-green-400 font-semibold text-sm">
+                            {(analysisResult.result.details.modelInfo as any)?.confidence_transparency?.is_raw_confidence ? 'Raw (Unadjusted)' : 'Adjusted'}
+                          </span>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

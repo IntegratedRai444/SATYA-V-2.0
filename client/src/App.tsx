@@ -2,6 +2,7 @@ import { RouterProvider } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 import { Toaster } from '@/components/ui/toaster';
 import { AppProvider } from '@/contexts/AppContext';
+import { AuthProvider } from '@/contexts/AuthContext';
 import { RealtimeProvider } from '@/contexts/RealtimeContext';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { useEffect } from 'react';
@@ -47,12 +48,14 @@ function App() {
         <SimpleThemeProvider>
           <TooltipProvider>
             <AppProvider>
-              <RealtimeProvider>
-                <AnalyticsWrapper>
-                  <RouterProvider router={router} />
-                  <Toaster />
-                </AnalyticsWrapper>
-              </RealtimeProvider>
+              <AuthProvider>
+                <RealtimeProvider>
+                  <AnalyticsWrapper>
+                    <RouterProvider router={router} />
+                    <Toaster />
+                  </AnalyticsWrapper>
+                </RealtimeProvider>
+              </AuthProvider>
             </AppProvider>
           </TooltipProvider>
         </SimpleThemeProvider>

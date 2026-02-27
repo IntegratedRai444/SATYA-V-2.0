@@ -1,5 +1,6 @@
 import { logger } from '../config/logger';
 import { supabase } from '../config/supabase';
+import { JOB_TIMEOUTS } from '../config/job-timeouts';
 import webSocketManager from './websocket-manager';
 import { AbortController } from 'abort-controller';
 import { setInterval } from 'timers';
@@ -65,9 +66,9 @@ class JobManager {
 
       // Update database
       await supabase
-        .from('tasks')
+        .from('scans')
         .update({ 
-          status: 'cancelled',
+          result: 'cancelled',
           updated_at: new Date().toISOString()
         })
         .eq('id', jobId)
@@ -118,12 +119,10 @@ class JobManager {
   // Cleanup old jobs (call this periodically)
   async cleanup(): Promise<void> {
     const now = Date.now();
-    const maxAge = 30 * 60 * 1000; // 30 minutes
-    const maxProcessingTime = 10 * 60 * 1000; // 10 minutes max processing time
 
     for (const [jobId, job] of this.runningJobs.entries()) {
       // Clean up stale jobs
-      if (now - job.startTime > maxAge) {
+      if (now - job.startTime > JOB_TIMEOUTS.MAX_JOB_AGE) {
         logger.warn(`Cleaning up stale job: ${jobId}`, { 
           age: now - job.startTime,
           status: job.status 
@@ -132,7 +131,7 @@ class JobManager {
       }
       
       // Timeout jobs running too long
-      if (job.status === 'running' && (now - job.startTime > maxProcessingTime)) {
+      if (job.status === 'running' && (now - job.startTime > JOB_TIMEOUTS.MAX_PROCESSING_TIME)) {
         logger.warn(`Timing out job: ${jobId}`, { 
           processingTime: now - job.startTime,
           status: job.status 
@@ -140,10 +139,10 @@ class JobManager {
         
         // Mark as failed in database
         const updateResult = await supabase
-          .from('tasks')
+          .from('scans')
           .update({ 
-            status: 'failed',
-            error: 'Job timed out after maximum processing time',
+            result: 'failed',
+            confidence_score: 0,
             updated_at: new Date().toISOString()
           })
           .eq('id', jobId);
@@ -169,6 +168,6 @@ const jobManager = new JobManager();
 // Cleanup stale jobs every 5 minutes
 setInterval(async () => {
   await jobManager.cleanup();
-}, 5 * 60 * 1000);
+}, JOB_TIMEOUTS.CLEANUP_INTERVAL);
 
 export default jobManager;

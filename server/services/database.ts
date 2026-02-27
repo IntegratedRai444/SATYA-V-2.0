@@ -18,7 +18,7 @@ export const checkDatabaseConnection = async (): Promise<boolean> => {
   try {
     // Test Supabase connection with a simple health check
     const { data, error } = await supabase
-      .from('tasks')
+      .from('scans')
       .select('id')
       .limit(1);
     

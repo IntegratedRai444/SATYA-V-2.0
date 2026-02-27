@@ -29,20 +29,18 @@ router.get('/',
         .select(`
           id,
           type,
-          status,
-          file_name,
-          file_type,
-          file_size,
+          filename,
           result,
-          report_code,
+          confidence_score,
+          detection_details,
+          metadata,
           created_at,
-          completed_at
+          updated_at
         `)
         .eq('user_id', userId)
         .eq('type', 'analysis')
-        .is('deleted_at', null)
         .order('created_at', { ascending: false })
-        .range(offset, limit);
+        .range(offset, offset + limit - 1);
 
       if (error) {
         logger.error('Failed to fetch analysis history:', error);
@@ -54,7 +52,7 @@ router.get('/',
 
       // Get total count for pagination
       const { count } = await supabase
-        .from('tasks')
+        .from('scans')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', userId)
         .eq('type', 'analysis')
@@ -68,32 +66,21 @@ router.get('/',
           jobs: jobs?.map((job: {
             id: string;
             type: string;
-            status: string;
-            file_name: string;
-            file_type: string;
-            file_size: number;
-            result?: {
-              confidence?: number;
-              is_deepfake?: boolean;
-              model_name?: string;
-              model_version?: string;
-              summary?: Record<string, unknown>;
-            };
-            report_code: string;
+            filename: string;
+            result: string;
+            confidence_score: number;
+            detection_details: string;
+            metadata: Record<string, unknown>;
             created_at: string;
-            completed_at?: string;
+            updated_at: string;
           }) => ({
             ...job,
             modality: job.type,
-            filename: job.file_name,
-            mime_type: job.file_type,
-            size_bytes: job.file_size,
-            reportCode: job.report_code,  // ADD THIS LINE
-            confidence: job.result?.confidence,
-            is_deepfake: job.result?.is_deepfake,
-            model_name: job.result?.model_name,
-            model_version: job.result?.model_version,
-            summary: job.result?.summary
+            filename: job.filename,
+            confidence: job.confidence_score,
+            detectionDetails: job.detection_details,
+            metadata: job.metadata,
+            reportCode: job.filename, // ADD THIS LINE
           })) || [],
           pagination: {
             page,
@@ -148,7 +135,7 @@ router.delete('/:jobId',
 
       // First check if job belongs to user
       const { data: job, error: checkError } = await supabase
-        .from('tasks')
+        .from('scans')
         .select('id')
         .eq('id', jobId)
         .eq('user_id', userId)
@@ -164,7 +151,7 @@ router.delete('/:jobId',
 
       // Soft delete the job (set deleted_at timestamp)
       const { error: deleteError } = await supabase
-        .from('tasks')
+        .from('scans')
         .update({ deleted_at: new Date().toISOString() })
         .eq('id', jobId)
         .eq('user_id', userId)
@@ -205,9 +192,6 @@ export const createAnalysisJob = async (
   },
   jobId?: string // Allow external jobId to be passed
 ) => {
-  // Generate report code
-  const reportCode = `RPT-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-  
   // Generate jobId if not provided (ensures consistency)
   const finalJobId = jobId || randomUUID();
   
@@ -216,27 +200,19 @@ export const createAnalysisJob = async (
     .insert({
       id: finalJobId, // Use consistent ID
       user_id: userId,
-      type: 'analysis',
-      status: jobData.status || 'processing',
-      file_name: jobData.filename,
-      file_type: jobData.mime_type,
-      file_size: jobData.size_bytes,
-      report_code: reportCode,
+      type: jobData.modality,
+      filename: jobData.filename,
+      result: 'processing',
+      confidence_score: 0,
+      detection_details: null,
       metadata: {
         ...jobData.metadata,
-        media_type: jobData.modality
+        media_type: jobData.mime_type,
+        file_size: jobData.size_bytes
       },
-      progress: 0,
-      started_at: new Date().toISOString(),
-      result: {
-        confidence: 0,
-        is_deepfake: false,
-        model_name: 'SatyaAI',
-        model_version: '1.0.0',
-        summary: {}
-      }
+      created_at: new Date().toISOString()
     })
-    .select('id, report_code')
+    .select('id')
     .single();
 
   if (error) {
@@ -252,15 +228,11 @@ export const createAnalysisJob = async (
 
   logger.info('TASK INSERT SUCCESS', { 
     jobId: finalJobId,
-    returnedId: data?.id,
-    reportCode: data?.report_code 
+    returnedId: data?.id
   });
 
   return data;
 };
-
-// 🔥 REMOVED: Legacy updateJobWithResults function
-// Use updateAnalysisJobWithResults instead for consistency
 
 export const getPaginatedAnalysisHistory = async (
   userId: string,
@@ -270,22 +242,20 @@ export const getPaginatedAnalysisHistory = async (
   const offset = (page - 1) * limit;
 
   const { data, error } = await supabase
-    .from('tasks')
+    .from('scans')
     .select(`
       id,
       type,
-      status,
-      file_name,
-      file_type,
-      file_size,
+      filename,
       result,
-      report_code,
+      confidence_score,
+      detection_details,
+      metadata,
       created_at,
-      completed_at
+      updated_at
     `)
     .eq('user_id', userId)
     .eq('type', 'analysis')
-    .is('deleted_at', null)
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1);
 
@@ -295,11 +265,10 @@ export const getPaginatedAnalysisHistory = async (
   }
 
   const { count } = await supabase
-    .from('tasks')
+    .from('scans')
     .select('*', { count: 'exact', head: true })
     .eq('user_id', userId)
-    .eq('type', 'analysis')
-    .is('deleted_at', null);
+    .eq('type', 'analysis');
 
   return { items: data || [], total: count || 0 };
 };
@@ -318,32 +287,56 @@ export const updateAnalysisJobWithResults = async (
     error_message?: string;
   }
 ) => {
+  // 🔥 FINALIZATION GUARD: Check current status to prevent duplicate updates
+  const { data: currentJob } = await supabaseAdmin
+    .from('tasks')
+    .select('result, updated_at')
+    .eq('id', jobId)
+    .single();
+
+  // Skip update if already in final state
+  if (currentJob && (currentJob.result === 'completed' || currentJob.result === 'failed')) {
+    logger.warn('[FINALIZATION GUARD] Skipping duplicate update', {
+      jobId,
+      currentStatus: currentJob.result,
+      attemptedStatus: results.status,
+      lastUpdated: currentJob.updated_at
+    });
+    return currentJob;
+  }
+
   const { data, error: jobUpdateError } = await supabaseAdmin
     .from('tasks')
     .update({
-      status: results.status,
-      progress: results.status === 'completed' ? 100 : 0,
-      completed_at: results.status === 'completed' ? new Date().toISOString() : null,
-      error: results.error_message,
-      updated_at: new Date().toISOString(),
-      result: {
+      result: results.status,
+      confidence_score: results.confidence || (results.is_deepfake ? 0.8 : 0.2),
+      detection_details: {
         confidence: results.confidence || 0,
         is_deepfake: results.is_deepfake || false,
         model_name: results.model_name || 'SatyaAI',
         model_version: results.model_version || '1.0.0',
         summary: results.summary || {},
         analysis_data: results.analysis_data || {},
-        proof_json: results.proof_json || {}
-      }
+        proof_json: results.proof_json || {},
+        error_message: results.error_message
+      },
+      updated_at: new Date().toISOString()
     })
     .eq('id', jobId)
-    .select('id, status, updated_at')
+    .select('id, result, updated_at')
     .single();
 
   if (jobUpdateError) {
     logger.error('Failed to update analysis job:', jobUpdateError);
     throw new Error(`Failed to update analysis job: ${jobUpdateError.message}`);
   }
+
+  logger.info('[JOB STATUS UPDATED]', {
+    jobId,
+    fromStatus: currentJob?.result || 'unknown',
+    toStatus: results.status,
+    updatedAt: data?.updated_at
+  });
 
   return data;
 };

@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { Loader2, Upload, Video, CheckCircle, AlertCircle, Eye, Film } from 'lucide-react';
 import { useVideoAnalysis } from '@/hooks/useApi';
 import { pollAnalysisResult } from '@/lib/analysis/pollResult';
+import { normalizeJobResponse } from '@/lib/analysis/jobIdNormalizer';
 import logger from '@/lib/logger';
 import { formatFileSize } from '@/lib/file-utils';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
@@ -133,9 +134,11 @@ export default function VideoAnalysis() {
   // Poll for results when jobId is available
   useEffect(() => {
     if (jobId && analysisStatus === 'processing') {
-      const { cancel } = pollAnalysisResult(
+      const polling = pollAnalysisResult(
         jobId,
         {
+          timeout: 300000, // 5 minutes
+          maxRetries: 10,
           onProgress: (progress: number) => {
             // Update progress if needed
             if (import.meta.env.DEV) {
@@ -150,37 +153,35 @@ export default function VideoAnalysis() {
         }
       );
       
-      // Handle the polling result separately
-      pollAnalysisResult(jobId, {
-        timeout: 300000, // 5 minutes
-        maxRetries: 10
-      }).promise
+      // Handle polling result
+      polling.promise
         .then((job: { status: string; result?: { isAuthentic?: boolean; confidence?: number; details?: Record<string, unknown>; metrics?: { processingTime?: number; modelVersion?: string } }; id?: string }) => {
-          if (job.status === 'completed' && job.result) {
+          const normalizedJob = normalizeJobResponse(job);
+          if (normalizedJob.status === 'completed' && normalizedJob.result) {
             const analysisResult: AnalysisResult = {
               result: {
-                isAuthentic: job.result.isAuthentic ?? false,
-                confidence: job.result.confidence ?? 0,
+                isAuthentic: normalizedJob.result.isAuthentic ?? false,
+                confidence: normalizedJob.result.confidence ?? 0,
                 details: {
-                  isDeepfake: (job.result.details?.isDeepfake as boolean) ?? false,
-                  modelInfo: (job.result.details?.modelInfo as Record<string, unknown>) ?? {},
+                  isDeepfake: (normalizedJob.result.details?.isDeepfake as boolean) ?? false,
+                  modelInfo: (normalizedJob.result.details?.modelInfo as Record<string, unknown>) ?? {},
                 },
                 metrics: {
-                  processingTime: job.result.metrics?.processingTime ?? 0,
-                  modelVersion: job.result.metrics?.modelVersion ?? '1.0.0'
+                  processingTime: normalizedJob.result.metrics?.processingTime ?? 0,
+                  modelVersion: normalizedJob.result.metrics?.modelVersion ?? '1.0.0'
                 }
               },
               key_findings: [
-                (job.result.isAuthentic ?? false) 
+                (normalizedJob.result.isAuthentic ?? false) 
                   ? 'No signs of manipulation detected' 
                   : 'Potential signs of manipulation found',
-                `Confidence: ${((job.result.confidence ?? 0) * 100).toFixed(1)}%`,
+                `Confidence: ${((normalizedJob.result.confidence ?? 0) * 100).toFixed(1)}%`,
                 'Video analysis completed successfully'
               ],
-              case_id: job.id || `CASE_${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
+              case_id: normalizedJob.id || `CASE_${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
               analysis_date: new Date().toISOString(),
               technical_details: {
-                processing_time_seconds: job.result.metrics?.processingTime ?? 0
+                processing_time_seconds: normalizedJob.result.metrics?.processingTime ?? 0
               }
             };
             setAnalysisResult(analysisResult);
@@ -193,9 +194,7 @@ export default function VideoAnalysis() {
           setAnalysisStatus('failed');
         });
       
-      return () => {
-        cancel();
-      };
+      return polling.cancel;  // ✅ FIX: Return proper cleanup function
     }
   }, [jobId, analysisStatus]);
 

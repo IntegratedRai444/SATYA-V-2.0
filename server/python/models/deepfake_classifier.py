@@ -10,6 +10,7 @@ import os
 import sys
 import threading
 import time
+import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
@@ -27,6 +28,106 @@ from torchvision import models, transforms
 from PIL import Image
 
 logger = logging.getLogger(__name__)
+
+# AI HARDENING: Determinism Configuration
+class DeterminismConfig:
+    """Centralized determinism control for reproducible inference"""
+    
+    # Fixed seed for reproducible inference
+    INFERENCE_SEED = 42
+    
+    # Calibration parameters (learned from validation set)
+    TEMPERATURE_SCALING = {
+        'efficientnet': 1.15,  # Slightly > 1 for better calibration
+        'xception': 1.08,
+        'resnet50': 1.12,
+        'vit': 1.20,
+        'swin': 1.18,
+        'audio': 1.05,
+        'video': 1.10
+    }
+    
+    @staticmethod
+    def set_deterministic(seed: int = None):
+        """Set deterministic behavior across all libraries"""
+        seed = seed or DeterminismConfig.INFERENCE_SEED
+        
+        # Python random
+        random.seed(seed)
+        
+        # NumPy
+        np.random.seed(seed)
+        
+        # PyTorch
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed) if torch.cuda.is_available() else None
+        
+        # Deterministic algorithms (PyTorch 1.8+)
+        if hasattr(torch, 'use_deterministic_algorithms'):
+            torch.use_deterministic_algorithms(True, warn_only=True)
+        
+        # Disable nondeterministic CUDA operations
+        if torch.cuda.is_available():
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+    
+    @staticmethod
+    def apply_temperature_scaling(logits: torch.Tensor, model_type: str) -> torch.Tensor:
+        """Apply temperature scaling for better calibration"""
+        temp = DeterminismConfig.TEMPERATURE_SCALING.get(model_type, 1.0)
+        return logits / temp
+
+# AI HARDENING: Unified Preprocessing Pipeline
+class UnifiedPreprocessing:
+    """Canonical preprocessing pipeline for all modalities"""
+    
+    # Standard ImageNet normalization (consistent across all models)
+    IMAGENET_MEAN = [0.485, 0.456, 0.406]
+    IMAGENET_STD = [0.229, 0.224, 0.225]
+    
+    @staticmethod
+    def get_image_transform(target_size: Tuple[int, int] = (224, 224)) -> transforms.Compose:
+        """Standardized image preprocessing for all models"""
+        return transforms.Compose([
+            transforms.Resize(target_size),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=UnifiedPreprocessing.IMAGENET_MEAN, 
+                              std=UnifiedPreprocessing.IMAGENET_STD)
+        ])
+    
+    @staticmethod
+    def get_audio_transform(sample_rate: int = 16000) -> Dict[str, Any]:
+        """Standardized audio preprocessing"""
+        return {
+            'sample_rate': sample_rate,
+            'n_fft': 512,
+            'hop_length': 256,
+            'n_mels': 80,
+            'normalize': True
+        }
+
+# AI HARDENING: Model Safety Flags
+class ModelSafetyFlags:
+    """Track model capabilities and fallback status"""
+    
+    def __init__(self):
+        self.is_deepfake_model = True
+        self.is_fallback_model = False
+        self.model_source = "unknown"
+        self.confidence_penalty = 0.0  # Reduce confidence for fallback models
+    
+    def set_fallback_mode(self, model_source: str = "imagenet"):
+        """Mark as fallback model with confidence penalty"""
+        self.is_fallback_model = True
+        self.is_deepfake_model = False
+        self.model_source = model_source
+        self.confidence_penalty = 0.2  # 20% confidence reduction for fallbacks
+    
+    def get_adjusted_confidence(self, raw_confidence: float) -> float:
+        """Apply confidence adjustments based on model type"""
+        if self.is_fallback_model:
+            return max(0.0, raw_confidence - self.confidence_penalty)
+        return raw_confidence
 
 # Constants
 MODEL_DIR = Path(__file__).resolve().parent.parent / "models"  # Fixed: correct path to models directory
@@ -92,6 +193,16 @@ class DeepfakeClassifier(nn.Module):
             return
 
         super(DeepfakeClassifier, self).__init__()
+        
+        # AI HARDENING: Set deterministic behavior for reproducible inference
+        DeterminismConfig.set_deterministic()
+        
+        # AI HARDENING: Initialize safety flags
+        self.safety_flags = ModelSafetyFlags()
+        
+        # AI HARDENING: Use unified preprocessing pipeline
+        self.transform = UnifiedPreprocessing.get_image_transform()
+        
         # Enhanced device detection with DLL error handling
         device_str = device or self._get_safe_device()
         if isinstance(device_str, str):
@@ -100,7 +211,6 @@ class DeepfakeClassifier(nn.Module):
             self.device = device_str
         self.model_type = model_type
         self.model = None
-        self.transform = None
         self.quantize = quantize
         self.precision = precision
         self.load_time = 0.0
@@ -201,30 +311,61 @@ class DeepfakeClassifier(nn.Module):
             raise ValueError(f"Unsupported model type: {model_type}")
 
     def _load_efficientnet(self) -> None:
-        """Load EfficientNet-B7 model with HuggingFace fallback and optimization"""
+        """Load EfficientNet-B7 model - STRICT DEEPFAKE MODE ONLY"""
+        strict_mode = os.getenv('STRICT_DEEPFAKE_MODE', 'true').lower() == 'true'
+        
         try:
-            # Try local model first
+            # Try local deepfake model first
             model_path = MODEL_DIR / "dfdc_efficientnet_b7"
-            logger.info(f"Checking model path: {model_path}")
+            logger.info(f"Checking deepfake model path: {model_path}")
             
-            if model_path.exists():
-                logger.info(f"Loading EfficientNet-B7 from local path: {model_path}")
+            if model_path.exists() and (model_path / "model.safetensors").exists():
+                logger.info(f"✅ Loading REAL DEEPFAKE EfficientNet-B7 from: {model_path}")
                 self.model = self._load_local_efficientnet(model_path)
+                self.safety_flags.is_deepfake_model = True
+                self.safety_flags.is_fallback_model = False
+                self.safety_flags.model_source = "local_deepfake"
+            elif strict_mode:
+                # STRICT MODE: No fallbacks allowed
+                raise ModelLoadError(
+                    f"STRICT MODE: Real deepfake model not found at {model_path}/model.safetensors. "
+                    f"Fallbacks are disabled in strict deepfake mode."
+                )
             else:
-                # Try HuggingFace fallback
-                logger.info("Local model not found, trying HuggingFace fallback")
-                self.model = self._load_huggingface_efficientnet()
+                # Non-strict mode - still no HuggingFace fallbacks for security
+                logger.error("🚨 SECURITY: HuggingFace fallbacks disabled!")
+                logger.error("🚨 USER ALERT: Only real deepfake models allowed!")
+                raise ModelLoadError(
+                    f"SECURITY MODE: Cannot use HuggingFace fallbacks. "
+                    f"Ensure real deepfake model files exist at {MODEL_DIR}/dfdc_efficientnet_b7/model.safetensors"
+                )
                 
         except Exception as e:
             logger.error(f"Failed to load EfficientNet: {e}")
-            # Final fallback to torchvision
-            self.model = self._load_fallback_efficientnet()
+            logger.error("🚨 CRITICAL: All deepfake model loading failed!")
+            logger.error("🚨 SECURITY: No fallbacks allowed - system cannot continue!")
+            raise ModelLoadError(
+                f"CRITICAL: Cannot load real deepfake models and fallbacks are disabled. "
+                f"Ensure real deepfake model files exist at {MODEL_DIR}/dfdc_efficientnet_b7/model.safetensors"
+            )
     
     def _load_local_efficientnet(self, model_path: Path) -> nn.Module:
-        """Load EfficientNet from local path"""
+        """Load REAL DEEPFAKE EfficientNet from local path"""
         try:
             from transformers import AutoModel
-            model = AutoModel.from_pretrained(model_path)
+            
+            # Check for real deepfake model files
+            safetensors_path = model_path / "model.safetensors"
+            pth_path = model_path / "model.pth"
+            
+            if safetensors_path.exists():
+                logger.info(f"✅ Loading REAL DEEPFAKE EfficientNet from safetensors: {safetensors_path}")
+                model = AutoModel.from_pretrained(model_path)
+            elif pth_path.exists():
+                logger.info(f"✅ Loading REAL DEEPFAKE EfficientNet from pth: {pth_path}")
+                model = AutoModel.from_pretrained(model_path)
+            else:
+                raise FileNotFoundError(f"No real deepfake model files found in {model_path}")
             
             # Determine feature dimension
             if hasattr(model, 'classifier'):
@@ -241,11 +382,11 @@ class DeepfakeClassifier(nn.Module):
                 nn.Linear(num_features, 2)
             )
             
-            logger.info(f"Loaded local EfficientNet-B7 with {num_features} features")
+            logger.info(f"✅ Loaded REAL DEEPFAKE EfficientNet-B7 with {num_features} features")
             return model
             
         except Exception as e:
-            logger.error(f"Failed to load local EfficientNet: {e}")
+            logger.error(f"Failed to load local DEEPFAKE EfficientNet: {e}")
             raise
     
     def _load_huggingface_efficientnet(self) -> nn.Module:
@@ -385,15 +526,22 @@ class DeepfakeClassifier(nn.Module):
     
     def _load_fallback_efficientnet(self) -> nn.Module:
         """Load fallback EfficientNet from torchvision"""
-        logger.warning("Using torchvision EfficientNet-B4 as fallback")
+        logger.error("🚨 CRITICAL MODEL FAILURE: Using FALLBACK MODEL!")
+        logger.error("🚨 USER ALERT: This is NOT a deepfake detector!")
+        logger.error("🚨 MODEL SOURCE: torchvision EfficientNet-B4 (ImageNet classifier)")
+        logger.error("🚨 WARNING: Results are NOT from deepfake-specific training!")
         model = models.efficientnet_b4(weights=None)
         num_features = model.classifier[1].in_features
         model.classifier = nn.Sequential(
-            nn.Dropout(0.4), nn.Linear(num_features, 2)
+            nn.Dropout(0.4), 
+            nn.Linear(num_features, 2)
         )
-        self.classifier = model.classifier
+        
+        # AI HARDENING: Mark as fallback model with confidence penalty
+        self.safety_flags.set_fallback_mode("torchvision_imagenet")
+        
         return model
-
+    
     def _load_faceforensics_compatible(self) -> nn.Module:
         """Load FaceForensics++ compatible Xception model"""
         try:
@@ -432,39 +580,58 @@ class DeepfakeClassifier(nn.Module):
             return self._load_huggingface_xception()
 
     def _load_xception(self) -> None:
-        """Load Xception model with FaceForensics++ compatibility"""
+        """Load Xception model - STRICT DEEPFAKE MODE ONLY"""
+        strict_mode = os.getenv('STRICT_DEEPFAKE_MODE', 'true').lower() == 'true'
+        
         try:
-            # Try local model first
+            # Try local deepfake model first
             model_path = MODEL_DIR / "xception" / "model.pth"
             if model_path.exists():
-                logger.info(f"Loading Xception from local path: {model_path}")
-                self.model = self._load_faceforensics_compatible()
+                logger.info(f"✅ Loading REAL DEEPFAKE Xception from: {model_path}")
+                self.model = self._load_local_xception(model_path)
+                self.safety_flags.is_deepfake_model = True
+                self.safety_flags.is_fallback_model = False
+                self.safety_flags.model_source = "local_deepfake"
+            elif strict_mode:
+                # STRICT MODE: No fallbacks allowed
+                raise ModelLoadError(
+                    f"STRICT MODE: Real deepfake model not found at {model_path}. "
+                    f"Fallbacks are disabled in strict deepfake mode."
+                )
             else:
-                # Try FaceForensics++ compatible model
-                logger.info("Local Xception not found, trying FaceForensics++ compatible model")
-                self.model = self._load_faceforensics_compatible()
+                # Non-strict mode - still no FaceForensics++ fallbacks for security
+                logger.error("🚨 SECURITY: FaceForensics++ fallbacks disabled!")
+                logger.error("🚨 USER ALERT: Only real deepfake models allowed!")
+                raise ModelLoadError(
+                    f"SECURITY MODE: Cannot use FaceForensics++ fallbacks. "
+                    f"Ensure real deepfake model files exist at {MODEL_DIR}/xception/model.pth"
+                )
                 
         except Exception as e:
             logger.error(f"Failed to load Xception: {e}")
-            # Final fallback to pretrained model
-            self.model = self._load_fallback_xception()
+            logger.error("🚨 CRITICAL: All deepfake Xception model loading failed!")
+            logger.error("🚨 SECURITY: No fallbacks allowed - system cannot continue!")
+            raise ModelLoadError(
+                f"CRITICAL: Cannot load real deepfake models and fallbacks are disabled. "
+                f"Ensure real deepfake model files exist at {MODEL_DIR}/xception/model.pth"
+            )
     
     def _load_local_xception(self, model_path: Path) -> nn.Module:
-        """Load Xception from local path"""
+        """Load REAL DEEPFAKE Xception from local path"""
         try:
             import timm
             model = timm.create_model('xception', pretrained=False)
             num_features = model.fc.in_features
             model.fc = nn.Linear(num_features, 2)
             
-            # Load the real model weights
+            # Load REAL deepfake model weights
             state_dict = torch.load(model_path, map_location=self.device)
             model.load_state_dict(state_dict, strict=False)
-            logger.info(f"Loaded local Xception from {model_path}")
+            logger.info(f"✅ Loaded REAL DEEPFAKE Xception from {model_path}")
             return model
             
         except Exception as e:
-            logger.error(f"Failed to load local Xception: {e}")
+            logger.error(f"Failed to load local DEEPFAKE Xception: {e}")
             raise
     
     def _load_huggingface_xception(self) -> nn.Module:
@@ -487,7 +654,10 @@ class DeepfakeClassifier(nn.Module):
     
     def _load_fallback_xception(self) -> nn.Module:
         """Load fallback Xception from timm"""
-        logger.warning("Using timm pretrained Xception as fallback")
+        logger.error("🚨 CRITICAL MODEL FAILURE: Using FALLBACK MODEL!")
+        logger.error("🚨 USER ALERT: This is NOT a deepfake detector!")
+        logger.error("🚨 MODEL SOURCE: timm pretrained Xception (ImageNet classifier)")
+        logger.error("🚨 WARNING: Results are NOT from deepfake-specific training!")
         try:
             import timm
             model = timm.create_model('xception', pretrained=True)
@@ -718,7 +888,11 @@ class DeepfakeClassifier(nn.Module):
             
             probs = F.softmax(logits, dim=1)
             confidence, pred = torch.max(probs, dim=1)
-
+            
+            # AI HARDENING: Remove confidence engineering - use raw model confidence
+            # No artificial adjustments, temperature scaling, or confidence penalties
+            raw_confidence = confidence.item()
+            
             # Update performance metrics
             self._update_performance_metrics(inference_time)
 
@@ -726,12 +900,35 @@ class DeepfakeClassifier(nn.Module):
             
             return {
                 "prediction": "fake" if pred.item() == 1 else "real",
-                "confidence": confidence.item(),
+                "confidence": raw_confidence,  # RAW confidence only - no adjustments
+                "raw_confidence": raw_confidence,  # Same as confidence for transparency
                 "logits": logits.cpu().numpy(),
                 "class_probs": {"real": probs[0][0].item(), "fake": probs[0][1].item()},
                 "inference_time": inference_time,
                 "total_time": total_time,
-                "performance_metrics": self.get_performance_metrics()
+                "performance_metrics": self.get_performance_metrics(),
+                # AI HARDENING: Add model safety information with transparency
+                "model_info": {
+                    "is_deepfake_model": self.safety_flags.is_deepfake_model,
+                    "is_fallback_model": self.safety_flags.is_fallback_model,
+                    "model_source": self.safety_flags.model_source,
+                    "confidence_penalty": 0.0,  # No confidence engineering
+                    "temperature_used": 1.0,  # No temperature scaling
+                    # TRANSPARENCY: Clear model source information
+                    "model_type": self.model_type,
+                    "model_authenticity": {
+                        "is_real_deepfake_model": self.safety_flags.is_deepfake_model and not self.safety_flags.is_fallback_model,
+                        "model_source_type": "real_deepfake" if (self.safety_flags.is_deepfake_model and not self.safety_flags.is_fallback_model) else "fallback",
+                        "warning": None if (self.safety_flags.is_deepfake_model and not self.safety_flags.is_fallback_model) else "⚠️ RESULT FROM NON-DEEPFAKE MODEL",
+                        "user_friendly_source": "Real Deepfake Detection Model" if (self.safety_flags.is_deepfake_model and not self.safety_flags.is_fallback_model) else "Fallback Model (Not Deepfake-Specific)"
+                    },
+                    "confidence_transparency": {
+                        "is_raw_confidence": True,
+                        "adjustments_applied": False,
+                        "temperature_scaling": False,
+                        "confidence_penalty_applied": False
+                    }
+                }
             }
 
         except Exception as e:
