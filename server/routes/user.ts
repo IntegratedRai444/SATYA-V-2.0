@@ -232,9 +232,9 @@ router.delete('/account', userRateLimit, auditLogger('user_delete', 'user_accoun
       .update({ deleted_at: new Date().toISOString() })
       .eq('user_id', userId);
 
-    // Soft delete user's scans
+    // Soft delete user's tasks
     await supabase
-      .from('scans')
+      .from('tasks')
       .update({ deleted_at: new Date().toISOString() })
       .eq('user_id', userId);
 
@@ -281,7 +281,7 @@ router.get('/stats', userRateLimit, auditLogger('sensitive_data_access', 'user_s
 
     // Get user's analysis statistics
     const { data: tasks } = await supabase
-      .from('scans')
+      .from('tasks')
       .select('result, type, created_at')
       .eq('user_id', userId)
       .is('deleted_at', null);
@@ -329,7 +329,7 @@ router.get('/analytics', userRateLimit, auditLogger('sensitive_data_access', 'us
 
     // Get user's analysis data
     const { data: tasks, error: tasksError } = await supabase
-      .from('scans')
+      .from('tasks')
       .select('id, type, created_at, filename, result, confidence_score')
       .eq('user_id', userId)
       .is('deleted_at', null)

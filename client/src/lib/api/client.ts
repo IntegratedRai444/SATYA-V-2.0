@@ -68,6 +68,15 @@ export interface RequestConfig extends AxiosRequestConfig {
 // Constants
 const API_VERSION = 'v2';
 const DEFAULT_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// 🔥 CRITICAL FIX: Canonical timeouts from server contracts
+const CANONICAL_TIMEOUTS = {
+  FRONTEND_ANALYSIS: 10 * 60 * 1000, // 10 minutes
+  NODE_BRIDGE: 15 * 60 * 1000, // 15 minutes
+  PYTHON_ML: 15 * 60 * 1000, // 15 minutes
+  FRONTEND_UPLOAD: 2 * 60 * 1000, // 2 minutes
+  FRONTEND_GET: 30 * 1000, // 30 seconds
+} as const;
 const DEFAULT_RETRY_CONFIG: RetryConfig = {
   retries: 3,
   retryDelay: 1000,
@@ -158,21 +167,12 @@ const createEnhancedAxiosInstance = (baseURL: string): AxiosInstance => {
         source: createCancellableSource()
       };
 
-      // Set appropriate timeout based on request type and content
-      if (config.timeout === undefined) {
-        const method = config.method?.toUpperCase() || 'GET';
-        const isUpload = config.data instanceof FormData;
-        const isVideoAnalysis = config.url?.includes('/video') || config.url?.includes('/batch');
-        
-        if (isUpload) {
-          config.timeout = 120000; // 2 minutes for uploads
-        } else if (isVideoAnalysis) {
-          config.timeout = 300000; // 5 minutes for video analysis
-        } else if (method === 'GET') {
-          config.timeout = 30000; // 30 seconds for normal GET requests
-        } else {
-          config.timeout = 60000; // 1 minute for other requests
-        }
+      // 🔥 CRITICAL FIX: Disable retries for FormData uploads and analysis endpoints
+      const isUpload = config.data instanceof FormData;
+      const isAnalysis = config.url?.includes('/analysis/');
+      
+      if (isUpload || isAnalysis) {
+        config.retryCount = 99; // Prevent retries for uploads and analysis
       }
 
       // Add CSRF token to all non-GET requests

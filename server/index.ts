@@ -9,6 +9,7 @@ import { routes } from './routes';
 import { createRequestLogger } from './config/logger';
 import { systemRouter } from './routes/system-health';
 import { reconcileStaleJobs, cleanupRunningJobs } from './startup/reconcileJobs';
+import { migrateJsonbResults } from './scripts/fixJsonbResults';
 
 // Load environment variables
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
@@ -149,6 +150,18 @@ const httpServer = createServer(app);
 httpServer.listen(Number(port), '0.0.0.0', async () => {
   console.log(`Server running on port ${port}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  
+  // 🔥 JSONB CONSISTENCY FIX - One-time migration
+  if (process.env.RUN_JSONB_MIGRATION === 'true') {
+    console.log('🔧 Running JSONB consistency migration...');
+    try {
+      await migrateJsonbResults();
+      console.log('✅ JSONB migration completed');
+    } catch (error) {
+      console.error('❌ JSONB migration failed:', error);
+      console.log('⚠️  Continuing startup despite migration failure...');
+    }
+  }
   
   // 🔥 FIX 3 — Job Reconciliation on Server Boot
   console.log('🔄 Starting job reconciliation...');

@@ -1,9 +1,11 @@
 """
 Detector Singleton Service
 Ensures ML detectors are initialized only once and shared across the application
+Hybrid loading: Image = Eager, Others = Lazy
 """
 
 import logging
+import os
 from typing import Optional, Dict, Any
 from threading import Lock
 
@@ -12,7 +14,7 @@ logger = logging.getLogger(__name__)
 class DetectorSingleton:
     """
     Thread-safe singleton for ML detectors
-    Prevents multiple initialization of expensive ML models
+    Hybrid loading strategy: Image models preload eagerly, others load lazily
     """
     
     _instance = None
@@ -30,27 +32,105 @@ class DetectorSingleton:
         if self._initialized:
             return
             
-        # Lazy initialization - don't load models immediately
+        # 🔥 PRODUCTION: Hybrid loading configuration
         self._detectors = {}
         self._config = {}
+        self._eager_loaded = set()  # Track eagerly loaded models
         self._initialized = True
-        logger.info("🔒 DetectorSingleton initialized (lazy loading enabled)")
+        
+        # Check if image model should be eagerly loaded
+        self._eager_load_image = os.getenv('EAGER_LOAD_IMAGE', 'true').lower() == 'true'
+        
+        logger.info(f"🔒 DetectorSingleton initialized (hybrid loading: image={'eager' if self._eager_load_image else 'lazy'})")
+    
+    async def eager_load_image_detector(self):
+        """
+        🔥 PRODUCTION: Eagerly load image detector during warmup
+        This ensures image_detector=true after warmup, no lazy loading dependency
+        """
+        if not self._eager_load_image:
+            logger.info("⚠️ Eager image loading disabled via EAGER_LOAD_IMAGE=false")
+            return False
+            
+        if 'image' in self._eager_loaded:
+            logger.info("✅ Image detector already eagerly loaded")
+            return True
+            
+        try:
+            with self._lock:
+                if 'image' in self._detectors:
+                    logger.info("✅ Image detector already available (cached)")
+                    self._eager_loaded.add('image')
+                    return True
+                
+                logger.info("🔥 Eager loading image detector (warmup initialization)")
+                
+                # 🔥 PRODUCTION: Safe memory guards for eager loading
+                import torch
+                torch.set_num_threads(2)  # Limit threads for memory efficiency
+                
+                # Enable GPU by default if available
+                enable_gpu = self._is_cuda_available()
+                
+                # Initialize image detector with memory safety
+                with torch.no_grad():  # Memory efficient
+                    from detectors.image_detector import ImageDetector
+                    detector = ImageDetector(enable_gpu=enable_gpu)
+                
+                if detector is not None:
+                    self._detectors['image'] = detector
+                    self._eager_loaded.add('image')
+                    logger.info("✅ Image detector eagerly loaded and cached")
+                    return True
+                else:
+                    logger.error("❌ Image detector initialization returned None")
+                    return False
+                    
+        except MemoryError as e:
+            logger.error(f"❌ Image detector eager loading failed - MemoryError: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"❌ Image detector eager loading failed: {type(e).__name__}: {e}")
+            return False
     
     def get_detector(self, detector_type: str, config: Optional[Dict[str, Any]] = None):
         """
         Get a detector instance, initializing it if necessary
-        Lazy loading - only initialize when first requested
+        Hybrid loading: Image = eager (if preloaded), Others = lazy
         """
         with self._lock:
             if detector_type in self._detectors:
                 return self._detectors[detector_type]
             
-            # Only initialize when first requested
+            # For image detector, check if it was eagerly loaded
+            if detector_type == 'image' and detector_type in self._eager_loaded:
+                logger.info("✅ Using eagerly loaded image detector")
+                return self._detectors.get(detector_type)
+            
+            # Lazy loading for other detectors or fallback
             logger.info(f"🔧 Lazy loading {detector_type} detector")
             detector = self._initialize_detector(detector_type, config or {})
             if detector:
                 self._detectors[detector_type] = detector
                 logger.info(f"✅ {detector_type} detector cached in singleton")
+            
+            return detector
+    
+    def get_image_detector(self):
+        """
+        🔥 PRODUCTION: Explicit method to get image detector
+        Forces initialization if not already loaded
+        """
+        with self._lock:
+            if 'image' in self._detectors:
+                return self._detectors['image']
+            
+            # Force initialization if not available
+            logger.info("🔥 Forcing image detector initialization")
+            detector = self._initialize_detector('image', {})
+            if detector:
+                self._detectors['image'] = detector
+                logger.info("✅ Image detector force-initialized and cached")
             
             return detector
     
@@ -126,16 +206,22 @@ class DetectorSingleton:
             return detector_type in self._detectors and self._detectors[detector_type] is not None
     
     def get_detector_status(self) -> Dict[str, Dict[str, Any]]:
-        """Get status of all detectors"""
+        """Get status of all detectors including eager loading info"""
         with self._lock:
             status = {}
             for detector_type, detector in self._detectors.items():
                 status[detector_type] = {
                     'available': detector is not None,
                     'initialized': detector is not None,
-                    'type': detector_type
+                    'type': detector_type,
+                    'eager_loaded': detector_type in self._eager_loaded
                 }
             return status
+    
+    def is_image_detector_eager_loaded(self) -> bool:
+        """Check if image detector was eagerly loaded"""
+        with self._lock:
+            return 'image' in self._eager_loaded and 'image' in self._detectors
     
     def clear_detector(self, detector_type: str):
         """Clear a specific detector from cache"""

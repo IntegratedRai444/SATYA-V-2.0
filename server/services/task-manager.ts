@@ -1,5 +1,6 @@
 import { supabase } from '../config/supabase';
 import { logger } from '../config/logger';
+import { safeJson } from '../utils/result-parser';
 
 export interface Task {
   id: string;
@@ -67,7 +68,7 @@ export interface DetectionDetail {
 }
 
 export interface AnalysisResult {
-  authenticity: 'real' | 'fake' | 'inconclusive';
+  prediction: 'real' | 'fake' | 'inconclusive';
   confidence: number;
   detectionDetails: DetectionDetail[];
   metadata?: {
@@ -95,7 +96,7 @@ export class TaskManager {
         user_id: userId,
         type,
         filename: fileInfo.name,
-        result: 'processing',
+        result: safeJson({ status: 'processing' }),
         confidence_score: 0,
         detection_details: null,
         metadata: {
@@ -108,7 +109,7 @@ export class TaskManager {
         created_at: new Date().toISOString()
       };
       const { data: task, error } = await supabase
-        .from('scans')
+        .from('tasks')
         .insert(taskData)
         .select('*')
         .single();
@@ -132,7 +133,7 @@ export class TaskManager {
   async getTaskStatus(taskId: string): Promise<Task | null> {
     try {
       const { data: task, error } = await supabase
-        .from('scans')
+        .from('tasks')
         .select('*')
         .eq('id', taskId)
         .single();
@@ -149,10 +150,10 @@ export class TaskManager {
         status: task.result === 'processing' ? 'processing' : task.result === 'failed' ? 'failed' : 'completed',
         progress: task.confidence_score > 0 ? 100 : 0,
         fileName: task.filename,
-        fileSize: 0, // Not stored in scans table
+        fileSize: 0, // Not stored in tasks table
         fileType: task.type,
-        filePath: '', // Not stored in scans table
-        reportCode: '', // Not stored in scans table
+        filePath: '', // Not stored in tasks table
+        reportCode: '', // Not stored in tasks table
         result: task.detection_details ? task.detection_details : null,
         error: task.confidence_score === 0 ? { message: 'Analysis failed' } : null,
         startedAt: task.created_at ? new Date(task.created_at) : null,
@@ -202,9 +203,9 @@ export class TaskManager {
       }
 
       const { error } = await supabase
-        .from('scans')
+        .from('tasks')
         .update({
-          result: updateData.status === 'completed' ? 'completed' : updateData.status === 'failed' ? 'failed' : 'processing',
+          result: safeJson({ status: updateData.status, progress: updateData.progress }),
           confidence_score: updateData.progress === 100 ? 1 : updateData.progress / 100,
           updated_at: new Date().toISOString()
         })
@@ -227,9 +228,9 @@ export class TaskManager {
   async completeTask(taskId: string, result: AnalysisResult): Promise<void> {
     try {
       const { error } = await supabase
-        .from('scans')
+        .from('tasks')
         .update({
-          result: 'completed',
+          result: safeJson({ status: 'completed', prediction: result.prediction, confidence: result.confidence }),
           confidence_score: result.confidence || 1,
           detection_details: result,
           updated_at: new Date().toISOString()
@@ -253,9 +254,9 @@ export class TaskManager {
   async failTask(taskId: string): Promise<void> {
     try {
       const { error: updateError } = await supabase
-        .from('scans')
+        .from('tasks')
         .update({
-          result: 'failed',
+          result: safeJson({ status: 'failed', reason: 'task_failed' }),
           confidence_score: 0,
           updated_at: new Date().toISOString()
         })
@@ -280,7 +281,7 @@ export class TaskManager {
     try {
       // Build query
       const { data, error } = await supabase
-        .from('scans')
+        .from('tasks')
         .select('*')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
@@ -289,25 +290,25 @@ export class TaskManager {
         throw new Error(`Failed to get user tasks: ${error.message}`);
       }
       
-      // Map scans to Task interface
-      return (data || []).map((scan) => ({
-        id: scan.id,
-        createdAt: new Date(scan.created_at),
-        updatedAt: scan.updated_at ? new Date(scan.updated_at) : null,
-        userId: scan.user_id,
-        type: scan.type,
-        status: scan.result === 'processing' ? 'processing' : scan.result === 'failed' ? 'failed' : 'completed',
-        progress: scan.confidence_score > 0 ? 100 : 0,
-        fileName: scan.filename,
+      // Map tasks to Task interface
+      return (data || []).map((task) => ({
+        id: task.id,
+        createdAt: new Date(task.created_at),
+        updatedAt: task.updated_at ? new Date(task.updated_at) : null,
+        userId: task.user_id,
+        type: task.type,
+        status: task.result === 'processing' ? 'processing' : task.result === 'failed' ? 'failed' : 'completed',
+        progress: task.confidence_score > 0 ? 100 : 0,
+        fileName: task.filename,
         fileSize: 0,
-        fileType: scan.type,
+        fileType: task.type,
         filePath: '',
         reportCode: '',
-        result: scan.detection_details ? scan.detection_details : null,
-        error: scan.confidence_score === 0 ? { message: 'Analysis failed' } : null,
-        startedAt: scan.created_at ? new Date(scan.created_at) : null,
-        completedAt: scan.updated_at ? new Date(scan.updated_at) : null,
-        metadata: scan.metadata ? scan.metadata : {}
+        result: task.detection_details ? task.detection_details : null,
+        error: task.confidence_score === 0 ? { message: 'Analysis failed' } : null,
+        startedAt: task.created_at ? new Date(task.created_at) : null,
+        completedAt: task.updated_at ? new Date(task.updated_at) : null,
+        metadata: task.metadata ? task.metadata : {}
       })) as Task[];
     } catch (error) {
       logger.error('Error getting user tasks', error as Error);

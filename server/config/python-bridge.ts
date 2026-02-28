@@ -1,226 +1,238 @@
-import axios from 'axios';
 import { pythonConfig } from './python-config';
 import { logger } from './logger';
-import { getAccessToken } from "../auth/getAccessToken";
 
-// 🔥 FIX 4 — Import AbortController for timeout enforcement
-// Use global AbortController available in Node.js 15+
-declare global {
-  interface AbortSignal {
-    readonly aborted: boolean;
-    addEventListener(type: string, listener: () => void): void;
-    removeEventListener(type: string, listener: () => void): void;
-  }
-  interface AbortController {
-    readonly signal: AbortSignal;
-    abort(): void;
-  }
-  var AbortController: {
-    new (): AbortController;
-    prototype: AbortController;
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const axiosInstance = require('axios');
+
+// Node.js globals for TypeScript
+declare const setInterval: (callback: () => void, ms: number) => NodeJS.Timeout;
+declare const NodeJS: {
+  Timeout: unknown;
+};
+
+// 🔥 PRODUCTION: Readiness cache and auto-warmup system
+interface ReadinessCache {
+  ready: boolean;
+  lastCheck: number;
+  lastWarmup: number;
+  warmupInProgress: boolean;
+  retryCount: number;
+}
+
+class PythonBridgeManager {
+  private readinessCache: ReadinessCache = {
+    ready: false,
+    lastCheck: 0,
+    lastWarmup: 0,
+    warmupInProgress: false,
+    retryCount: 0
   };
-}
-
-// Define custom types since axios types are problematic
-type CustomAxiosRequestConfig = {
-  url?: string;
-  method?: string;
-  baseURL?: string;
-  headers?: Record<string, string>;
-  data?: unknown;
-  params?: unknown;
-  timeout?: number;
-  validateStatus?: (status: number) => boolean;
-};
-
-type CustomAxiosResponse<T = unknown> = {
-  data: T;
-  status: number;
-  statusText: string;
-  headers?: Record<string, string>;
-  config?: CustomAxiosRequestConfig;
-};
-
-type CustomAxiosInstance = {
-  request<T = unknown>(config: CustomAxiosRequestConfig): Promise<CustomAxiosResponse<T>>;
-  get<T = unknown>(url: string, config?: CustomAxiosRequestConfig): Promise<CustomAxiosResponse<T>>;
-  post<T = unknown>(url: string, data?: unknown, config?: CustomAxiosRequestConfig): Promise<CustomAxiosResponse<T>>;
-  put<T = unknown>(url: string, data?: unknown, config?: CustomAxiosRequestConfig): Promise<CustomAxiosResponse<T>>;
-  delete<T = unknown>(url: string, config?: CustomAxiosRequestConfig): Promise<CustomAxiosResponse<T>>;
-  interceptors: {
-    request: {
-      use: (onFulfilled: (config: CustomAxiosRequestConfig) => CustomAxiosRequestConfig, onRejected?: (error: unknown) => unknown) => void;
-    };
-    response: {
-      use: (onFulfilled: (response: CustomAxiosResponse<unknown>) => CustomAxiosResponse<unknown>, onRejected?: (error: unknown) => unknown) => void;
-    };
-  };
-};
-
-// Create custom axios instance with proper typing
-const createCustomAxios = (): CustomAxiosInstance => {
-  const instance = (axios as unknown as {
-    create: (config: unknown) => CustomAxiosInstance;
-  }).create({
-    baseURL: pythonConfig.apiUrl,
-    timeout: pythonConfig.requestTimeout,
-    headers: {
-      'Content-Type': 'application/json',
-      'X-API-Key': pythonConfig.apiKey,
-    },
-  });
-
-  return {
-    request: (config: CustomAxiosRequestConfig) => instance.request(config),
-    get: (url: string, config?: CustomAxiosRequestConfig) => instance.get(url, config),
-    post: (url: string, data?: unknown, config?: CustomAxiosRequestConfig) => instance.post(url, data, config),
-    put: (url: string, data?: unknown, config?: CustomAxiosRequestConfig) => instance.put(url, data, config),
-    delete: (url: string, config?: CustomAxiosRequestConfig) => instance.delete(url, config),
-    interceptors: instance.interceptors
-  } as CustomAxiosInstance;
-};
-
-const customAxios = createCustomAxios();
-
-// Circuit breaker states
-export enum CircuitState {
-  CLOSED = 'CLOSED',   // Normal operation
-  OPEN = 'OPEN',       // Circuit is open, fail fast
-  HALF_OPEN = 'HALF_OPEN' // Semi-open, testing if service recovered
-}
-
-// Circuit breaker configuration
-interface CircuitBreakerConfig {
-  failureThreshold: number;    // Failures before opening circuit
-  resetTimeout: number;        // Time to wait before trying again (ms)
-  monitoringPeriod: number;     // Period to monitor failures (ms)
-  halfOpenMaxCalls: number;   // Max calls in half-open state
-}
-
-interface CircuitBreakerStats {
-  failures: number;
-  successes: number;
-  lastFailureTime: number;
-  lastSuccessTime: number;
-  state: CircuitState;
-}
-
-class CircuitBreaker {
-  private config: CircuitBreakerConfig;
-  private stats: CircuitBreakerStats;
-  private failureCount = 0;
-  private successCount = 0;
-  private lastFailureTime = 0;
-  private lastSuccessTime = 0;
-
-  constructor(config: Partial<CircuitBreakerConfig> = {}) {
-    this.config = {
-      failureThreshold: 5,
-      resetTimeout: 60000,        // 1 minute
-      monitoringPeriod: 300000,     // 5 minutes
-      halfOpenMaxCalls: 3,
-      ...config
-    };
-
-    this.stats = {
-      failures: 0,
-      successes: 0,
-      lastFailureTime: 0,
-      lastSuccessTime: 0,
-      state: CircuitState.CLOSED
-    };
+  
+  private readonly CACHE_DURATION = 15000; // 15 seconds cache
+  private readonly MAX_WARMUP_RETRIES = 10;
+  private readonly WARMUP_RETRY_DELAY = 2000; // 2 seconds
+  
+  constructor() {
+    // Start background readiness polling
+    this.startReadinessPolling();
+    // Auto-warmup on startup
+    this.initializeOnStartup();
   }
-
-  async execute<T>(operation: () => Promise<T>): Promise<T> {
-    const now = Date.now();
-
-    // Reset counters if monitoring period has passed
-    if (now - this.lastFailureTime > this.config.monitoringPeriod) {
-      this.failureCount = 0;
-      this.successCount = 0;
-    }
-
-    // Check circuit state
-    if (this.stats.state === CircuitState.OPEN) {
-      if (now - this.lastFailureTime < this.config.resetTimeout) {
-        throw new Error('Circuit breaker is OPEN - service temporarily unavailable');
-      } else {
-        // Try to close circuit (move to half-open)
-        this.stats.state = CircuitState.HALF_OPEN;
-        logger.info('Circuit breaker moving to HALF-OPEN state');
-      }
-    }
-
-    if (this.stats.state === CircuitState.HALF_OPEN && this.successCount >= this.config.halfOpenMaxCalls) {
-      throw new Error('Circuit breaker HALF-OPEN call limit exceeded');
-    }
-
+  
+  /**
+   * 🔥 PRODUCTION: Initialize Python service on Node startup
+   */
+  private async initializeOnStartup(): Promise<void> {
+    logger.info('[PythonBridge] Starting Python service initialization...');
+    
     try {
-      const result = await operation();
-      this.onSuccess(now);
-      return result;
+      // Check initial readiness
+      const ready = await this.checkReadiness();
+      if (!ready) {
+        logger.info('[PythonBridge] Python not ready, triggering auto-warmup...');
+        await this.autoWarmup();
+      } else {
+        logger.info('[PythonBridge] Python service ready on startup');
+        this.readinessCache.ready = true;
+      }
     } catch (error) {
-      this.onFailure(now);
-      throw error;
+      logger.error('[PythonBridge] Startup initialization failed:', error);
     }
   }
-
-  private onSuccess(now: number): void {
-    this.successCount++;
-    this.lastSuccessTime = now;
-    this.stats.successes++;
-    this.stats.lastSuccessTime = now;
-
-    if (this.stats.state === CircuitState.HALF_OPEN) {
-      this.stats.state = CircuitState.CLOSED;
-      this.successCount = 0;
-      this.failureCount = 0;
-      logger.info('Circuit breaker moving to CLOSED state');
+  
+  /**
+   * 🔥 PRODUCTION: Background readiness polling
+   */
+  private startReadinessPolling(): void {
+    setInterval(async () => {
+      try {
+        await this.checkReadiness();
+      } catch (error) {
+        logger.warn('[PythonBridge] Readiness poll failed:', error);
+      }
+    }, 20000); // Poll every 20 seconds
+  }
+  
+  /**
+   * 🔥 PRODUCTION: Check Python readiness using /ready endpoint only
+   */
+  private async checkReadiness(): Promise<boolean> {
+    const now = Date.now();
+    
+    // Return cached result if still valid
+    if (now - this.readinessCache.lastCheck < this.CACHE_DURATION && this.readinessCache.ready) {
+      return this.readinessCache.ready;
+    }
+    
+    try {
+      logger.info('[PythonBridge] Checking Python readiness...');
+      
+      const response = await axiosInstance.get(
+        `${pythonConfig.apiUrl}/ready`,
+        {
+          timeout: 5000,
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      const isReady = response.status === 200 && response.data?.ready === true;
+      
+      this.readinessCache.ready = isReady;
+      this.readinessCache.lastCheck = now;
+      this.readinessCache.retryCount = 0;
+      
+      logger.info(`[PythonBridge] Ready: ${isReady}`, {
+        responseTime: Date.now() - now,
+        modelsLoaded: response.data?.models_loaded,
+        memoryUsage: response.data?.memory_usage
+      });
+      
+      return isReady;
+      
+    } catch (error) {
+      this.readinessCache.ready = false;
+      this.readinessCache.lastCheck = now;
+      
+      logger.warn('[PythonBridge] Readiness check failed:', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        url: `${pythonConfig.apiUrl}/ready`
+      });
+      
+      return false;
     }
   }
-
-  private onFailure(now: number): void {
-    this.failureCount++;
-    this.lastFailureTime = now;
-    this.stats.failures++;
-    this.stats.lastFailureTime = now;
-
-    if (this.failureCount >= this.config.failureThreshold) {
-      this.stats.state = CircuitState.OPEN;
-      logger.warn(`Circuit breaker moving to OPEN state - ${this.failureCount} failures detected`);
+  
+  /**
+   * 🔥 PRODUCTION: Auto-warmup Python service with retry logic
+   */
+  private async autoWarmup(): Promise<boolean> {
+    if (this.readinessCache.warmupInProgress) {
+      logger.info('[PythonBridge] Warmup already in progress');
+      return false;
+    }
+    
+    this.readinessCache.warmupInProgress = true;
+    this.readinessCache.lastWarmup = Date.now();
+    
+    try {
+      logger.info('[PythonBridge] Starting auto-warmup...');
+      
+      const response = await axiosInstance.get(
+        `${pythonConfig.apiUrl}/warmup`,
+        {
+          timeout: 30000, // 30 seconds for warmup
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      logger.info('[PythonBridge] Warmup completed', {
+        warmupTime: response.data?.results?.warmup_time,
+        imageDetector: response.data?.results?.image_detector,
+        modelsLoaded: response.data?.results?.models_loaded
+      });
+      
+      // Poll readiness after warmup
+      return await this.pollReadinessAfterWarmup();
+      
+    } catch (error) {
+      logger.error('[PythonBridge] Warmup failed:', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      return false;
+    } finally {
+      this.readinessCache.warmupInProgress = false;
     }
   }
-
-  getStats(): CircuitBreakerStats {
-    return { ...this.stats };
+  
+  /**
+   * 🔥 PRODUCTION: Poll readiness after warmup with retries
+   */
+  private async pollReadinessAfterWarmup(): Promise<boolean> {
+    for (let attempt = 1; attempt <= this.MAX_WARMUP_RETRIES; attempt++) {
+      logger.info(`[PythonBridge] Readiness poll attempt ${attempt}/${this.MAX_WARMUP_RETRIES}`);
+      
+      await new Promise(resolve => setTimeout(resolve, this.WARMUP_RETRY_DELAY));
+      
+      const ready = await this.checkReadiness();
+      if (ready) {
+        logger.info(`[PythonBridge] Ready after warmup (attempt ${attempt})`);
+        return true;
+      }
+      
+      this.readinessCache.retryCount = attempt;
+    }
+    
+    logger.error('[PythonBridge] Failed to achieve readiness after warmup');
+    return false;
   }
-
-  getState(): CircuitState {
-    return this.stats.state;
+  
+  /**
+   * 🔥 PRODUCTION: Public API - Get readiness with auto-warmup fallback
+   */
+  public async getReadiness(): Promise<boolean> {
+    const ready = await this.checkReadiness();
+    
+    if (!ready && !this.readinessCache.warmupInProgress) {
+      logger.info('[PythonBridge] Service not ready, triggering auto-warmup...');
+      return await this.autoWarmup();
+    }
+    
+    return ready;
   }
-
-  reset(): void {
-    this.failureCount = 0;
-    this.successCount = 0;
-    this.stats = {
-      failures: 0,
-      successes: 0,
-      lastFailureTime: 0,
-      lastSuccessTime: 0,
-      state: CircuitState.CLOSED
-    };
-    logger.info('Circuit breaker reset to CLOSED state');
+  
+  /**
+   * 🔥 PRODUCTION: Get cached readiness status
+   */
+  public getCachedReadiness(): boolean {
+    return this.readinessCache.ready;
+  }
+  
+  /**
+   * 🔥 PRODUCTION: Force readiness refresh
+   */
+  public async refreshReadiness(): Promise<boolean> {
+    this.readinessCache.lastCheck = 0; // Invalidate cache
+    return await this.checkReadiness();
   }
 }
 
-// Health check interface
+// 🔥 PRODUCTION: Global bridge manager instance
+export const bridgeManager = new PythonBridgeManager();
+
+// 🔥 PRODUCTION: Health check interface
 interface HealthCheckResult {
   healthy: boolean;
   responseTime: number;
   error?: string;
   timestamp: number;
+  details?: Record<string, unknown>;
 }
 
+// 🔥 PRODUCTION: Python service health with readiness management
 class PythonServiceHealth {
   private lastHealthCheck = 0;
   private healthCheckInterval = 30000; // 30 seconds
@@ -230,24 +242,18 @@ class PythonServiceHealth {
     const startTime = Date.now();
     
     try {
-      const response = await customAxios.get(
-        `${pythonConfig.apiUrl}/health`,
-        {
-          timeout: 5000, // 5 second timeout for health check
-          // Health endpoint should be public - no API key required for Python service
-        }
-      );
-
+      // 🔥 PRODUCTION: Use bridge manager for readiness
+      const ready = await bridgeManager.getReadiness();
       const responseTime = Date.now() - startTime;
-      const healthy = response.status === 200 && (response.data as { status?: string })?.status === 'healthy';
-
-      this.isHealthy = healthy;
+      
+      this.isHealthy = ready;
       this.lastHealthCheck = Date.now();
 
       return {
-        healthy,
+        healthy: ready,
         responseTime,
-        timestamp: this.lastHealthCheck
+        timestamp: this.lastHealthCheck,
+        details: { ready, source: 'bridge_manager' }
       };
     } catch (error) {
       this.isHealthy = false;
@@ -265,13 +271,129 @@ class PythonServiceHealth {
   shouldCheckHealth(): boolean {
     return Date.now() - this.lastHealthCheck > this.healthCheckInterval;
   }
-
+  
   isServiceHealthy(): boolean {
     return this.isHealthy;
   }
 }
 
-// Create singleton instances
+// 🔥 PRODUCTION: Enhanced Python bridge with readiness management
+export class EnhancedPythonBridge {
+  private static _instance: EnhancedPythonBridge;
+  
+  static getInstance(): EnhancedPythonBridge {
+    if (!EnhancedPythonBridge._instance) {
+      EnhancedPythonBridge._instance = new EnhancedPythonBridge();
+    }
+    return EnhancedPythonBridge._instance;
+  }
+  
+  /**
+   * 🔥 PRODUCTION: Get health status using bridge manager
+   */
+  async getHealthStatus(): Promise<{ healthy: boolean; error?: string; details?: unknown }> {
+    try {
+      const ready = await bridgeManager.getReadiness();
+      return {
+        healthy: ready,
+        details: { ready, source: 'bridge_manager' }
+      };
+    } catch (error) {
+      return {
+        healthy: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+  
+  /**
+   * 🔥 PRODUCTION: Check if Python is ready (cached)
+   */
+  isReady(): boolean {
+    return bridgeManager.getCachedReadiness();
+  }
+  
+  /**
+   * 🔥 PRODUCTION: Force readiness refresh
+   */
+  async refreshReadiness(): Promise<boolean> {
+    return await bridgeManager.refreshReadiness();
+  }
+}
+
+// 🔥 PRODUCTION: Circuit breaker implementation
+interface CircuitBreakerConfig {
+  failureThreshold: number;
+  resetTimeout: number;
+  monitoringPeriod: number;
+  halfOpenMaxCalls: number;
+}
+
+interface CircuitBreakerStats {
+  failures: number;
+  successes: number;
+  lastFailureTime: number;
+  state: 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+}
+
+class CircuitBreaker {
+  private config: CircuitBreakerConfig;
+  private stats: CircuitBreakerStats;
+  private lastFailureTime = 0;
+  
+  constructor(config: CircuitBreakerConfig) {
+    this.config = config;
+    this.stats = {
+      failures: 0,
+      successes: 0,
+      lastFailureTime: 0,
+      state: 'CLOSED'
+    };
+  }
+  
+  recordFailure(): void {
+    this.stats.failures++;
+    this.stats.lastFailureTime = Date.now();
+    if (this.stats.failures >= this.config.failureThreshold) {
+      this.stats.state = 'OPEN';
+    }
+  }
+  
+  recordSuccess(): void {
+    this.stats.successes++;
+    this.stats.failures = 0;
+    this.stats.state = 'CLOSED';
+  }
+  
+  recordAttempt(): void {
+    // Track attempts for monitoring
+  }
+  
+  isOpen(): boolean {
+    return this.stats.state === 'OPEN';
+  }
+  
+  getStats(): CircuitBreakerStats {
+    return { ...this.stats };
+  }
+  
+  async execute<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.isOpen()) {
+      throw new Error('Circuit breaker is OPEN');
+    }
+    
+    try {
+      const result = await fn();
+      this.recordSuccess();
+      return result;
+    } catch (error) {
+      this.recordFailure();
+      throw error;
+    }
+  }
+}
+
+// 🔥 PRODUCTION: Export instances
 export const circuitBreaker = new CircuitBreaker({
   failureThreshold: 3,
   resetTimeout: 60000,  // 1 minute
@@ -281,214 +403,5 @@ export const circuitBreaker = new CircuitBreaker({
 
 export const healthChecker = new PythonServiceHealth();
 
-// Enhanced Python bridge with circuit breaker and health checks
-export class EnhancedPythonBridge {
-  private retryConfig = {
-    maxRetries: 3,
-    baseDelay: 1000,
-    maxDelay: 10000,
-    backoffFactor: 2
-  };
-
-  private async delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  private calculateRetryDelay(attempt: number): number {
-    const delay = this.retryConfig.baseDelay * Math.pow(this.retryConfig.backoffFactor, attempt - 1);
-    const jitter = Math.random() * 0.1 * delay; // Add 10% jitter
-    return Math.min(delay + jitter, this.retryConfig.maxDelay);
-  }
-
-  async request<T>(config: {
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE';
-    url: string;
-    data?: unknown;
-    headers?: Record<string, string>;
-    timeout?: number;
-    userToken?: string; // Pass user token from request context
-    signal?: AbortSignal; // Add AbortSignal support
-  }): Promise<T> {
-    // 🔥 PRODUCTION: Reduced timeout for stability
-    const MAX_JOB_TIME = 2 * 60 * 1000; // 2 minutes hard cap
-    const controller = new AbortController();
-    const timeout = setTimeout(() => {
-      logger.warn('[PYTHON BRIDGE] Hard timeout reached, aborting request', {
-        url: config.url,
-        method: config.method,
-        maxTime: MAX_JOB_TIME
-      });
-      controller.abort();
-    }, MAX_JOB_TIME);
-
-    // Combine external signal with our timeout signal manually
-    let combinedSignal = controller.signal;
-    let shouldAbort = false;
-
-    // Listen to external signal if provided
-    if (config.signal) {
-      const checkExternalSignal = () => {
-        if (config.signal!.aborted && !shouldAbort) {
-          shouldAbort = true;
-          controller.abort();
-        }
-      };
-      
-      config.signal.addEventListener('abort', checkExternalSignal);
-      
-      // Clean up listener when either signal aborts
-      const cleanup = () => {
-        config.signal!.removeEventListener('abort', checkExternalSignal);
-      };
-      
-      combinedSignal.addEventListener('abort', cleanup);
-    }
-
-    try {
-      const result = await this.executeRequestWithTimeout<T>({
-        ...config,
-        signal: combinedSignal
-      });
-      
-      clearTimeout(timeout);
-      return result;
-    } catch (error) {
-      clearTimeout(timeout);
-      
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error('Python bridge timeout exceeded - analysis took too long');
-      }
-      
-      throw error;
-    }
-  }
-
-  private async executeRequestWithTimeout<T>(config: {
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE';
-    url: string;
-    data?: unknown;
-    headers?: Record<string, string>;
-    timeout?: number;
-    userToken?: string;
-    signal: AbortSignal;
-  }): Promise<T> {
-    // Perform health check if needed
-    if (healthChecker.shouldCheckHealth()) {
-      const health = await healthChecker.checkHealth();
-      logger.info('Python service health check:', {
-        healthy: health.healthy,
-        responseTime: health.responseTime,
-        error: health.error
-      });
-    }
-
-    // Execute request through circuit breaker with retry logic
-    return circuitBreaker.execute(async (): Promise<T> => {
-      let lastError: unknown;
-      
-      for (let attempt = 1; attempt <= this.retryConfig.maxRetries; attempt++) {
-        const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        const requestStartTime = Date.now();
-        
-        try {
-          const response = await customAxios.request({
-            ...config,
-            url: `${pythonConfig.apiUrl}${config.url}`,
-            data: config.data,
-            headers: {
-              'X-API-Key': pythonConfig.apiKey,
-              'X-Request-Id': requestId,
-              'X-Correlation-Id': requestId,
-              // Pass user's JWT token for Python service authentication
-              'Authorization': config.userToken ? `Bearer ${config.userToken}` : `Bearer ${await getAccessToken()}`,
-              ...config.headers
-            },
-            timeout: config.timeout || pythonConfig.requestTimeout
-          });
-
-          // Runtime assertion: Fail fast on 404 errors
-          if (response.status === 404) {
-            const isLegacyRoute = config.url.includes('/analyze/') && !config.url.includes('/api/v2/analysis/unified/');
-            if (isLegacyRoute) {
-              logger.warn(`[DEPRECATED] Legacy Python route used: ${config.url}. Please migrate to /api/v2/analysis/unified/* routes`);
-            }
-            throw new Error(`Python endpoint not found: ${config.url}. This indicates a route mismatch between Node and Python services.`);
-          }
-
-          // Check for service unavailability
-          if (response.status === 503 || response.status === 504) {
-            logger.warn(`Python service unavailable: ${config.url}`, {
-              status: response.status,
-              circuitState: circuitBreaker.getState()
-            });
-            throw new Error(`ML service temporarily unavailable. Please try again later.`);
-          }
-
-          logger.info('Python bridge request completed', {
-            requestId,
-            method: config.method,
-            url: config.url,
-            status: response.status,
-            responseTime: Date.now() - requestStartTime,
-            circuitState: circuitBreaker.getState(),
-            attempt: attempt
-          });
-
-          return response.data as T;
-          
-        } catch (error) {
-          lastError = error;
-          
-          // Don't retry on certain errors
-          if (error instanceof Error && (
-            error.message.includes('404') || 
-            error.message.includes('400') ||
-            error.message.includes('401') ||
-            error.message.includes('403')
-          )) {
-            throw error;
-          }
-          
-          // Retry on transient errors
-          if (attempt < this.retryConfig.maxRetries) {
-            const delay = this.calculateRetryDelay(attempt);
-            logger.warn(`Python bridge request failed, retrying in ${delay}ms`, {
-              requestId,
-              attempt: attempt,
-              maxRetries: this.retryConfig.maxRetries,
-              error: error instanceof Error ? error.message : 'Unknown error'
-            });
-            
-            await this.delay(delay);
-            continue;
-          }
-          
-          // Final attempt failed
-          logger.error('Python bridge request failed after all retries', {
-            requestId,
-            attempts: attempt,
-            error: error instanceof Error ? error.message : 'Unknown error'
-          });
-          
-          throw error;
-        }
-      }
-      
-      throw lastError; // Should never reach here
-    });
-  }
-
-  getCircuitStats(): CircuitBreakerStats {
-    return circuitBreaker.getStats();
-  }
-
-  async getHealthStatus(): Promise<HealthCheckResult> {
-    return healthChecker.checkHealth();
-  }
-
-  isHealthy(): boolean {
-    return healthChecker.isServiceHealthy();
-  }
-}
-
-export const enhancedPythonBridge = new EnhancedPythonBridge();
+// 🔥 PRODUCTION: Export the enhanced bridge instance
+export const enhancedPythonBridge = EnhancedPythonBridge.getInstance();

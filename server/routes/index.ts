@@ -91,6 +91,9 @@ router.get('/', (req: Request, res: Response) => {
   res.redirect('/api');
 });
 
+// REMOVED: Contract logger - No more deprecated routes
+// REMOVED: Legacy redirect logic - Frontend must use canonical routes directly
+
 // 404 handler for API routes (must be after all other routes)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 router.use('/api', (req: any, res: Response) => {

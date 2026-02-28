@@ -2,6 +2,10 @@ import { Router, Request, Response } from 'express';
 import { supabase, supabaseAdmin } from '../config/supabase';
 import { logger } from '../config/logger';
 import { randomUUID } from 'node:crypto';
+import { safeJson } from '../utils/result-parser';
+
+// Centralized table constant to prevent schema drift
+const ANALYSIS_TABLE = 'tasks';
 
 const router = Router();
 
@@ -25,7 +29,7 @@ router.get('/',
 
       // Fetch user's analysis jobs with pagination
       const { data: jobs, error } = await supabase
-        .from('tasks')
+        .from(ANALYSIS_TABLE)
         .select(`
           id,
           type,
@@ -39,6 +43,7 @@ router.get('/',
         `)
         .eq('user_id', userId)
         .eq('type', 'analysis')
+        .is('deleted_at', null) // 🔥 CRITICAL: Add soft delete filter
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);
 
@@ -52,11 +57,11 @@ router.get('/',
 
       // Get total count for pagination
       const { count } = await supabase
-        .from('scans')
+        .from(ANALYSIS_TABLE)
         .select('*', { count: 'exact', head: true })
         .eq('user_id', userId)
         .eq('type', 'analysis')
-        .is('deleted_at', null);
+        .is('deleted_at', null); // 🔥 CRITICAL: Add soft delete filter
 
       const totalPages = Math.ceil((count || 0) / limit);
 
@@ -102,22 +107,7 @@ router.get('/',
   }
 );
 
-// 🔥 STEP 5 — REMOVE LEGACY REDIRECT
-// GET /api/v2/history/:jobId - REDIRECT to canonical results endpoint
-router.get('/:jobId', async (req: Request, res: Response) => {
-  try {
-    const { jobId } = req.params;
-    
-    // 🔥 PURE REDIRECT - No DB queries inside legacy routes
-    return res.redirect(307, `/api/v2/results/${jobId}`);
-  } catch (error) {
-    logger.error('History redirect error:', error);
-    return res.status(500).json({
-      success: false,
-      error: 'Internal server error'
-    });
-  }
-});
+// 🔥 REMOVED: Legacy redirect - Frontend must use canonical /api/v2/results/:id endpoint
 
 // DELETE /api/v2/history/:jobId - Delete a specific analysis job
 router.delete('/:jobId',
@@ -135,11 +125,12 @@ router.delete('/:jobId',
 
       // First check if job belongs to user
       const { data: job, error: checkError } = await supabase
-        .from('scans')
+        .from(ANALYSIS_TABLE)
         .select('id')
         .eq('id', jobId)
         .eq('user_id', userId)
         .eq('type', 'analysis')
+        .is('deleted_at', null) // 🔥 CRITICAL: Add soft delete filter
         .single();
 
       if (checkError || !job) {
@@ -151,7 +142,7 @@ router.delete('/:jobId',
 
       // Soft delete the job (set deleted_at timestamp)
       const { error: deleteError } = await supabase
-        .from('scans')
+        .from(ANALYSIS_TABLE)
         .update({ deleted_at: new Date().toISOString() })
         .eq('id', jobId)
         .eq('user_id', userId)
@@ -179,6 +170,20 @@ router.delete('/:jobId',
   }
 );
 
+// Helper function to generate unique report code
+function generateReportCode(): string {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const dateStr = `${year}${month}${day}`;
+  
+  // Generate a random 4-digit sequence
+  const sequence = Math.floor(1000 + Math.random() * 9000);
+  
+  return `SATYA-${dateStr}-${sequence}`;
+}
+
 // Helper function to create analysis job (used by analysis routes)
 export const createAnalysisJob = async (
   userId: string,
@@ -195,43 +200,94 @@ export const createAnalysisJob = async (
   // Generate jobId if not provided (ensures consistency)
   const finalJobId = jobId || randomUUID();
   
-  const { data, error } = await supabaseAdmin
-    .from('tasks')
-    .insert({
-      id: finalJobId, // Use consistent ID
-      user_id: userId,
-      type: jobData.modality,
-      filename: jobData.filename,
-      result: 'processing',
-      confidence_score: 0,
-      detection_details: null,
-      metadata: {
-        ...jobData.metadata,
-        media_type: jobData.mime_type,
-        file_size: jobData.size_bytes
-      },
-      created_at: new Date().toISOString()
-    })
-    .select('id')
-    .single();
+  // 🔥 PRODUCTION: Enhanced error handling with retry logic
+  const maxRetries = 3;
+  let lastError: unknown;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from(ANALYSIS_TABLE)
+        .insert({
+          id: finalJobId, // Use consistent ID
+          user_id: userId,
+          type: jobData.modality,
+          filename: jobData.filename,
+          result: safeJson({ status: 'processing' }),
+          confidence_score: 0,
+          detection_details: null,
+          metadata: {
+            ...jobData.metadata,
+            media_type: jobData.mime_type,
+            file_size: jobData.size_bytes,
+            report_code: generateReportCode(),
+            source: 'satya_ai_v2',
+            created_at: new Date().toISOString()
+          },
+          created_at: new Date().toISOString()
+        })
+        .select('id')
+        .single();
 
-  if (error) {
-    logger.error('TASK INSERT FAILED', { 
-      jobId: finalJobId, 
-      error: error.message,
-      details: error,
-      userId,
-      jobData 
-    });
-    throw new Error(`Failed to create analysis job: ${error.message}`);
+      if (error) {
+        // Check for specific error types
+        if (error.code === '42501') { // RLS violation
+          throw new Error(`Permission denied: Row Level Security violation for user ${userId}`);
+        }
+        
+        if (error.code === '23505') { // Unique constraint violation
+          throw new Error(`Duplicate job detected: ${finalJobId}`);
+        }
+        
+        if (error.code === '23503') { // Foreign key violation
+          throw new Error(`Invalid user reference: ${userId}`);
+        }
+        
+        throw new Error(`Database insert failed: ${error.message} (Code: ${error.code})`);
+      }
+
+      if (!data || !data.id) {
+        throw new Error('Job creation succeeded but no ID returned');
+      }
+
+      logger.info('[JOB_INSERT_SUCCESS]', { 
+        jobId: finalJobId,
+        returnedId: data.id,
+        userId,
+        attempt
+      });
+
+      return data;
+      
+    } catch (error) {
+      lastError = error;
+      
+      if (attempt < maxRetries) {
+        const delay = Math.pow(2, attempt - 1) * 1000; // Exponential backoff
+        logger.warn('[JOB_INSERT_RETRY]', {
+          jobId: finalJobId,
+          attempt,
+          maxRetries,
+          delay,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+        
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+    }
   }
-
-  logger.info('TASK INSERT SUCCESS', { 
-    jobId: finalJobId,
-    returnedId: data?.id
+  
+  // All retries failed
+  logger.error('[JOB_INSERT_FAILED]', { 
+    jobId: finalJobId, 
+    userId,
+    attempts: maxRetries,
+    finalError: lastError instanceof Error ? lastError.message : 'Unknown error',
+    errorDetails: lastError
   });
-
-  return data;
+  
+  throw new Error(`Failed to create analysis job after ${maxRetries} attempts: ${lastError instanceof Error ? lastError.message : 'Unknown error'}`);
 };
 
 export const getPaginatedAnalysisHistory = async (
@@ -242,7 +298,7 @@ export const getPaginatedAnalysisHistory = async (
   const offset = (page - 1) * limit;
 
   const { data, error } = await supabase
-    .from('scans')
+    .from(ANALYSIS_TABLE)
     .select(`
       id,
       type,
@@ -265,7 +321,7 @@ export const getPaginatedAnalysisHistory = async (
   }
 
   const { count } = await supabase
-    .from('scans')
+    .from(ANALYSIS_TABLE)
     .select('*', { count: 'exact', head: true })
     .eq('user_id', userId)
     .eq('type', 'analysis');
@@ -289,7 +345,7 @@ export const updateAnalysisJobWithResults = async (
 ) => {
   // 🔥 FINALIZATION GUARD: Check current status to prevent duplicate updates
   const { data: currentJob } = await supabaseAdmin
-    .from('tasks')
+    .from(ANALYSIS_TABLE)
     .select('result, updated_at')
     .eq('id', jobId)
     .single();
@@ -306,9 +362,9 @@ export const updateAnalysisJobWithResults = async (
   }
 
   const { data, error: jobUpdateError } = await supabaseAdmin
-    .from('tasks')
+    .from(ANALYSIS_TABLE)
     .update({
-      result: results.status,
+      result: safeJson({ status: results.status }),
       confidence_score: results.confidence || (results.is_deepfake ? 0.8 : 0.2),
       detection_details: {
         confidence: results.confidence || 0,

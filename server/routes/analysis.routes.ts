@@ -13,10 +13,11 @@ interface MulterFile {
 
 import { Router, Request, Response } from 'express';
 import multer, { FileFilterCallback } from 'multer';
-import path from 'path';
+import * as path from 'path';
 import { validateRequest } from '../middleware/validate-request';
 import { logger } from '../config/logger';
-import { enhancedPythonBridge } from '../config/python-bridge';
+import { bridgeManager } from '../config/python-bridge';
+import { pythonBridge } from '../services/python-http-bridge';
 import { validateJobId } from '../middleware/validate-job-id';
 import { createAnalysisJob, updateAnalysisJobWithResults } from './history';
 import { errorResponse } from '../utils/apiResponse';
@@ -32,10 +33,12 @@ import { analysisRateLimit, incrementConcurrentJobs } from '../middleware/rate-l
 import { createFallbackMiddleware } from '../middleware/fallback-middleware';
 import { recordJobStart } from './system-metrics';
 import { captureError } from '../services/error-monitor';
-import { JOB_TIMEOUTS } from '../config/job-timeouts';
+import { CANONICAL_ROUTES, CanonicalPythonRequest, CanonicalHeaders, ContractGuard } from '../types/canonical-contracts';
+import { normalizePythonResponse, normalizePythonError, createCanonicalErrorResponse } from '../normalizers/python-response-normalizer';
 
 // Node.js has native AbortController since v15
-const { AbortController } = require('abort-controller');
+// No need for external abort-controller package
+declare const AbortController: typeof globalThis.AbortController;
 
 type AnalysisModality = 'image' | 'video' | 'audio' | 'text';
 
@@ -76,7 +79,7 @@ const router = Router();
 router.use(requestIdMiddleware);
 
 // Apply authentication middleware to all routes
-router.use(...requireAuth);
+router.use(requireAuth);
 
 // Apply rate limiting to analysis endpoints  
 router.use('/image', analysisRateLimit);
@@ -397,51 +400,65 @@ const extractTokenFromRequest = (req: AuthenticatedRequest): string | null => {
   
   return null;
 };
-
-// Image analysis endpoint
 router.post(
-  '/image',
-  ...requireAuth,
+  '/unified/image',
+  requireAuth,
   analysisRateLimit,
   upload.single('file'),
   validateRequest([]),
   async (req: AuthenticatedRequest, res: Response) => {
     const type = 'image';
     const correlationId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const file = req.file;
-    const userId = req.user?.id;
     const userToken = extractTokenFromRequest(req);
-
-    logger.info(`[ROUTE] Incoming ${type} analysis request`, {
+    const userId = req.user?.id;
+    const file = req.file;
+    
+    logger.info(`[ROUTE] Incoming unified ${type} analysis request`, {
       correlationId,
       type,
-      userId,
-      filename: file?.originalname,
-      fileSize: file?.size,
+      userId: req.user?.id,
+      userToken: userToken ? 'present' : 'missing'
     });
 
     // Increment concurrent job counter
-    if (userId) {
-      incrementConcurrentJobs(userId);
+    if (req.user?.id) {
+      incrementConcurrentJobs(req.user.id);
     }
 
     // Record job start for metrics
     recordJobStart();
 
     try {
-      // 🔥 PRODUCTION: Validate service health before processing
-      const pythonHealth = await enhancedPythonBridge.getHealthStatus();
-      if (!pythonHealth.healthy) {
-        logger.error('[PYTHON_SERVICE_UNAVAILABLE]', {
+      // 🔥 PRODUCTION: Use bridge manager for readiness check
+      const pythonReady = bridgeManager.getCachedReadiness();
+      
+      if (!pythonReady) {
+        logger.warn('[PYTHON_SERVICE_NOT_READY]', {
           correlationId,
-          health: pythonHealth,
           userId
         });
-        return res.status(503).json({
-          success: false,
-          error: 'AI_ENGINE_UNAVAILABLE',
-          message: 'ML service temporarily unavailable. Please try again later.',
-          details: pythonHealth.error
+        
+        // Try warmup if service is not ready
+        logger.info('[PYTHON_SERVICE_WARMUP] Attempting AI engine warmup...');
+        const warmupSuccess = await bridgeManager.getReadiness();
+        
+        if (!warmupSuccess) {
+          logger.error('[PYTHON_SERVICE_WARMUP_FAILED]', {
+            correlationId,
+            userId
+          });
+          
+          return res.status(503).json({
+            success: false,
+            error: 'AI_ENGINE_WARMUP_FAILED',
+            message: 'ML service is warming up. Please try again in a moment.',
+            requestId: correlationId
+          });
+        }
+        
+        logger.info('[PYTHON_SERVICE_WARMUP_SUCCESS]', {
+          correlationId,
+          userId
         });
       }
       
@@ -595,218 +612,87 @@ router.post(
           }
           
           const formData = new FormData();
-          formData.append('file', file.buffer, {
-            filename: file.originalname,
-            contentType: file.mimetype,
-          });
+          formData.append('file', file.buffer, file.originalname);
+          // Generate request ID for tracing
+          const requestId = `analysis_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          
           // Cross-service naming compatibility: frontend expects camelCase, Python expects snake_case
           const pythonJobId = jobId; // Canonical camelCase for Node/Node communication
           formData.append('job_id', pythonJobId); // Python contract expects snake_case
           formData.append('user_id', userId || '');
+          formData.append('request_id', requestId); // Add request tracing
 
           if (userId) {
             sendJobProgress(userId, jobId, 'analyzing', 30);
           }
 
-          // TIMEOUT STABILITY: Reduced timeout for production
-          const abortController = new AbortController();
-          const inferenceTimeout = setTimeout(() => {
-            logger.warn(`[INFERENCE_TIMEOUT] Aborting analysis`, {
-              requestId: correlationId,
-              jobId,
-              timeout: 120000
-            });
-            abortController.abort();
-          }, 120000); // 2 minutes
-          
-          let pythonResponse: {
-            data: {
-              confidence: number;
-              is_deepfake: boolean;
-              model_name: string;
-              model_version: string;
-              analysis_data: Record<string, unknown>;
-              proof: Record<string, unknown>;
-            };
-          };
+          let inferenceTimeout: NodeJS.Timeout | null = null;
           
           try {
-          // 🔥 CRITICAL FIX: Use correct Python endpoint
-          pythonResponse = await enhancedPythonBridge.request({
-            method: 'POST',
-            url: `/api/v2/analysis/analyze/${type}`,
-            data: formData,
-            timeout: 120000, // 2 minutes for production
-            userToken: userToken || undefined,
-            signal: abortController.signal
-          }) as {
-              data: {
-                confidence: number;
-                is_deepfake: boolean;
-                model_name: string;
-                model_version: string;
-                analysis_data: Record<string, unknown>;
-                proof: Record<string, unknown>;
-              };
-            };
+            // TIMEOUT STABILITY: Reduced timeout for production
+            const abortController = new AbortController();
+            inferenceTimeout = setTimeout(() => {
+              logger.warn(`[INFERENCE_TIMEOUT] Aborting analysis`, {
+                requestId: requestId,
+                jobId,
+                timeout: 120000
+              });
+              abortController.abort();
+            }, 120000); // 2 minutes
             
-            clearTimeout(inferenceTimeout);
-          } catch (timeoutError: unknown) {
-            clearTimeout(inferenceTimeout);
-            if (timeoutError instanceof Error && timeoutError.name === 'AbortError') {
-              throw new Error('ANALYSIS_TIMEOUT');
-            }
-            throw timeoutError;
-          }
-
-          if (userId) {
-            sendJobProgress(userId, jobId, 'processing', 70);
-          }
-
-          // RESULT INTEGRITY GUARD: Validate response structure before persistence
-          if (!pythonResponse?.data || typeof pythonResponse.data !== 'object') {
-            throw new Error('Invalid response structure from Python service');
-          }
-          
-          const requiredFields = ['confidence', 'is_deepfake', 'model_name', 'model_version'];
-          const missingFields = requiredFields.filter(field => !(field in pythonResponse.data));
-          
-          if (missingFields.length > 0) {
-            throw new Error(`Missing required fields in response: ${missingFields.join(', ')}`);
-          }
-          
-          // Validate confidence is a number between 0 and 1
-          if (typeof pythonResponse.data.confidence !== 'number' || 
-              pythonResponse.data.confidence < 0 || 
-              pythonResponse.data.confidence > 1) {
-            throw new Error(`Invalid confidence value: ${pythonResponse.data.confidence}`);
-          }
-          
-          // Python returns inference-only payload
-          const inferenceResult = pythonResponse.data;
-          
-          // [PYTHON RESULT] - Critical observability point
-          logger.info('[PYTHON RESULT]', {
-            jobId,
-            status: 'success',
-            confidence: inferenceResult.confidence,
-            is_deepfake: inferenceResult.is_deepfake,
-            model_name: inferenceResult.model_name
-          });
-          
-          // Node owns the job lifecycle - ATOMIC GUARD for finalization
-          if (job?.id) {
+            let pythonResponse: { data: unknown };
+            
             try {
-              await updateAnalysisJobWithResults(job.id, {
-                status: 'completed',
-                confidence: inferenceResult.confidence,
-                is_deepfake: inferenceResult.is_deepfake,
-                model_name: inferenceResult.model_name,
-                model_version: inferenceResult.model_version,
-                analysis_data: inferenceResult.analysis_data,
-                proof_json: inferenceResult.proof,
-              });
+            // 🔥 CRITICAL FIX: Use correct Python unified endpoint with proper header forwarding
+            pythonResponse = await pythonBridge.postWithUser(
+              `/api/v2/analysis/unified/${type}`,
+              formData,
+              { id: userId || '', email: req.user?.email || 'unknown' },
+              {
+                timeout: 900000, // 15 minutes - MATCH PYTHON TIMEOUT
+                // 🔥 CRITICAL FIX: Pass auth context to bridge for header forwarding
+                userContext: {
+                  token: userToken || undefined,
+                  requestId: correlationId,
+                  userId: userId || '',
+                  email: req.user?.email || 'unknown'
+                }
+              }
+            );
               
-              // 🔥 STEP 9 — LOG FINALIZATION EVENTS
-              logger.info('[JOB FINALIZED]', {
-                jobId: job.id,
-                status: 'completed',
-                confidence: inferenceResult.confidence,
-                processing_time: Date.now() - startTime
-              });
-              
-              // 🔥 CRITICAL FIX: Remove job from manager tracking
-              jobManager.removeJob(job.id);
-              
-            } catch (finalizationError) {
-              // FINALIZATION FAILURE - Force fail state
-              logger.error('[FINALIZATION FAILURE]', {
-                jobId: job.id,
-                error: finalizationError
-              });
-              
-              await updateAnalysisJobWithResults(job.id, {
-                status: 'failed',
-                error_message: 'Finalization failed: ' + String(finalizationError)
-              });
-              
-              // 🔥 CRITICAL FIX: Remove job from manager tracking on failure
-              jobManager.removeJob(job.id);
-              
-              throw finalizationError;
+              if (inferenceTimeout) {
+                clearTimeout(inferenceTimeout);
+              }
+            } catch (err: unknown) {
+              if (inferenceTimeout) {
+                clearTimeout(inferenceTimeout);
+              }
+              const normalized = normalizePythonError(err as { detail?: string; details?: { message?: string; code?: string }; response?: { data?: { code?: string; detail?: string; message?: string } }; code?: string; message?: string });
+              throw new Error(normalized.message);
             }
-          } else {
-            logger.error('[NO JOB ID]', { jobId, pythonResponse: 'success' });
+
+            if (userId) {
+              sendJobProgress(userId, jobId, 'processing', 70);
+            }
+
+            // 🔥 CRITICAL FIX: Use canonical normalizer
+            const normalizedResponse = normalizePythonResponse(pythonResponse.data);
+            ContractGuard.assertValidNodeResponse(normalizedResponse);
+            
+            return res.json(normalizedResponse);
+          } catch (err: unknown) {
+            if (inferenceTimeout) {
+              clearTimeout(inferenceTimeout);
+            }
+            const normalized = normalizePythonError(err);
+            throw new Error(normalized.message);
+          } finally {
+            if (inferenceTimeout) {
+              clearTimeout(inferenceTimeout);
+            }
           }
-
-          if (userId) {
-            sendJobProgress(userId, jobId, 'completed', 100);
-
-            // Send WebSocket event
-            webSocketManager.sendEventToUser(userId, {
-              type: 'JOB_COMPLETED',
-              jobId,
-              timestamp: Date.now(),
-              data: {
-                status: 'completed',
-                confidence: inferenceResult.confidence,
-                is_deepfake: inferenceResult.is_deepfake,
-                model_name: inferenceResult.model_name,
-                model_version: inferenceResult.model_version,
-              },
-            });
-          }
-
-          logger.info(`[ANALYSIS COMPLETED] Job ${jobId} finished successfully`, {
-            correlationId,
-            jobId,
-            type,
-            confidence: inferenceResult.confidence,
-            is_deepfake: inferenceResult.is_deepfake,
-          });
-
-        } catch (error) {
-          // Handle analysis error
-          const errorMessage = error && typeof error === 'object' && 'response' in error 
-            ? ((error as unknown) as { response: { data?: { detail?: string } } }).response?.data?.detail || ((error as unknown) as Error).message || 'Analysis failed'
-            : ((error as unknown) as Error).message || 'Analysis failed';
-          
-          // CRITICAL FIX: Guard against empty job ID
-          if (!job?.id) {
-            logger.error('Abort job update: missing job ID', {
-              context: 'finalization',
-              correlationId,
-              type
-            });
-            return;
-          }
-          
-          await updateAnalysisJobWithResults(job.id, {
-            status: 'failed',
-            error_message: errorMessage || 'Analysis failed',
-          });
-
-          if (userId) {
-            // Send WebSocket error event
-            webSocketManager.sendEventToUser(userId, {
-              type: 'JOB_FAILED',
-              jobId,
-              timestamp: Date.now(),
-              data: {
-                error: errorMessage,
-              },
-            });
-          }
-
-          logger.error(`[ANALYSIS FAILED] Job ${jobId} failed`, {
-            correlationId,
-            jobId,
-            type,
-            error: errorMessage,
-          });
         }
       });
-
     } catch (error) {
       const errorDetails = {
         requestId: correlationId,
@@ -818,24 +704,18 @@ router.post(
       
       logger.error(`[ANALYSIS_ERROR] ${type} analysis failed`, errorDetails);
       
-      // Structured error response
-      const errorCode = error instanceof Error ? error.name : 'UNKNOWN_ERROR';
-      const errorMessage = error instanceof Error ? error.message : 'Internal server error';
-      
-      return res.status(500).json({
-        success: false,
-        error: errorCode,
-        message: errorMessage,
-        requestId: correlationId,
-        timestamp: new Date().toISOString()
-      });
+      return res.status(500).json(createCanonicalErrorResponse(
+        'INTERNAL_ERROR',
+        error instanceof Error ? error.message : 'Internal server error',
+        errorDetails
+      ));
     }
   }
 );
 
-// Video analysis endpoint
+// Video analysis endpoint - UNIFIED CANONICAL ROUTE
 router.post(
-  '/video',
+  '/unified/video',
   upload.single('file'),
   validateRequest([]),
   async (req: AuthenticatedRequest, res: Response) => {
@@ -929,10 +809,7 @@ router.post(
           }
           
           const formData = new FormData();
-          formData.append('file', file.buffer, {
-            filename: file.originalname,
-            contentType: file.mimetype,
-          });
+          formData.append('file', file.buffer, file.originalname);
           // Cross-service naming compatibility: frontend expects camelCase, Python expects snake_case
           const pythonJobId = jobId; // Canonical camelCase for Node/Node communication
           formData.append('job_id', pythonJobId); // Python contract expects snake_case
@@ -942,13 +819,15 @@ router.post(
             sendJobProgress(userId, jobId, 'analyzing', 30);
           }
 
-          const pythonResponse = await enhancedPythonBridge.request({
-            method: 'POST',
-            url: `/api/v2/analysis/unified/${type}`,
-            data: formData,
-            timeout: 300000, // 5 minutes
-            userToken: userToken || undefined
-          }) as {
+          const pythonResponse = await pythonBridge.postWithUser(
+            `/api/v2/analysis/unified/${type}`,
+            formData,
+            { id: userId || '', email: req.user?.email || 'unknown' },
+            {
+              timeout: 300000, // 5 minutes
+              ...(userToken && { headers: { 'Authorization': `Bearer ${userToken}` } })
+            }
+          ) as {
             data: {
               confidence: number;
               is_deepfake: boolean;
@@ -982,10 +861,10 @@ router.post(
                 status: 'completed',
                 confidence: inferenceResult.confidence,
                 is_deepfake: inferenceResult.is_deepfake,
-                model_name: inferenceResult.model_name,
+                model_name: String(inferenceResult.model_name || ''),
                 model_version: inferenceResult.model_version,
                 analysis_data: inferenceResult.analysis_data,
-                proof_json: inferenceResult.proof,
+                proof_json: inferenceResult.proof as Record<string, unknown>,
               });
               
               // 🔥 STEP 9 — LOG FINALIZATION EVENTS
@@ -993,7 +872,7 @@ router.post(
                 jobId: job.id,
                 status: 'completed',
                 confidence: inferenceResult.confidence,
-                processing_time: Date.now() - startTime
+                processing_time: `${Date.now() - startTime}ms`
               });
               
               // 🔥 CRITICAL FIX: Remove job from manager tracking
@@ -1032,7 +911,7 @@ router.post(
                 status: 'completed',
                 confidence: inferenceResult.confidence,
                 is_deepfake: inferenceResult.is_deepfake,
-                model_name: inferenceResult.model_name,
+                model_name: String(inferenceResult.model_name || ''),
                 model_version: inferenceResult.model_version,
               },
             });
@@ -1103,9 +982,9 @@ router.post(
   }
 );
 
-// Audio analysis endpoint
+// Audio analysis endpoint - UNIFIED CANONICAL ROUTE
 router.post(
-  '/audio',
+  '/unified/audio',
   upload.single('file'),
   validateRequest([]),
   async (req: AuthenticatedRequest, res: Response) => {
@@ -1199,10 +1078,7 @@ router.post(
           }
           
           const formData = new FormData();
-          formData.append('file', file.buffer, {
-            filename: file.originalname,
-            contentType: file.mimetype,
-          });
+          formData.append('file', file.buffer, file.originalname);
           // Cross-service naming compatibility: frontend expects camelCase, Python expects snake_case
           const pythonJobId = jobId; // Canonical camelCase for Node/Node communication
           formData.append('job_id', pythonJobId); // Python contract expects snake_case
@@ -1212,13 +1088,15 @@ router.post(
             sendJobProgress(userId, jobId, 'analyzing', 30);
           }
 
-          const pythonResponse = await enhancedPythonBridge.request({
-            method: 'POST',
-            url: `/api/v2/analysis/unified/${type}`,
-            data: formData,
-            timeout: 300000, // 5 minutes
-            userToken: userToken || undefined
-          }) as {
+          const pythonResponse = await pythonBridge.postWithUser(
+            `/api/v2/analysis/unified/${type}`,
+            formData,
+            { id: userId || '', email: req.user?.email || 'unknown' },
+            {
+              timeout: 300000, // 5 minutes
+              ...(userToken && { headers: { 'Authorization': `Bearer ${userToken}` } })
+            }
+          ) as {
             data: {
               confidence: number;
               is_deepfake: boolean;
@@ -1252,10 +1130,10 @@ router.post(
                 status: 'completed',
                 confidence: inferenceResult.confidence,
                 is_deepfake: inferenceResult.is_deepfake,
-                model_name: inferenceResult.model_name,
+                model_name: String(inferenceResult.model_name || ''),
                 model_version: inferenceResult.model_version,
                 analysis_data: inferenceResult.analysis_data,
-                proof_json: inferenceResult.proof,
+                proof_json: inferenceResult.proof as Record<string, unknown>,
               });
               
               // 🔥 STEP 9 — LOG FINALIZATION EVENTS
@@ -1263,7 +1141,7 @@ router.post(
                 jobId: job.id,
                 status: 'completed',
                 confidence: inferenceResult.confidence,
-                processing_time: Date.now() - startTime
+                processing_time: `${Date.now() - startTime}ms`
               });
               
               // 🔥 CRITICAL FIX: Remove job from manager tracking
@@ -1302,7 +1180,7 @@ router.post(
                 status: 'completed',
                 confidence: inferenceResult.confidence,
                 is_deepfake: inferenceResult.is_deepfake,
-                model_name: inferenceResult.model_name,
+                model_name: String(inferenceResult.model_name || ''),
                 model_version: inferenceResult.model_version,
               },
             });
@@ -1373,9 +1251,9 @@ router.post(
   }
 );
 
-// Text analysis endpoint
+// Text analysis endpoint - UNIFIED CANONICAL ROUTE
 router.post(
-  '/text',
+  '/unified/text',
   validateRequest([]),
   async (req: AuthenticatedRequest, res: Response) => {
     const type = 'text';
@@ -1474,18 +1352,20 @@ router.post(
           }
 
           // Forward to Python service for text analysis
-          const pythonResponse = await enhancedPythonBridge.request({
-            method: 'POST',
-            url: `/upload/text`,
-            data: {
+          const pythonResponse = await pythonBridge.postWithUser(
+            `/upload/text`,
+            {
               text,
               jobId: jobId,
               user_id: userId || '',
               analyze: true
             },
-            timeout: 60000, // 1 minute for text analysis
-            userToken: userToken || undefined
-          }) as {
+            { id: userId || '', email: req.user?.email || 'unknown' },
+            {
+              timeout: 60000, // 1 minute for text analysis
+              ...(userToken && { headers: { 'Authorization': `Bearer ${userToken}` } })
+            }
+          ) as {
             data: {
               success: boolean;
               text_length: number;
@@ -1540,7 +1420,7 @@ router.post(
                 jobId: job.id,
                 status: 'completed',
                 confidence: textResult.analysis?.confidence || 0,
-                processing_time: Date.now() - startTime
+                processing_time: `${Date.now() - startTime}ms`
               });
               
             } catch (finalizationError) {
@@ -1652,57 +1532,6 @@ router.post(
   upload.single('file'),
   validateRequest([]),
   async (req: AuthenticatedRequest, res: Response) => {
-    return res.status(410).json({
-      success: false,
-      message: "Multimodal analysis is temporarily disabled"
-    });
-  }
-);
-
-// Get analysis status - DEPRECATED: Use /api/v2/results/:id instead
-// This route calls Python which can create conflicting states with DB truth
-router.get('/status/:id', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    
-    // 🔥 DEPRECATED: Redirect to canonical results endpoint
-    return res.redirect(307, `/api/v2/results/${id}`);
-    
-    // Legacy Python call (commented out to prevent state conflicts)
-    // This code is disabled to avoid conflicting states between Python and DB
-    /*
-    const result = await enhancedPythonBridge.request({
-      method: 'GET',
-      url: `/analyze/status/${id}`,
-    }) as {
-      data: {
-        success: boolean;
-        data: {
-          status: string;
-          progress?: number;
-          message?: string;
-          created_at?: string;
-          updated_at?: string;
-          completed_at?: string;
-          error?: string;
-        };
-      };
-    };
-
-    res.json({
-      success: true,
-      data: result.data,
-    });
-    */
-    
-  } catch (error) {
-    await handleAnalysisError(error, res, req);
-  }
-});
-
-// REMOVED: Duplicate route - consolidated with line 1369 implementation
-
-// REMOVED: Shadow results route - use ONLY /api/v2/results/:id in results.routes.ts
 
 // POST /api/v2/analysis/jobs/:jobId/cancel - Cancel a running job
 router.post('/jobs/:jobId/cancel', validateJobId, async (req: AuthenticatedRequest, res: Response) => {
@@ -1765,16 +1594,7 @@ router.post('/jobs/:jobId/cancel', validateJobId, async (req: AuthenticatedReque
   }
 });
 
-// DEPRECATED: Use /api/v2/results/:jobId instead
-// This endpoint kept for backward compatibility only
-router.get('/history/:jobId', validateJobId, async (req: Request, res: Response) => {
-  logger.warn('[DEPRECATED] /history endpoint used, please migrate to /results', {
-    jobId: req.params.jobId,
-    userAgent: req.get('User-Agent')
-  });
-  
-  // Redirect to canonical endpoint
-  return res.redirect(307, `/api/v2/results/${req.params.jobId}`);
-});
+// 🔥 ROUTE CONTRACT FREEZE - CANONICAL ROUTES ONLY
+// ALL legacy routes removed - use canonical contracts
 
 export default router;

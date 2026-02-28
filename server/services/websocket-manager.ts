@@ -570,7 +570,7 @@ export class WebSocketManager {
       if (event?.jobId) {
         const { supabaseAdmin } = await import('../config/supabase');
         const { data: job, error } = await supabaseAdmin
-          .from('scans')
+          .from('tasks')
           .select('id,result')
           .eq('id', event.jobId)
           .single();

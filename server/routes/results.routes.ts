@@ -2,6 +2,10 @@ import { Router, Request, Response } from 'express';
 import { supabase, supabaseAdmin } from '../config/supabase';
 import { logger } from '../config/logger';
 import { JOB_TIMEOUTS } from '../config/job-timeouts';
+import { safeJson } from '../utils/result-parser';
+
+// Centralized table constant to prevent schema drift
+const ANALYSIS_TABLE = 'tasks';
 
 const router = Router();
 
@@ -18,9 +22,9 @@ router.get('/:id', async (req: Request, res: Response) => {
       });
     }
 
-    // Fetch analysis result from scans table
+    // Fetch analysis result from tasks table
     const { data: task, error } = await supabase
-      .from('scans')
+      .from('tasks')
       .select(`id, type, filename, result, confidence_score, detection_details, metadata, created_at, updated_at`)
       .eq('id', id)
       .eq('user_id', userId)
@@ -34,7 +38,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       if (!task) {
         // Try to find job without user filter to check if it exists
         const { data: orphanJob } = await supabase
-          .from('scans')
+          .from('tasks')
           .select('id, result, created_at')
           .eq('id', id)
           .eq('type', 'analysis')
@@ -65,7 +69,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       if (jobAge > JOB_TIMEOUTS.MAX_PROCESSING_TIME) {
         // 🔒 VERIFY OWNERSHIP BEFORE ADMIN UPDATE
         const { data: ownerCheck } = await supabase
-          .from('scans')
+          .from('tasks')
           .select('user_id')
           .eq('id', id)
           .single();
@@ -76,9 +80,9 @@ router.get('/:id', async (req: Request, res: Response) => {
         
         // Job is stuck - mark as failed
         await supabaseAdmin
-          .from('scans')
+          .from('tasks')
           .update({
-            result: 'failed',
+            result: safeJson({ status: 'failed', reason: 'timeout' }),
             confidence_score: 0,
             updated_at: new Date().toISOString()
           })
@@ -142,7 +146,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
     // Check if task belongs to user
     const { data: task, error: checkError } = await supabase
-      .from('scans')
+      .from(ANALYSIS_TABLE)
       .select('id')
       .eq('id', id)
       .eq('user_id', userId)
@@ -159,7 +163,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
     // Delete the task
     const { error: deleteError } = await supabase
-      .from('scans')
+      .from(ANALYSIS_TABLE)
       .delete()
       .eq('id', id)
       .eq('user_id', userId);

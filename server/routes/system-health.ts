@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { logger } from '../config/logger';
-import { enhancedPythonBridge } from '../config/python-bridge';
+import { pythonBridge } from '../services/python-http-bridge';
 import { circuitBreaker } from '../config/python-bridge';
 import { supabaseAdmin } from '../config/supabase';
 
@@ -45,7 +45,7 @@ router.get('/health', async (req: Request, res: Response) => {
     try {
       const startTime = Date.now();
       const { error } = await supabaseAdmin
-        .from('scans')
+        .from('tasks')
         .select('id')
         .is('deleted_at', null)  
         .limit(1)
@@ -77,9 +77,7 @@ router.get('/health', async (req: Request, res: Response) => {
     // Check Python service health
     try {
       const startTime = Date.now();
-      const pythonHealth = await enhancedPythonBridge.request({
-        method: 'GET',
-        url: '/health',
+      const pythonHealth = await pythonBridge.get('/health', {
         timeout: 5000
       });
       
@@ -100,11 +98,10 @@ router.get('/health', async (req: Request, res: Response) => {
     }
 
     // Check circuit breaker state
-    const breakerState = circuitBreaker.getState();
     const stats = circuitBreaker.getStats();
     healthStatus.checks.circuit_breaker = {
-      status: breakerState === 'CLOSED' ? 'healthy' : 'degraded',
-      state: breakerState,
+      status: stats.state === 'CLOSED' ? 'healthy' : 'degraded',
+      state: stats.state,
       failure_count: stats.failures,
       last_failure_time: stats.lastFailureTime
     };
@@ -169,13 +166,20 @@ router.get('/info', async (req: Request, res: Response) => {
       }
     };
     
-    res.json(infoData);
+    res.json({
+      success: true,
+      data: infoData
+    });
     
   } catch (error) {
     logger.error('System info check failed:', error);
     res.status(500).json({
-      error: 'System info failed',
-      timestamp: new Date().toISOString()
+      success: false,
+      error: {
+        code: 'SYSTEM_INFO_FAILED',
+        message: 'System info failed',
+        timestamp: new Date().toISOString()
+      }
     });
   }
 });

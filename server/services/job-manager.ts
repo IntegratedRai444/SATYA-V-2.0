@@ -4,6 +4,7 @@ import { JOB_TIMEOUTS } from '../config/job-timeouts';
 import webSocketManager from './websocket-manager';
 import { AbortController } from 'abort-controller';
 import { setInterval } from 'timers';
+import { safeJson } from '../utils/result-parser';
 
 // Track running jobs in memory
 interface RunningJob {
@@ -66,9 +67,9 @@ class JobManager {
 
       // Update database
       await supabase
-        .from('scans')
+        .from('tasks')
         .update({ 
-          result: 'cancelled',
+          result: safeJson({ status: 'cancelled', reason: 'user_cancelled' }),
           updated_at: new Date().toISOString()
         })
         .eq('id', jobId)
@@ -139,9 +140,9 @@ class JobManager {
         
         // Mark as failed in database
         const updateResult = await supabase
-          .from('scans')
+          .from('tasks')
           .update({ 
-            result: 'failed',
+            result: safeJson({ status: 'failed', reason: 'timeout' }),
             confidence_score: 0,
             updated_at: new Date().toISOString()
           })

@@ -60,11 +60,11 @@ export const API_ENDPOINTS = {
   REFRESH_TOKEN: '/auth/refresh-token',
   CSRF_TOKEN: '/auth/csrf-token',
   
-  // Analysis
-  ANALYZE_IMAGE: '/analysis/image',
-  ANALYZE_VIDEO: '/analysis/video',
-  ANALYZE_AUDIO: '/analysis/audio',
-  ANALYZE_MULTIMODAL: '/analysis/multimodal',
+  // Analysis - Updated to use canonical unified endpoints
+  ANALYZE_IMAGE: '/analysis/unified/image',
+  ANALYZE_VIDEO: '/analysis/unified/video', 
+  ANALYZE_AUDIO: '/analysis/unified/audio',
+  ANALYZE_MULTIMODAL: '/analysis/unified/multimodal',
   GET_ANALYSIS: '/analysis/',
   
   // Dashboard

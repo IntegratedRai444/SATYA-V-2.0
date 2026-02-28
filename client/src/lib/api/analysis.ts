@@ -57,7 +57,7 @@ export const submitAnalysis = async (file: File, type: 'image' | 'video' | 'audi
     formData.append('file', file);
     formData.append('type', type);
     
-    const response = await apiClient.post(`/analysis/${type}`, formData, {
+    const response = await apiClient.post(`/unified/${type}`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },

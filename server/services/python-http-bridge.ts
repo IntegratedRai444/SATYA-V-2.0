@@ -6,16 +6,22 @@ type CustomAxiosRequestConfig = {
   method?: string;
   baseURL?: string;
   headers?: Record<string, string>;
-  data?: any;
-  params?: any;
+  data?: unknown;
+  params?: Record<string, unknown>;
   timeout?: number;
   retryCount?: number;
   validateStatus?: (status: number) => boolean;
+  userContext?: {
+    token?: string;
+    requestId?: string;
+    userId?: string;
+    email?: string;
+  };
 };
 
 type CustomAxiosError = {
   response?: {
-    data: any;
+    data: unknown;
     status: number;
     statusText: string;
     headers?: Record<string, string>;
@@ -25,7 +31,7 @@ type CustomAxiosError = {
   config?: CustomAxiosRequestConfig;
 };
 
-type CustomAxiosResponse<T = any> = {
+type CustomAxiosResponse<T = unknown> = {
   data: T;
   status: number;
   statusText: string;
@@ -34,17 +40,17 @@ type CustomAxiosResponse<T = any> = {
 };
 
 type CustomAxiosInstance = {
-  request<T = any>(config: CustomAxiosRequestConfig): Promise<CustomAxiosResponse<T>>;
-  get<T = any>(url: string, config?: CustomAxiosRequestConfig): Promise<CustomAxiosResponse<T>>;
-  post<T = any>(url: string, data?: any, config?: CustomAxiosRequestConfig): Promise<CustomAxiosResponse<T>>;
-  put<T = any>(url: string, data?: any, config?: CustomAxiosRequestConfig): Promise<CustomAxiosResponse<T>>;
-  delete<T = any>(url: string, config?: CustomAxiosRequestConfig): Promise<CustomAxiosResponse<T>>;
+  request<T = unknown>(config: CustomAxiosRequestConfig): Promise<CustomAxiosResponse<T>>;
+  get<T = unknown>(url: string, config?: CustomAxiosRequestConfig): Promise<CustomAxiosResponse<T>>;
+  post<T = unknown>(url: string, data?: unknown, config?: CustomAxiosRequestConfig): Promise<CustomAxiosResponse<T>>;
+  put<T = unknown>(url: string, data?: unknown, config?: CustomAxiosRequestConfig): Promise<CustomAxiosResponse<T>>;
+  delete<T = unknown>(url: string, config?: CustomAxiosRequestConfig): Promise<CustomAxiosResponse<T>>;
   interceptors: {
     request: {
-      use(onFulfilled: (config: CustomAxiosRequestConfig) => CustomAxiosRequestConfig, onRejected?: (error: any) => any): void;
+      use(onFulfilled: (config: CustomAxiosRequestConfig) => CustomAxiosRequestConfig, onRejected?: (error: unknown) => unknown): void;
     };
     response: {
-      use(onFulfilled: (response: CustomAxiosResponse) => CustomAxiosResponse, onRejected: (error: CustomAxiosError) => any): void;
+      use(onFulfilled: (response: CustomAxiosResponse) => CustomAxiosResponse, onRejected: (error: CustomAxiosError) => unknown): void;
     };
   };
   defaults: {

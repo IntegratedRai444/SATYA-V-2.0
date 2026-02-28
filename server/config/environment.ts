@@ -83,7 +83,7 @@ const envSchema = z.object({
   // Python AI Engine Configuration
   PYTHON_SERVER_URL: z.string().url().default('http://localhost:8000'),
   PYTHON_SERVER_PORT: z.coerce.number().default(8000),
-  PYTHON_SERVER_TIMEOUT: z.coerce.number().default(300000), // 5 minutes
+  PYTHON_SERVER_TIMEOUT: z.coerce.number().default(900000), // 15 minutes - ALIGNED WITH ANALYSIS TIMEOUT
   FLASK_SECRET_KEY: z.string().min(32, 'FLASK_SECRET_KEY must be at least 32 characters').optional(),
   
   // Database Configuration
@@ -202,7 +202,7 @@ function loadEnvironment(): Environment {
         HOT_RELOAD: process.env.HOT_RELOAD !== 'false',
         PYTHON_SERVER_URL: process.env.PYTHON_SERVER_URL || 'http://localhost:8000',
         PYTHON_SERVER_PORT: parseInt(process.env.PYTHON_SERVER_PORT || '8000'),
-        PYTHON_SERVER_TIMEOUT: parseInt(process.env.PYTHON_SERVER_TIMEOUT || '300000'),
+        PYTHON_SERVER_TIMEOUT: parseInt(process.env.PYTHON_SERVER_TIMEOUT || '900000'),
         JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '15m',
         REFRESH_TOKEN_EXPIRES_IN: process.env.REFRESH_TOKEN_EXPIRES_IN || '7d',
         REDIS_HOST: process.env.REDIS_HOST || 'localhost',

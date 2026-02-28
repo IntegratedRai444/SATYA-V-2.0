@@ -18,6 +18,8 @@
     "type-check": "tsc --noEmit",
     "migrate": "ts-node src/db/migrate.ts",
     "seed": "ts-node src/db/seed.ts",
+    "fix-jsonb": "ts-node scripts/fixJsonbResults.ts",
+    "dev:migrate": "RUN_JSONB_MIGRATION=true npm run dev",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "prepare": "npm run build",
     "prestart": "npm run build"

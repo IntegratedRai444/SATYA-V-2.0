@@ -1,5 +1,4 @@
 import dotenv from 'dotenv';
-import { JOB_TIMEOUTS } from './job-timeouts';
 
 dotenv.config();
 
@@ -10,8 +9,8 @@ export const pythonConfig = {
   // API Key for authenticating with the Python service
   apiKey: process.env.PYTHON_SERVICE_API_KEY || 'python-service-api-key-set-in-env',
   
-  // Timeout for API requests (in milliseconds) - PRODUCTION OPTIMIZED
-  requestTimeout: parseInt(process.env.PYTHON_SERVICE_TIMEOUT || '120000', 10), // 2 minutes
+  // Timeout for API requests (in milliseconds) - MATCH PYTHON 15 MIN
+  requestTimeout: parseInt(process.env.PYTHON_SERVICE_TIMEOUT || '900000', 10), // 15 minutes
   
   // Maximum retry attempts for failed requests
   maxRetries: parseInt(process.env.PYTHON_SERVICE_MAX_RETRIES || '3', 10),

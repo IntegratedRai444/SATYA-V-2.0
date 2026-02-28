@@ -189,12 +189,12 @@ export class AnalysisService extends BaseService {
     }
 
     try {
-      const response = await this.post<JobStartResponse>('analysis/image', formData, {
+      const response = await this.post<JobStartResponse>('unified/image', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
         signal: options.signal,
-        timeout: 360000, // 6 minutes timeout
+        timeout: 900000, // 15 minutes - MATCH BACKEND TIMEOUT
       });
 
       return response.jobId;
@@ -233,12 +233,12 @@ export class AnalysisService extends BaseService {
     formData.append('file', file);
 
     try {
-      const response = await this.post<JobStartResponse>('analysis/video', formData, {
+      const response = await this.post<JobStartResponse>('unified/video', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
         signal: options.signal,
-        timeout: 360000, // 6 minutes timeout
+        timeout: 900000, // 15 minutes - MATCH BACKEND TIMEOUT
       });
 
       return response.jobId;
@@ -256,12 +256,12 @@ export class AnalysisService extends BaseService {
     formData.append('file', file);
 
     try {
-      const response = await this.post<JobStartResponse>('analysis/audio', formData, {
+      const response = await this.post<JobStartResponse>('unified/audio', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
         signal: options.signal,
-        timeout: 360000, // 6 minutes timeout
+        timeout: 900000, // 15 minutes - MATCH BACKEND TIMEOUT
       });
 
       return response.jobId;
